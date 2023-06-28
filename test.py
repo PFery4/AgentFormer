@@ -1,13 +1,12 @@
-import numpy as np
 import argparse
 import os
 import sys
 import subprocess
 import shutil
+import numpy as np
+import torch
 
-sys.path.append(os.getcwd())
 from data.dataloader import data_generator
-from utils.torch import *
 from utils.config import Config
 from model.model_lib import model_dict
 from utils.utils import prepare_seed, print_log, mkdir_if_missing

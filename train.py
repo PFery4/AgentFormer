@@ -2,12 +2,13 @@ import os
 import sys
 import argparse
 import time
+import torch
 from torch import optim
 from torch.utils.tensorboard import SummaryWriter
 
 from data.dataloader import data_generator
 from model.model_lib import model_dict
-from utils.torch import *
+from utils.torch import get_scheduler
 from utils.config import Config
 from utils.utils import prepare_seed, print_log, AverageMeter, convert_secs2time, get_timestring
 
