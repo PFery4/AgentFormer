@@ -1,7 +1,7 @@
 from data.nuscenes_pred_split import get_nuscenes_pred_split
 import os, random, numpy as np, copy
 from typing import Tuple
-import io
+from io import TextIOWrapper
 
 from .preprocessor import preprocess
 from .ethucy_split import get_ethucy_split
@@ -10,7 +10,7 @@ from utils.config import Config
 
 class data_generator(object):
 
-    def __init__(self, parser: Config, log: io.TextIOWrapper, split: str = 'train', phase: str = 'training'):
+    def __init__(self, parser: Config, log: TextIOWrapper, split: str = 'train', phase: str = 'training'):
         self.past_frames = parser.past_frames
         self.min_past_frames = parser.min_past_frames
         self.frame_skip = parser.get('frame_skip', 1)
