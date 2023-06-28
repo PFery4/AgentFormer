@@ -34,6 +34,10 @@ def train(epoch):
     train_loss_meter = {x: AverageMeter() for x in cfg.loss_cfg.keys()}
     train_loss_meter['total_loss'] = AverageMeter()
     last_generator_index = 0
+
+    # WIP CODE FOR EXPLORATION
+    cnt = 0
+    # WIP CODE FOR EXPLORATION
     while not generator.is_epoch_end():
         data = generator()
         if data is not None:
@@ -58,6 +62,12 @@ def train(epoch):
                 tb_logger.add_scalar('model_' + name, meter.avg, tb_ind)
             tb_ind += 1
             last_generator_index = generator.index
+
+        # WIP CODE FOR EXPLORATION
+        if cnt == 10:
+            print(zblu)
+        cnt += 1
+        # WIP CODE FOR EXPLORATION
 
     scheduler.step()
     model.step_annealer()
