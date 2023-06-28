@@ -2,9 +2,9 @@ import yaml
 import os
 import os.path as osp
 import glob
-import numpy as np
 from easydict import EasyDict
-from .utils import recreate_dirs
+
+from utils.utils import recreate_dirs
 
 
 class Config:

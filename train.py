@@ -2,8 +2,6 @@ import os
 import sys
 import argparse
 import time
-import numpy as np
-import torch
 from torch import optim
 from torch.utils.tensorboard import SummaryWriter
 

@@ -1,10 +1,10 @@
 from data.nuscenes_pred_split import get_nuscenes_pred_split
-import os, random, numpy as np, copy
+import random, copy
 from typing import Tuple
 from io import TextIOWrapper
 
-from .preprocessor import preprocess
-from .ethucy_split import get_ethucy_split
+from data.preprocessor import preprocess
+from data.ethucy_split import get_ethucy_split
 from utils.utils import print_log
 from utils.config import Config
 
