@@ -8,7 +8,12 @@ from utils.config import Config
 
 
 class preprocess(object):
-    
+    class_names = {
+        'Pedestrian': 1, 'Car': 2, 'Cyclist': 3, 'Truck': 4, 'Van': 5, 'Tram': 6, 'Person': 7, 'Misc': 8,
+        'DontCare': 9, 'Traffic_cone': 10, 'Construction_vehicle': 11, 'Barrier': 12, 'Motorcycle': 13,
+        'Bicycle': 14, 'Bus': 15, 'Trailer': 16, 'Emergency': 17, 'Construction': 18
+    }
+
     def __init__(self, data_root: str, seq_name: str, parser: Config, log: TextIOWrapper,
                  split: str = 'train', phase: str = 'training'):
         self.parser = parser        # Config
@@ -29,10 +34,12 @@ class preprocess(object):
         self.log = log              # TextIOWrapper
 
         if parser.dataset == 'nuscenes_pred':
-            label_path = os.path.join(data_root, 'label/{}/{}.txt'.format(split, seq_name))
+            # label_path = os.path.join(data_root, 'label/{}/{}.txt'.format(split, seq_name))
+            label_path = os.path.join(data_root, "label", split, f"{seq_name}.txt")
             delimiter = ' '
         elif parser.dataset in {'eth', 'hotel', 'univ', 'zara1', 'zara2'}:
-            label_path = f'{data_root}/{parser.dataset}/{seq_name}.txt'
+            # label_path = f'{data_root}/{parser.dataset}/{seq_name}.txt'
+            label_path = os.path.join(data_root, parser.dataset, f"{seq_name}.txt")
             delimiter = ' '
         else:
             assert False, 'error'
@@ -48,11 +55,8 @@ class preprocess(object):
         else:
             self.geom_scene_map = None
 
-        self.class_names = class_names = {'Pedestrian': 1, 'Car': 2, 'Cyclist': 3, 'Truck': 4, 'Van': 5, 'Tram': 6, 'Person': 7, \
-            'Misc': 8, 'DontCare': 9, 'Traffic_cone': 10, 'Construction_vehicle': 11, 'Barrier': 12, 'Motorcycle': 13, \
-            'Bicycle': 14, 'Bus': 15, 'Trailer': 16, 'Emergency': 17, 'Construction': 18}       # dict
         for row_index in range(len(self.gt)):
-            self.gt[row_index][2] = class_names[self.gt[row_index][2]]
+            self.gt[row_index][2] = self.class_names[self.gt[row_index][2]]
         self.gt = self.gt.astype('float32')     # np.ndarray
         self.xind, self.zind = 13, 15           # int int
 
