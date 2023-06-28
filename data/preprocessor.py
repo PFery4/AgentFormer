@@ -78,8 +78,6 @@ class preprocess(object):
     def PreData(self, frame: np.int64) -> List[np.ndarray]:
         DataList = []
         for i in range(self.past_frames):
-            if frame - i < self.init_frame:
-                data = []
             data = self.gt[self.gt[:, 0] == (frame - i * self.frame_skip)]
             DataList.append(data)
         return DataList
