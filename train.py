@@ -5,7 +5,6 @@ import time
 from torch import optim
 from torch.utils.tensorboard import SummaryWriter
 
-sys.path.append(os.getcwd())
 from data.dataloader import data_generator
 from model.model_lib import model_dict
 from utils.torch import *
