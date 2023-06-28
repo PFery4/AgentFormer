@@ -1,11 +1,12 @@
 import torch
 from torch import nn
 from torch.nn import functional as F
-from utils.torch import *
+# from utils.torch import *
 from utils.config import Config
-from .common.mlp import MLP
-from .common.dist import *
-from . import model_lib
+from model.common.mlp import MLP
+# from model.common.dist import *
+from model.common.dist import Normal
+from model import model_lib
 
 
 def compute_z_kld(data, cfg):

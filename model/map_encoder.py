@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torchvision import models
-from .map_cnn import MapCNN
+from model.map_cnn import MapCNN
 
 
 class MapEncoder(nn.Module):
