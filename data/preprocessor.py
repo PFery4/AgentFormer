@@ -44,7 +44,10 @@ class preprocess(object):
         else:
             assert False, 'error'
 
+        # read the annotation .txt file
         self.gt = np.genfromtxt(label_path, delimiter=delimiter, dtype=str)     # np.ndarray
+
+        # frames correspond to the timestep of the observation
         frames = self.gt[:, 0].astype(np.float32).astype(int)
         fr_start, fr_end = frames.min(), frames.max()
         self.init_frame = fr_start      # np.int64
@@ -58,7 +61,7 @@ class preprocess(object):
         for row_index in range(len(self.gt)):
             self.gt[row_index][2] = self.class_names[self.gt[row_index][2]]
         self.gt = self.gt.astype('float32')     # np.ndarray
-        self.xind, self.zind = 13, 15           # int int
+        self.xind, self.zind = 13, 15           # column index for the x and z positions of the agent (within the .txt)
 
     def GetID(self, data: np.ndarray) -> List[np.float32]:
         id = []
@@ -67,12 +70,15 @@ class preprocess(object):
         return id
 
     def TotalFrame(self) -> np.int64:
+        """
+        returns the total number of timesteps in the contained data
+        """
         return self.num_fr
 
     def PreData(self, frame: np.int64) -> List[np.ndarray]:
         DataList = []
         for i in range(self.past_frames):
-            if frame - i < self.init_frame:              
+            if frame - i < self.init_frame:
                 data = []
             data = self.gt[self.gt[:, 0] == (frame - i * self.frame_skip)]
             DataList.append(data)
@@ -86,7 +92,11 @@ class preprocess(object):
         return DataList
 
     def get_valid_id(self, pre_data: List[np.ndarray], fut_data: List[np.ndarray]) -> List[np.float32]:
-        cur_id = self.GetID(pre_data[0])
+        """
+        within the past and future datablocks, produce the list of agents for which a coordinate is available at
+        every timestep
+        """
+        cur_id = self.GetID(pre_data[0])        # the agent ids at t=0
         valid_id = []
         for idx in cur_id:
             exist_pre = [(False if isinstance(data, list) else (idx in data[:, 1])) for data in pre_data[:self.min_past_frames]]
@@ -163,8 +173,12 @@ class preprocess(object):
         return motion, mask
 
     def __call__(self, frame: np.int64) -> Union[dict, None]:
+        """
+        generate the data for an observation window
+        :param frame: the timestep corresponding to t0
+        """
 
-        assert frame - self.init_frame >= 0 and frame - self.init_frame <= self.TotalFrame() - 1,\
+        assert 0 <= frame - self.init_frame <= self.TotalFrame() - 1,\
             'frame is %d, total is %d' % (frame, self.TotalFrame())
 
         pre_data = self.PreData(frame)
