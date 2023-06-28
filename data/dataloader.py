@@ -1,5 +1,6 @@
 from data.nuscenes_pred_split import get_nuscenes_pred_split
 import os, random, numpy as np, copy
+from typing import Tuple
 
 from .preprocessor import preprocess
 from .ethucy_split import get_ethucy_split
@@ -8,7 +9,7 @@ from utils.utils import print_log
 
 class data_generator(object):
 
-    def __init__(self, parser, log, split='train', phase='training'):
+    def __init__(self, parser, log, split: str = 'train', phase: str = 'training'):
         self.past_frames = parser.past_frames
         self.min_past_frames = parser.min_past_frames
         self.frame_skip = parser.get('frame_skip', 1)
@@ -48,16 +49,16 @@ class data_generator(object):
             self.num_total_samples += num_seq_samples
             self.num_sample_list.append(num_seq_samples)
             self.sequence.append(preprocessor)
-        
+
         self.sample_list = list(range(self.num_total_samples))
         self.index = 0
         print_log(f'total num samples: {self.num_total_samples}', log)
         print_log("------------------------------ done --------------------------------\n", log=log)
 
-    def shuffle(self):
+    def shuffle(self) -> None:
         random.shuffle(self.sample_list)
         
-    def get_seq_and_frame(self, index):
+    def get_seq_and_frame(self, index: int) -> Tuple[int, int]:
         index_tmp = copy.copy(index)
         for seq_index in range(len(self.num_sample_list)):    # 0-indexed
             if index_tmp < self.num_sample_list[seq_index]:
@@ -68,14 +69,14 @@ class data_generator(object):
 
         assert False, 'index is %d, out of range' % (index)
 
-    def is_epoch_end(self):
+    def is_epoch_end(self) -> bool:
         if self.index >= self.num_total_samples:
             self.index = 0      # reset
             return True
         else:
             return False
 
-    def next_sample(self):
+    def next_sample(self) -> dict:
         sample_index = self.sample_list[self.index]
         seq_index, frame = self.get_seq_and_frame(sample_index)
         seq = self.sequence[seq_index]
@@ -84,5 +85,5 @@ class data_generator(object):
         data = seq(frame)
         return data      
 
-    def __call__(self):
+    def __call__(self) -> dict:
         return self.next_sample()
