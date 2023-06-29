@@ -64,10 +64,10 @@ class preprocess(object):
         self.xind, self.zind = 13, 15           # column index for the x and z positions of the agent (within the .txt)
 
     def GetID(self, data: np.ndarray) -> List[np.float32]:
-        id = []
-        for i in range(data.shape[0]):
-            id.append(data[i, 1].copy())
-        return id
+        """
+        returns a list of agent IDs corresponding to each 'row' in the input data block
+        """
+        return [data[i, 1].copy() for i in range(data.shape[0])]
 
     def TotalFrame(self) -> np.int64:
         """
@@ -76,18 +76,16 @@ class preprocess(object):
         return self.num_fr
 
     def PreData(self, frame: np.int64) -> List[np.ndarray]:
-        DataList = []
-        for i in range(self.past_frames):
-            data = self.gt[self.gt[:, 0] == (frame - i * self.frame_skip)]
-            DataList.append(data)
-        return DataList
-    
+        """
+        returns the entire data block over the observation period
+        """
+        return [self.gt[self.gt[:, 0] == (frame - i * self.frame_skip)] for i in range(self.past_frames)]
+
     def FutureData(self, frame: np.int64) -> List[np.ndarray]:
-        DataList = []
-        for i in range(1, self.future_frames + 1):
-            data = self.gt[self.gt[:, 0] == (frame + i * self.frame_skip)]
-            DataList.append(data)
-        return DataList
+        """
+        returns the entire data block over the prediction horizon
+        """
+        return [self.gt[self.gt[:, 0] == (frame + i * self.frame_skip)] for i in range(1, self.future_frames + 1)]
 
     def get_valid_id(self, pre_data: List[np.ndarray], fut_data: List[np.ndarray]) -> List[np.float32]:
         """
