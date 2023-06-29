@@ -1,3 +1,9 @@
-.idea
+# ignoring all hidden directories and files
+.*
+!/.gitignore
+
+# ignoring all __pycache__ folders
 **/__pycache__
+
+# ignoring the "results" directory
 results
