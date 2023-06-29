@@ -1,15 +1,22 @@
+import os.path
 from typing import Tuple
 from io import TextIOWrapper
 
 from utils.config import Config
 
+# imports from https://github.com/PFery4/occlusion-prediction
+from src.data.sdd_dataloader import StanfordDroneDataset
+from src.data.sdd_extract import REPO_ROOT as occl_repo_path
 
 class AgentFormerDataGeneratorForSDD:
     """
     This class wraps the dataset classes implemented in the occlusion-prediction repo in such a way that
     they are directly usable as 'generator' objects in the source code of AgentFormer.
     """
+    data_root = os.path.join(occl_repo_path, )      # TODO: WIP WIP WIP WIP
+
     def __init__(self, parser: Config, log: TextIOWrapper, split: str = 'train', phase: str = 'training'):
+        # TODO: WIP WIP WIP WIP
         self.past_frames = parser.past_frames
         self.min_past_frames = parser.min_past_frames
         self.frame_skip = parser.get('frame_skip', 1)
@@ -78,3 +85,4 @@ class AgentFormerDataGeneratorForSDD:
 
 if __name__ == '__main__':
     print("Hello World!")
+    print(occl_repo_path)
