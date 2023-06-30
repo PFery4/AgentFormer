@@ -4,8 +4,9 @@ description                  : AgentFormer (Before DLow)
 results_root_dir             : results
 seed                         : 1
 dataset                      : sdd
-#data_root_ethucy             : datasets/eth_ucy
-#data_root_nuscenes_pred      : datasets/nuscenes_pred
+sdd_config_file_name         : config
+# data_root_ethucy             : datasets/eth_ucy
+# data_root_nuscenes_pred      : datasets/nuscenes_pred
 
 # ------------------- Feature Extractor -------------------------
 
@@ -14,7 +15,7 @@ future_frames                : 12
 min_past_frames              : 8
 min_future_frames            : 12
 
-traj_scale                   : 2
+traj_scale                   : 100      # todo: check if this scaling factor is correct (or even matters at all)
 motion_dim                   : 2
 forecast_dim                 : 2
 
