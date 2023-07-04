@@ -83,9 +83,23 @@ if __name__ == '__main__':
     cfg = Config(args.cfg, args.tmp, create_dirs=True)
     prepare_seed(cfg.seed)
     torch.set_default_dtype(torch.float32)
-    device = torch.device('cuda', index=args.gpu) if torch.cuda.is_available() else torch.device('cpu')
-    if torch.cuda.is_available(): torch.cuda.set_device(args.gpu)
-    
+    # device = torch.device('cuda', index=args.gpu) if torch.cuda.is_available() else torch.device('cpu')
+    if torch.cuda.is_available():
+        device = torch.device('cuda', index=args.gpu)
+        torch.cuda.set_device(args.gpu)
+
+        # print("-" * 120)
+        # print(f"{torch.cuda.is_available()=}")
+        # print(f"{torch.cuda.device_count()=}")
+        # print(f"{torch.cuda.current_device()=}")
+        # print(f"{torch.cuda.device(torch.cuda.current_device())=}")
+        # print(f"{torch.cuda.get_device_name(torch.cuda.current_device())=}")
+        # print(f"{device=}")
+        # print("-" * 120)
+
+    else:
+        device = torch.device('cpu')
+
     time_str = get_timestring()
     log = open(os.path.join(cfg.log_dir, 'log.txt'), 'a+')
     print_log("time str: {}".format(time_str), log)
