@@ -1,10 +1,11 @@
 import os.path
 import random
-from typing import Tuple
 from io import TextIOWrapper
 import torch
 import sys
+import numpy as np
 
+from data.map import GeometricMap
 from utils.config import Config
 from utils.utils import print_log, get_timestring
 
@@ -71,6 +72,16 @@ class AgentFormerDataGeneratorForSDD:
         else:
             return False
 
+    @staticmethod
+    def torchimg_to_geometricmap(image_tensor: torch.Tensor):
+        # todo: investigate if scaling factor matters here
+        scaling = 3.0
+        homography = np.array([[scaling, 0., 0.],
+                               [0., scaling, 0.],
+                               [0., 0., scaling]])
+        np_img = np.array(image_tensor.permute(0, 1, 2).numpy() * 255, dtype=np.uint8)
+        return GeometricMap(data=np_img, homography=homography)
+
     def convert_to_preprocessor_data(self, extracted_data: dict) -> dict:
 
         pre_motion_3D = []
@@ -94,12 +105,12 @@ class AgentFormerDataGeneratorForSDD:
             )
             valid_id.append(float(agent.id))
 
-        # TODO: DO SOMETHING WITH heading (check how nuscenes does it)
         heading = None
-        # TODO: DO SOMETHING WITH pred_mask (check how nuscenes does it)
+        # from the nuscenes implementation
+        # pred mask is a numpy array, of shape (n_agents,), with values either 1 or 0
         pred_mask = None
-        # TODO: DO SOMETHING WITH scene_map (check how nuscenes does it)
-        scene_map = None
+
+        scene_map = self.torchimg_to_geometricmap(extracted_data["image_tensor"])
 
         data = {
             'pre_motion_3D': pre_motion_3D,
@@ -113,8 +124,8 @@ class AgentFormerDataGeneratorForSDD:
             'traj_scale': self.traj_scale,
             'pred_mask': pred_mask,
             'scene_map': scene_map,
-            # 'seq': None,
-            # 'frame': None
+            'seq': extracted_data["scene"] + "_" + extracted_data["video"],
+            'frame': extracted_data["timestep"]
         }
 
         return data
@@ -124,7 +135,6 @@ class AgentFormerDataGeneratorForSDD:
         self.index += 1
 
         data = self.dataset.__getitem__(sample_index)
-        [print(k, v) for k, v in data.items()]
         return self.convert_to_preprocessor_data(data)
 
     def __call__(self) -> dict:
