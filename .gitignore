@@ -7,3 +7,6 @@
 
 # ignoring the "results" directory
 results
+
+# ignoring the preprocessed nuscenes dataset
+datasets/nuscenes_pred
