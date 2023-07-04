@@ -52,12 +52,16 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_root', required=True, help="path to the original nuScenes dataset")
     parser.add_argument('--data_out', default='datasets/nuscenes_pred/', help="path where you save the processed data")
+    parser.add_argument('--mini', default=False,
+                        help="whether you are using the mini version of the dataset (for debugging purposes only)")
     args = parser.parse_args()
 
     DATAROOT = args.data_root
     DATAOUT = args.data_out
+    MINI = args.mini
 
-    nuscenes = NuScenes('v1.0-trainval', dataroot=DATAROOT)
+    version_str = 'v1.0-trainval' if not MINI else 'v1.0-mini'
+    nuscenes = NuScenes(version=version_str, dataroot=DATAROOT)
     map_version = '0.1'
     splits = ['train', 'val', 'test']
 
@@ -76,6 +80,10 @@ if __name__ == "__main__":
         total_pred = 0
 
         for scene_name in split_scenes:
+            if not len(nuscenes.field2token('scene', 'name', scene_name)):
+                # print(f"skipping: {scene_name}")
+                continue
+
             scene_token = nuscenes.field2token('scene', 'name', scene_name)[0]
             scene = nuscenes.get('scene', scene_token)
             scene_data_orig = prediction_scenes.get(scene_name, [])
