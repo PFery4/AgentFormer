@@ -7,6 +7,7 @@ from torch import optim
 from torch.utils.tensorboard import SummaryWriter
 
 from data.dataloader import data_generator
+from data.sdd_dataloader import AgentFormerDataGeneratorForSDD
 from model.model_lib import model_dict
 from utils.torch import get_scheduler
 from utils.config import Config
@@ -39,6 +40,23 @@ def train(epoch):
     while not generator.is_epoch_end():
         data = generator()
         if data is not None:
+            # print()
+            # [print(f"{k}: {type(v)}") for k, v in data.items()]
+            # print(f"{len(data['pre_motion_3D'])=}")
+            # print(f"{data['pre_motion_3D'][0]=}")
+            # print(f"{data['fut_motion_3D'][0]=}")
+            # print(f"{data['pre_motion_mask'][0]=}")
+            # print(f"{data['fut_motion_mask'][0]=}")
+            # print(f"{data['heading']=}")
+            # print(f"{data['valid_id'][0]=}")
+            # print(f"{data['traj_scale']=}")
+            # print(f"{data['pred_mask']=}")
+            # print(f"{data['scene_map'].data.shape=}")
+            # print(f"{data['scene_map'].data=}")
+            # print(f"{data['seq']=}")
+            # print(f"{data['frame']=}")
+            # print()
+
             seq, frame = data['seq'], data['frame']
             model.set_data(data)
             model_data = model()
@@ -110,7 +128,12 @@ if __name__ == '__main__':
     tb_ind = 0
 
     """ data """
-    generator = data_generator(cfg, log, split='train', phase='training')
+    if cfg.dataset == "sdd":
+        generator = AgentFormerDataGeneratorForSDD(cfg, log, split="train", phase="training")
+    else:
+        generator = data_generator(cfg, log, split='train', phase='training')
+    # print(f"{type(generator)=}")
+
 
     """ model """
     model_id = cfg.get('model_id', 'agentformer')
