@@ -29,9 +29,9 @@ def generate_mask(tgt_sz, src_sz, agent_num, agent_mask):
     return mask
 
 
-""" Positional Encoding """
 class PositionalAgentEncoding(nn.Module):
 
+    """ Positional Encoding """
     def __init__(self, d_model, dropout=0.1, max_t_len=200, max_a_len=200, concat=False, use_agent_enc=False, agent_enc_learn=False):
         super(PositionalAgentEncoding, self).__init__()
         self.dropout = nn.Dropout(p=dropout)
@@ -67,7 +67,7 @@ class PositionalAgentEncoding(nn.Module):
         ae[:, 1::2] = torch.cos(position * div_term)
         ae = ae.unsqueeze(0).transpose(0, 1)
         return ae
-    
+
     def get_pos_enc(self, num_t, num_a, t_offset):
         pe = self.pe[t_offset: num_t + t_offset, :]
         pe = pe.repeat_interleave(num_a, dim=0)
@@ -99,8 +99,8 @@ class PositionalAgentEncoding(nn.Module):
         return self.dropout(x)
 
 
-""" Context (Past) Encoder """
 class ContextEncoder(nn.Module):
+    """ Context (Past) Encoder """
     def __init__(self, cfg, ctx, **kwargs):
         super().__init__()
         self.cfg = cfg
@@ -153,12 +153,12 @@ class ContextEncoder(nn.Module):
         tf_in = self.input_fc(traj_in.view(-1, traj_in.shape[-1])).view(-1, 1, self.model_dim)
         agent_enc_shuffle = data['agent_enc_shuffle'] if self.agent_enc_shuffle else None
         tf_in_pos = self.pos_encoder(tf_in, num_a=data['agent_num'], agent_enc_shuffle=agent_enc_shuffle)
-        
+
         src_agent_mask = data['agent_mask'].clone()
         src_mask = generate_mask(tf_in.shape[0], tf_in.shape[0], data['agent_num'], src_agent_mask).to(tf_in.device)
-        
+
         data['context_enc'] = self.tf_encoder(tf_in_pos, mask=src_mask, num_agent=data['agent_num'])
-        
+
         context_rs = data['context_enc'].view(-1, data['agent_num'], self.model_dim)
         # compute per agent context
         if self.pooling == 'mean':
@@ -167,8 +167,8 @@ class ContextEncoder(nn.Module):
             data['agent_context'] = torch.max(context_rs, dim=0)[0]
 
 
-""" Future Encoder """
 class FutureEncoder(nn.Module):
+    """ Future Encoder """
     def __init__(self, cfg, ctx, **kwargs):
         super().__init__()
         self.cfg = cfg
@@ -237,7 +237,7 @@ class FutureEncoder(nn.Module):
         tgt_agent_mask = data['agent_mask'].clone()
         mem_mask = generate_mask(tf_in.shape[0], data['context_enc'].shape[0], data['agent_num'], mem_agent_mask).to(tf_in.device)
         tgt_mask = generate_mask(tf_in.shape[0], tf_in.shape[0], data['agent_num'], tgt_agent_mask).to(tf_in.device)
-        
+
         tf_out, _ = self.tf_decoder(tf_in_pos, data['context_enc'], memory_mask=mem_mask, tgt_mask=tgt_mask, num_agent=data['agent_num'])
         tf_out = tf_out.view(traj_in.shape[0], -1, self.model_dim)
 
@@ -255,14 +255,14 @@ class FutureEncoder(nn.Module):
         data['q_z_samp'] = data['q_z_dist'].rsample()
 
 
-""" Future Decoder """
 class FutureDecoder(nn.Module):
+    """ Future Decoder """
     def __init__(self, cfg, ctx, **kwargs):
         super().__init__()
         self.cfg = cfg
         self.ar_detach = ctx['ar_detach']
         self.context_dim = context_dim = ctx['context_dim']
-        self.forecast_dim = forecast_dim = ctx['forecast_dim']
+        self.forecast_dim = forecast_dim = ctx['forecast_dim']      # FORECAST DIM DEFINES THE DIMENSION OF DECODED TRAJ OUTPUT
         self.pred_scale = cfg.get('pred_scale', 1.0)
         self.pred_type = ctx['pred_type']
         self.sn_out_type = ctx['sn_out_type']
@@ -397,7 +397,7 @@ class FutureDecoder(nn.Module):
         pre_motion = data['pre_motion'].repeat_interleave(sample_num, dim=1)             # 10 x 80 x 2
         pre_vel = data['pre_vel'].repeat_interleave(sample_num, dim=1) if self.pred_type == 'vel' else None
         pre_motion_scene_norm = data['pre_motion_scene_norm'].repeat_interleave(sample_num, dim=1)
-        
+
         # p(z)
         prior_key = 'p_z_dist' + ('_infer' if mode == 'infer' else '')
         if self.learn_prior:
@@ -427,9 +427,8 @@ class FutureDecoder(nn.Module):
             self.decode_traj_batch(data, mode, context, pre_motion, pre_vel, pre_motion_scene_norm, z, sample_num)
         
 
-
-""" AgentFormer """
 class AgentFormer(nn.Module):
+    """ AgentFormer """
     def __init__(self, cfg):
         super().__init__()
 
@@ -486,7 +485,7 @@ class AgentFormer(nn.Module):
 
         # save all computed variables
         self.data = None
-        
+
         # map encoder
         if self.use_map:
             self.map_encoder = MapEncoder(cfg.map_encoder)
@@ -496,16 +495,16 @@ class AgentFormer(nn.Module):
         self.context_encoder = ContextEncoder(cfg.context_encoder, self.ctx)
         self.future_encoder = FutureEncoder(cfg.future_encoder, self.ctx)
         self.future_decoder = FutureDecoder(cfg.future_decoder, self.ctx)
-        
+
     def set_device(self, device):
         self.device = device
         self.to(device)
 
-    def set_data(self, data):
+    def set_data(self, data: dict) -> None:
         device = self.device
         if self.training and len(data['pre_motion_3D']) > self.max_train_agent:
             in_data = {}
-            ind = np.random.choice(len(data['pre_motion_3D']), self.max_train_agent).tolist()
+            ind = np.random.choice(len(data['pre_motion_3D']), self.max_train_agent, replace=False).tolist()
             for key in ['pre_motion_3D', 'fut_motion_3D', 'fut_motion_mask', 'pre_motion_mask', 'heading']:
                 in_data[key] = [data[key][i] for i in ind if data[key] is not None]
         else:
