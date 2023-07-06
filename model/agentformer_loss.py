@@ -12,6 +12,11 @@ def compute_motion_mse(data, cfg):
     return loss, loss_unweighted
 
 
+def compute_neg_log_likelihood(data, cfg):
+    # todo
+    raise NotImplementedError
+
+
 def compute_z_kld(data, cfg):
     loss_unweighted = data['q_z_dist'].kl(data['p_z_dist']).sum()
     if cfg.get('normalize', True):
@@ -39,5 +44,6 @@ def compute_sample_loss(data, cfg):
 loss_func = {
     'mse': compute_motion_mse,
     'kld': compute_z_kld,
-    'sample': compute_sample_loss
+    'sample': compute_sample_loss,
+    'nll': compute_neg_log_likelihood
 }
