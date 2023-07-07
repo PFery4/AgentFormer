@@ -4,7 +4,7 @@ from typing import List
 from utils.utils import initialize_weights
 
 
-class Gaussian_Density_Model(nn.Module):
+class GaussianDensityModel(nn.Module):
     """
     implementation of a single Gaussian Density model. The model is inherently bivariate
     (produces mixtures of Gaussian distributions over 2D space).
@@ -72,7 +72,7 @@ if __name__ == '__main__':
 
     distrib = MultivariateNormal(loc=gt_mu, covariance_matrix=gt_Sig)
 
-    gauss = Gaussian_Density_Model(
+    gauss = GaussianDensityModel(
         input_dim=model_input_dim, hidden_dims=model_hidden_dims, activation=model_activation
     )
     optimizer = torch.optim.Adam(gauss.parameters())
