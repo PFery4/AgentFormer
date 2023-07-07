@@ -5,15 +5,18 @@ def compute_motion_mse(data, cfg):
     if cfg.get('mask', True):
         mask = data['fut_mask']
         diff *= mask.unsqueeze(2)
-    loss_unweighted = diff.pow(2).sum() 
+    loss_unweighted = diff.pow(2).sum()
     if cfg.get('normalize', True):
         loss_unweighted /= diff.shape[0]
     loss = loss_unweighted * cfg['weight']
     return loss, loss_unweighted
 
 
-def compute_neg_log_likelihood(data, cfg):
-    # todo
+def compute_gauss_nll(data, cfg):
+
+    if cfg.get('mask', True):
+        mask = data['fut_mask']
+
     raise NotImplementedError
 
 
@@ -45,5 +48,5 @@ loss_func = {
     'mse': compute_motion_mse,
     'kld': compute_z_kld,
     'sample': compute_sample_loss,
-    'nll': compute_neg_log_likelihood
+    'nll': compute_gauss_nll
 }
