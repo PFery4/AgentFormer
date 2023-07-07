@@ -38,8 +38,8 @@ class Gaussian_Density_Model(nn.Module):
         # once we have reached the last hidden layer, we connect it to each of the individual layers
         # responsible for modelling different parameters
         mu = self.layer_mu(x)
-        sig = torch.exp(self.layer_sig(x))
-        rho = torch.tanh(self.layer_rho(x))
+        sig = torch.exp(self.layer_sig(x))      # strictly positive
+        rho = torch.tanh(self.layer_rho(x))     # within (-1, 1)
         return mu, sig, rho
 
 
