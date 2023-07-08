@@ -26,11 +26,6 @@ class GaussianDensityModel(nn.Module):
         self.layer_sig = nn.Linear(layer_dims[-1], 2)
         self.layer_rho = nn.Linear(layer_dims[-1], 1)
 
-        initialize_weights(self.affine_layers.modules())
-        initialize_weights(self.layer_mu.modules())
-        initialize_weights(self.layer_sig.modules())
-        initialize_weights(self.layer_rho.modules())
-
     def forward(self, x):
         for affine in self.affine_layers:
             x = self.activation(affine(x))
@@ -40,6 +35,15 @@ class GaussianDensityModel(nn.Module):
         mu = self.layer_mu(x)
         sig = torch.exp(self.layer_sig(x))      # strictly positive
         rho = torch.tanh(self.layer_rho(x))     # within (-1, 1)
+
+        out = torch.cat([mu, sig, rho], dim=-1)
+        return out
+
+    def separate_prediction_parameters(self, pred):
+        # pred is an output of self.forward
+        mu = pred[..., 0:2]
+        sig = pred[..., 2:4]
+        rho = pred[..., 4].unsqueeze(-1)
         return mu, sig, rho
 
 
@@ -50,9 +54,9 @@ if __name__ == '__main__':
     from model.agentformer_loss import gaussian_twodee_nll, gaussian_twodee_nll_2
 
     dist_params = {
-        "mu": [0., 0.],
-        "sig": [1., 1.],
-        "rho": 0.0
+        "mu": [4., -5.],
+        "sig": [0.7, 2.2],
+        "rho": -0.3
     }
     tensor_shape = [30, 12]  # epochs, batches, datablobs...
     model_input_dim = 256
@@ -61,11 +65,11 @@ if __name__ == '__main__':
     n_training_steps = 1000
     nll_loss = gaussian_twodee_nll_2  # [gaussian_twodee_nll, gaussian_twodee_nll_2]
 
-    gt_mu = torch.tensor(dist_params["mu"], dtype=torch.float64)
+    gt_mu = torch.tensor(dist_params["mu"], dtype=torch.float32)
     gt_Sig = torch.tensor(
         [[dist_params["sig"][0] ** 2, dist_params["rho"] * dist_params["sig"][0] * dist_params["sig"][1]],
          [dist_params["rho"] * dist_params["sig"][0] * dist_params["sig"][1], dist_params["sig"][1] ** 2]],
-        dtype=torch.float64)
+        dtype=torch.float32)
 
     print(f"{gt_mu=}")
     print(f"{gt_Sig=}")
@@ -75,6 +79,7 @@ if __name__ == '__main__':
     gauss = GaussianDensityModel(
         input_dim=model_input_dim, hidden_dims=model_hidden_dims, activation=model_activation
     )
+    initialize_weights(gauss.modules())
     optimizer = torch.optim.Adam(gauss.parameters())
 
     for i in tqdm(range(n_training_steps)):
@@ -84,7 +89,8 @@ if __name__ == '__main__':
         y = distrib.sample(sample_shape=tensor_shape)
         x = torch.randn([*tensor_shape, model_input_dim])
 
-        mu, sig, rho = gauss(x)
+        pred = gauss(x)
+        mu, sig, rho = gauss.separate_prediction_parameters(pred)
         loss = nll_loss(mu, sig, rho, y)
 
         loss.backward()
@@ -99,7 +105,8 @@ if __name__ == '__main__':
 
     print("Mean of Generated distributions:")
     x = torch.randn([*tensor_shape, 256])
-    mu, sig, rho = gauss(x)
+    pred = gauss(x)
+    mu, sig, rho = gauss.separate_prediction_parameters(pred)
     print(f"{torch.mean(mu[..., 0])=}")
     print(f"{torch.mean(mu[..., 1])=}")
     print(f"{torch.mean(sig[..., 0])=}")
