@@ -14,7 +14,7 @@ def compute_motion_mse(data, cfg):
     return loss, loss_unweighted
 
 
-def gaussian_twodee_nll(mu, sig, rho, targets, reduction: str = "sum", eps: float = 1e-20):
+def gaussian_twodee_nll(mu, sig, rho, targets, reduction: str = "mean", eps: float = 1e-20):
     """
     referring to : https://github.com/quancore/social-lstm/blob/bdddf36e312c9dde7a5f1d447000e59918346520/helper.py#L250
     mu.shape -> (*, 2)
@@ -42,7 +42,7 @@ def gaussian_twodee_nll(mu, sig, rho, targets, reduction: str = "sum", eps: floa
     return getattr(torch, reduction)(result)
 
 
-def gaussian_twodee_nll_2(mu, sig, rho, targets, reduction: str = "sum", eps: float = 1e-20):
+def gaussian_twodee_nll_2(mu, sig, rho, targets, reduction: str = "mean", eps: float = 1e-20):
     """
     referring to : https://stats.stackexchange.com/questions/521091/optimizing-gaussian-negative-log-likelihood
     mu.shape -> (*, 2)
@@ -68,6 +68,23 @@ def gaussian_twodee_nll_2(mu, sig, rho, targets, reduction: str = "sum", eps: fl
 
     return 0.5 * getattr(torch, reduction)(result)
 
+
+def multivariate_gaussian_nll(mu, Sig, targets, reduction: str = "mean", eps: float = 1e-20):
+    """
+    mu.shape -> (*, N)
+    Sig.shape -> (*, N, N)
+    targets.shape -> (*, N)
+    reduction -> ["mean", "sum"]
+    """
+    norm = (targets - mu).unsqueeze(-1)     # (*, N, 1)
+
+    t1 = norm.transpose(-2, -1) @ torch.linalg.inv(torch.clamp(Sig, min=eps)) @ norm
+    t2 = torch.log(torch.linalg.det(torch.clamp(Sig, min=eps)))
+    # t3 = torch.log(torch.ones(mu.shape[-1]) * (2 * pi)**2)
+
+    result = t1 + t2    # + t3
+
+    return 0.5 * getattr(torch, reduction)(result)
 
 def compute_gauss_nll(data, cfg):
 
