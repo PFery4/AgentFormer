@@ -10,10 +10,11 @@ class GaussianDensityModel(nn.Module):
     (produces mixtures of Gaussian distributions over 2D space).
     """
 
-    def __init__(self, input_dim: int, hidden_dims: List[int], activation: str = "relu"):
+    def __init__(self, input_dim: int, hidden_dims: List[int], forecast_dim: int = 2, activation: str = "relu"):
         super().__init__()
         assert activation in ("tanh", "sigmoid", "relu"), ValueError(f"activation type unknown: {activation}")
 
+        self.forecast_dim = forecast_dim
         self.activation = getattr(torch, activation)  # default: torch.relu
 
         layer_dims = [input_dim, *hidden_dims]
@@ -22,9 +23,28 @@ class GaussianDensityModel(nn.Module):
         for in_dim, out_dim in zip(layer_dims[:-1], layer_dims[1:]):
             self.affine_layers.append(nn.Linear(in_dim, out_dim))
 
-        self.layer_mu = nn.Linear(layer_dims[-1], 2)
-        self.layer_sig = nn.Linear(layer_dims[-1], 2)
-        self.layer_rho = nn.Linear(layer_dims[-1], 1)
+        self.layer_mu = nn.Linear(layer_dims[-1], self.forecast_dim)
+        self.layer_sig = nn.Linear(layer_dims[-1], self.forecast_dim)
+        self.layer_rho = nn.Linear(layer_dims[-1], (self.forecast_dim - 1) * self.forecast_dim // 2)
+
+    def corr_matrix(self, rho):
+        i, j = torch.triu_indices(self.forecast_dim, self.forecast_dim, offset=1)
+
+        matrix = torch.ones([*rho.shape[:-1], self.forecast_dim, self.forecast_dim])
+        matrix[..., i, j] = rho
+        matrix.transpose(-2, -1)[..., i, j] = rho
+        return matrix
+
+    @staticmethod
+    def sig_matrix(sig):
+        return torch.diag_embed(sig)
+
+    def covariance_matrix(self, sig, rho):
+        print(f"{sig.shape=}")
+        print(f"{rho.shape=}")
+        print(f"{self.sig_matrix(sig).shape=}")
+        print(f"{self.corr_matrix(rho).shape=}")
+        return self.sig_matrix(sig) @ self.corr_matrix(rho) @ self.sig_matrix(sig)
 
     def forward(self, x):
         for affine in self.affine_layers:
@@ -41,9 +61,9 @@ class GaussianDensityModel(nn.Module):
 
     def separate_prediction_parameters(self, pred):
         # pred is an output of self.forward
-        mu = pred[..., 0:2]
-        sig = pred[..., 2:4]
-        rho = pred[..., 4].unsqueeze(-1)
+        mu = pred[..., 0:self.forecast_dim]
+        sig = pred[..., self.forecast_dim:2*self.forecast_dim]
+        rho = pred[..., 2*self.forecast_dim:]
         return mu, sig, rho
 
 
@@ -51,36 +71,33 @@ if __name__ == '__main__':
 
     from torch.distributions import MultivariateNormal
     from tqdm import tqdm
-    from model.agentformer_loss import gaussian_twodee_nll, gaussian_twodee_nll_2
+    from model.agentformer_loss import gaussian_twodee_nll, gaussian_twodee_nll_2, multivariate_gaussian_nll
 
+    forecast_dim = 2
     dist_params = {
-        "mu": [4., -5.],
-        "sig": [0.7, 2.2],
-        "rho": -0.3
+        "mu": torch.randn(forecast_dim),
+        "sig": torch.exp(torch.randn(forecast_dim)),
+        "rho": torch.tanh(torch.randn((forecast_dim - 1) * forecast_dim // 2))
     }
     tensor_shape = [30, 12]  # epochs, batches, datablobs...
     model_input_dim = 256
     model_hidden_dims = [128, 64]
     model_activation = "relu"
     n_training_steps = 1000
-    nll_loss = gaussian_twodee_nll_2  # [gaussian_twodee_nll, gaussian_twodee_nll_2]
 
-    gt_mu = torch.tensor(dist_params["mu"], dtype=torch.float32)
-    gt_Sig = torch.tensor(
-        [[dist_params["sig"][0] ** 2, dist_params["rho"] * dist_params["sig"][0] * dist_params["sig"][1]],
-         [dist_params["rho"] * dist_params["sig"][0] * dist_params["sig"][1], dist_params["sig"][1] ** 2]],
-        dtype=torch.float32)
 
+    gauss = GaussianDensityModel(
+        input_dim=model_input_dim, hidden_dims=model_hidden_dims, forecast_dim=forecast_dim, activation=model_activation
+    )
+    initialize_weights(gauss.modules())
+    optimizer = torch.optim.Adam(gauss.parameters())
+
+    gt_mu = dist_params["mu"]
+    gt_Sig = gauss.covariance_matrix(sig=dist_params["sig"], rho=dist_params["rho"])
     print(f"{gt_mu=}")
     print(f"{gt_Sig=}")
 
     distrib = MultivariateNormal(loc=gt_mu, covariance_matrix=gt_Sig)
-
-    gauss = GaussianDensityModel(
-        input_dim=model_input_dim, hidden_dims=model_hidden_dims, activation=model_activation
-    )
-    initialize_weights(gauss.modules())
-    optimizer = torch.optim.Adam(gauss.parameters())
 
     for i in tqdm(range(n_training_steps)):
         gauss.zero_grad()
@@ -91,7 +108,11 @@ if __name__ == '__main__':
 
         pred = gauss(x)
         mu, sig, rho = gauss.separate_prediction_parameters(pred)
-        loss = nll_loss(mu, sig, rho, y)
+        cov = gauss.covariance_matrix(sig, rho)
+
+        # loss = gaussian_twodee_nll(mu=mu, sig=sig, rho=rho, targets=y)
+        # loss = gaussian_twodee_nll_2(mu=mu, sig=sig, rho=rho, targets=y)
+        loss = multivariate_gaussian_nll(mu=mu, Sig=cov, targets=y)
 
         loss.backward()
 
