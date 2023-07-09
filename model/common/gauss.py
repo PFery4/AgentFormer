@@ -40,10 +40,6 @@ class GaussianDensityModel(nn.Module):
         return torch.diag_embed(sig)
 
     def covariance_matrix(self, sig, rho):
-        print(f"{sig.shape=}")
-        print(f"{rho.shape=}")
-        print(f"{self.sig_matrix(sig).shape=}")
-        print(f"{self.corr_matrix(rho).shape=}")
         return self.sig_matrix(sig) @ self.corr_matrix(rho) @ self.sig_matrix(sig)
 
     def forward(self, x):
