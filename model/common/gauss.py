@@ -1,5 +1,6 @@
 import torch.nn as nn
 import torch
+import numpy as np
 from typing import List
 from utils.utils import initialize_weights
 
@@ -14,7 +15,9 @@ class GaussianDensityModel(nn.Module):
         super().__init__()
         assert activation in ("tanh", "sigmoid", "relu"), ValueError(f"activation type unknown: {activation}")
 
-        self.forecast_dim = forecast_dim
+        self.forecast_dim = forecast_dim                                        # dimensionality of the gaussian
+        self.corr_dim = (self.forecast_dim - 1) * self.forecast_dim // 2        # amount of correlation parameters
+        self.N_params = (self.forecast_dim + 3) * self.forecast_dim // 2        # total amount of parameters to be estimated (mu, sig, and rho)
         self.activation = getattr(torch, activation)  # default: torch.relu
 
         layer_dims = [input_dim, *hidden_dims]
@@ -25,12 +28,14 @@ class GaussianDensityModel(nn.Module):
 
         self.layer_mu = nn.Linear(layer_dims[-1], self.forecast_dim)
         self.layer_sig = nn.Linear(layer_dims[-1], self.forecast_dim)
-        self.layer_rho = nn.Linear(layer_dims[-1], (self.forecast_dim - 1) * self.forecast_dim // 2)
+        self.layer_rho = nn.Linear(layer_dims[-1], self.corr_dim)
 
-    def corr_matrix(self, rho):
-        i, j = torch.triu_indices(self.forecast_dim, self.forecast_dim, offset=1)
+    @staticmethod
+    def corr_matrix(rho):
+        N = (1 + int(np.sqrt(1 + 8 * rho.shape[-1]))) // 2
+        i, j = torch.triu_indices(N, N, offset=1)
 
-        matrix = torch.ones([*rho.shape[:-1], self.forecast_dim, self.forecast_dim])
+        matrix = torch.ones([*rho.shape[:-1], N, N]).to(rho.device)
         matrix[..., i, j] = rho
         matrix.transpose(-2, -1)[..., i, j] = rho
         return matrix
