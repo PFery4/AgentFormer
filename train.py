@@ -59,8 +59,23 @@ def train(epoch):
 
             seq, frame = data['seq'], data['frame']
             model.set_data(data)
+
+            # print("#" * 120)
+            # print("BEFORE:")
+            # print(f"{model.data['batch_size']=}")
+            # print(f"{model.data['agent_num']=}")
+            # [print(f"{k}: {type(v)}" + (f": {v.shape}" if isinstance(v, torch.Tensor) else "")) for k, v in model.data.items()]
+            # print()
+
             model_data = model()
             total_loss, loss_dict, loss_unweighted_dict = model.compute_loss()
+
+            # print("AFTER:")
+            # print(f"{model.data['batch_size']=}")
+            # print(f"{model.data['agent_num']=}")
+            # [print(f"{k}: {type(v)}" + (f": {v.shape}" if isinstance(v, torch.Tensor) else "")) for k, v in model.data.items()]
+            # print()
+
             """ optimize """
             optimizer.zero_grad()
             total_loss.backward()
