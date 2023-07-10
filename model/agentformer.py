@@ -263,7 +263,7 @@ class FutureDecoder(nn.Module):
         self.cfg = cfg
         self.ar_detach = ctx['ar_detach']
         self.context_dim = context_dim = ctx['context_dim']
-        self.forecast_dim = forecast_dim = ctx['forecast_dim']      # FORECAST DIM DEFINES THE DIMENSION OF DECODED TRAJ OUTPUT
+        self.forecast_dim = forecast_dim = ctx['forecast_dim']
         self.pred_scale = cfg.get('pred_scale', 1.0)
         self.pred_type = ctx['pred_type']
         self.pred_mode = cfg.get('mode', 'point')
@@ -309,13 +309,6 @@ class FutureDecoder(nn.Module):
         )
         initialize_weights(self.out_module.modules())
 
-        # if self.out_mlp_dim is None:
-        #     self.out_fc = nn.Linear(self.model_dim, forecast_dim)
-        # else:
-        #     in_dim = self.model_dim
-        #     self.out_mlp = MLP(in_dim, self.out_mlp_dim, 'relu')
-        #     self.out_fc = nn.Linear(self.out_mlp.out_dim, forecast_dim)
-        # initialize_weights(self.out_fc.modules())
         if self.learn_prior:
             num_dist_params = 2 * self.nz if self.z_type == 'gaussian' else self.nz     # either gaussian or discrete
             self.p_z_net = nn.Linear(self.model_dim, num_dist_params)
@@ -342,8 +335,6 @@ class FutureDecoder(nn.Module):
         for key in self.input_type:
             if key == 'heading':
                 heading = data['heading_vec'].unsqueeze(1).repeat((1, sample_num, 1))
-                # print(f"{heading.shape=}")
-                # print(f"{heading=}")
                 in_arr.append(heading)
             elif key == 'map':
                 map_enc = data['map_enc'].unsqueeze(1).repeat((1, sample_num, 1))
@@ -356,8 +347,6 @@ class FutureDecoder(nn.Module):
         tgt_agent_mask = data['agent_mask'].clone()
 
         for i in range(self.future_frames):
-            # print(f"{dec_in_z.shape=}")
-            # print(f"{dec_in_z.view(-1, dec_in_z.shape[-1]).shape=}")
             tf_in = self.input_fc(dec_in_z.view(-1, dec_in_z.shape[-1])).view(dec_in_z.shape[0], -1, self.model_dim)
             agent_enc_shuffle = data['agent_enc_shuffle'] if self.agent_enc_shuffle else None
             tf_in_pos = self.pos_encoder(tf_in, num_a=agent_num, agent_enc_shuffle=agent_enc_shuffle, t_offset=self.past_frames-1 if self.pos_offset else 0)
@@ -369,14 +358,8 @@ class FutureDecoder(nn.Module):
 
             out_tmp = tf_out.view(-1, tf_out.shape[-1])
 
-            # if self.out_mlp_dim is not None:
-            #     out_tmp = self.out_mlp(out_tmp)
-            # seq_out = self.out_fc(out_tmp).view(tf_out.shape[0], -1, self.forecast_dim)
-
             seq_out = self.out_module(out_tmp)
             seq_out = seq_out.view(tf_out.shape[0], -1, seq_out.shape[-1])
-
-            # print(f"{seq_out.shape=}")
 
             if self.pred_type == 'scene_norm' and self.sn_out_type in {'vel', 'norm'}:
                 norm_motion = seq_out.view(-1, agent_num * sample_num, seq_out.shape[-1])
@@ -389,12 +372,6 @@ class FutureDecoder(nn.Module):
                     norm_motion = rotation_2d_torch(norm_motion, angles)[0]
                     if self.pred_mode == "gauss":
                         raise NotImplementedError
-                # print(f"{pre_motion_scene_norm.shape=}")
-                # print(f"{pre_motion_scene_norm[[-1]].shape=}")
-                # print(f"{norm_motion.shape=}")
-                # print(f"{dec_in.shape=}")
-                # print(f"{dec_in.view(-1, agent_num * sample_num, dec_in.shape[-1]).shape=}")
-                # seq_out = norm_motion + pre_motion_scene_norm[[-1]]
                 seq_out = norm_motion + dec_in.view(-1, agent_num * sample_num, dec_in.shape[-1])
                 seq_out = seq_out.view(tf_out.shape[0], -1, seq_out.shape[-1])
             if self.ar_detach:
@@ -422,9 +399,6 @@ class FutureDecoder(nn.Module):
         elif self.pred_type == 'pos':
             dec_motion = seq_out.clone()
         elif self.pred_type == 'scene_norm':
-            # print(f"{seq_out.shape=}")
-            # print(f"{data['scene_orig'].shape=}")
-            # dec_motion = seq_out + data['scene_orig']
             dec_motion = seq_out
             dec_motion[..., :self.forecast_dim] += data['scene_orig']
         else:
