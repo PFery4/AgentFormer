@@ -86,12 +86,16 @@ def multivariate_gaussian_nll(mu, Sig, targets, reduction: str = "mean", eps: fl
 
     return 0.5 * getattr(torch, reduction)(result)
 
+
 def compute_gauss_nll(data, cfg):
-
-    if cfg.get('mask', True):
-        mask = data['fut_mask']
-
-    raise NotImplementedError
+    loss_unweighted = multivariate_gaussian_nll(mu=data['train_dec_mu'],
+                                                Sig=data['train_dec_Sig'],
+                                                targets=data['fut_motion_orig'])
+    # # todo: how to apply mask?
+    # if cfg.get('mask', True):
+    #     mask = data['fut_mask']
+    loss = loss_unweighted * cfg['weight']
+    return loss, loss_unweighted
 
 
 def compute_z_kld(data, cfg):
@@ -104,7 +108,8 @@ def compute_z_kld(data, cfg):
 
 
 def compute_sample_loss(data, cfg):
-    diff = data['infer_dec_motion'] - data['fut_motion_orig'].unsqueeze(1)
+    # todo: Maybe this sampler loss needs also to be done wrt gaussian nll, instead of MSE
+    diff = data['infer_dec_motion'][..., :data['fut_motion_orig'].shape[-1]] - data['fut_motion_orig'].unsqueeze(1)
     if cfg.get('mask', True):
         mask = data['fut_mask'].unsqueeze(1).unsqueeze(-1)
         diff *= mask
