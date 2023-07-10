@@ -174,7 +174,7 @@ class FutureEncoder(nn.Module):
         super().__init__()
         self.cfg = cfg
         self.context_dim = context_dim = ctx['context_dim']
-        self.forecast_dim = forecast_dim = ctx['forecast_dim']          # todo: needs to be modified to "motion dim"
+        self.forecast_dim = forecast_dim = ctx['forecast_dim']
         self.nz = ctx['nz']
         self.z_type = ctx['z_type']
         self.z_tau_annealer = ctx.get('z_tau_annealer', None)
@@ -395,7 +395,7 @@ class FutureDecoder(nn.Module):
                 # print(f"{dec_in.shape=}")
                 # print(f"{dec_in.view(-1, agent_num * sample_num, dec_in.shape[-1]).shape=}")
                 # seq_out = norm_motion + pre_motion_scene_norm[[-1]]
-                seq_out = norm_motion + dec_in.view(-1, agent_num * sample_num, dec_in.shape[-1])      # todo: check if this is correct
+                seq_out = norm_motion + dec_in.view(-1, agent_num * sample_num, dec_in.shape[-1])
                 seq_out = seq_out.view(tf_out.shape[0], -1, seq_out.shape[-1])
             if self.ar_detach:
                 out_in = seq_out[-agent_num:].clone().detach()
