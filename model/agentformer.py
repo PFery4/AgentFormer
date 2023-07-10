@@ -3,6 +3,7 @@ import numpy as np
 from torch import nn
 from torch.nn import functional as F
 from collections import defaultdict
+import model.decoder_out_submodels as decoder_out_submodels
 from model.common.mlp import MLP
 from model.agentformer_loss import loss_func
 from model.common.dist import Normal, Categorical
@@ -173,7 +174,7 @@ class FutureEncoder(nn.Module):
         super().__init__()
         self.cfg = cfg
         self.context_dim = context_dim = ctx['context_dim']
-        self.forecast_dim = forecast_dim = ctx['forecast_dim']
+        self.forecast_dim = forecast_dim = ctx['forecast_dim']          # todo: needs to be modified to "motion dim"
         self.nz = ctx['nz']
         self.z_type = ctx['z_type']
         self.z_tau_annealer = ctx.get('z_tau_annealer', None)
@@ -265,6 +266,7 @@ class FutureDecoder(nn.Module):
         self.forecast_dim = forecast_dim = ctx['forecast_dim']      # FORECAST DIM DEFINES THE DIMENSION OF DECODED TRAJ OUTPUT
         self.pred_scale = cfg.get('pred_scale', 1.0)
         self.pred_type = ctx['pred_type']
+        self.pred_mode = cfg.get('mode', 'point')
         self.sn_out_type = ctx['sn_out_type']
         self.sn_out_heading = ctx['sn_out_heading']
         self.input_type = ctx['dec_input_type']
@@ -281,23 +283,39 @@ class FutureDecoder(nn.Module):
         self.pos_offset = cfg.get('pos_offset', False)
         self.agent_enc_shuffle = ctx['agent_enc_shuffle']
         self.learn_prior = ctx['learn_prior']
+
+        # sanity check
+        assert self.pred_mode in ["point", "gauss"]
+
         # networks
         in_dim = forecast_dim + len(self.input_type) * forecast_dim + self.nz
         if 'map' in self.input_type:
             in_dim += ctx['map_enc_dim'] - forecast_dim
+        if self.pred_mode == "gauss":            # TODO: Maybe this can be integrated in a better way
+            in_dim += 3     # adding three extra input dimensions: for the variance terms and correlation term of the distribution
         self.input_fc = nn.Linear(in_dim, self.model_dim)
 
         decoder_layers = AgentFormerDecoderLayer(ctx['tf_cfg'], self.model_dim, self.nhead, self.ff_dim, self.dropout)
         self.tf_decoder = AgentFormerDecoder(decoder_layers, self.nlayer)
 
-        self.pos_encoder = PositionalAgentEncoding(self.model_dim, self.dropout, concat=ctx['pos_concat'], max_a_len=ctx['max_agent_len'], use_agent_enc=ctx['use_agent_enc'], agent_enc_learn=ctx['agent_enc_learn'])
-        if self.out_mlp_dim is None:
-            self.out_fc = nn.Linear(self.model_dim, forecast_dim)
-        else:
-            in_dim = self.model_dim
-            self.out_mlp = MLP(in_dim, self.out_mlp_dim, 'relu')
-            self.out_fc = nn.Linear(self.out_mlp.out_dim, forecast_dim)
-        initialize_weights(self.out_fc.modules())
+        self.pos_encoder = PositionalAgentEncoding(
+            self.model_dim, self.dropout, concat=ctx['pos_concat'], max_a_len=ctx['max_agent_len'],
+            use_agent_enc=ctx['use_agent_enc'], agent_enc_learn=ctx['agent_enc_learn']
+        )
+
+        out_module_kwargs = {"hidden_dims": self.out_mlp_dim}
+        self.out_module = getattr(decoder_out_submodels, f"{self.pred_mode}_out_module")(
+            model_dim=self.model_dim, forecast_dim=self.forecast_dim, **out_module_kwargs
+        )
+        initialize_weights(self.out_module.modules())
+
+        # if self.out_mlp_dim is None:
+        #     self.out_fc = nn.Linear(self.model_dim, forecast_dim)
+        # else:
+        #     in_dim = self.model_dim
+        #     self.out_mlp = MLP(in_dim, self.out_mlp_dim, 'relu')
+        #     self.out_fc = nn.Linear(self.out_mlp.out_dim, forecast_dim)
+        # initialize_weights(self.out_fc.modules())
         if self.learn_prior:
             num_dist_params = 2 * self.nz if self.z_type == 'gaussian' else self.nz     # either gaussian or discrete
             self.p_z_net = nn.Linear(self.model_dim, num_dist_params)
@@ -314,11 +332,18 @@ class FutureDecoder(nn.Module):
         else:
             dec_in = torch.zeros_like(pre_motion[[-1]])
         dec_in = dec_in.view(-1, sample_num, dec_in.shape[-1])
+        if self.pred_mode == "gauss":
+            dist_params = torch.zeros([*dec_in.shape[:-1], self.out_module[0].N_params]).to(dec_in.device)
+            dist_params[..., :self.forecast_dim] = dec_in
+            dec_in = dist_params
+
         z_in = z.view(-1, sample_num, z.shape[-1])
         in_arr = [dec_in, z_in]
         for key in self.input_type:
             if key == 'heading':
                 heading = data['heading_vec'].unsqueeze(1).repeat((1, sample_num, 1))
+                # print(f"{heading.shape=}")
+                # print(f"{heading=}")
                 in_arr.append(heading)
             elif key == 'map':
                 map_enc = data['map_enc'].unsqueeze(1).repeat((1, sample_num, 1))
@@ -331,6 +356,8 @@ class FutureDecoder(nn.Module):
         tgt_agent_mask = data['agent_mask'].clone()
 
         for i in range(self.future_frames):
+            # print(f"{dec_in_z.shape=}")
+            # print(f"{dec_in_z.view(-1, dec_in_z.shape[-1]).shape=}")
             tf_in = self.input_fc(dec_in_z.view(-1, dec_in_z.shape[-1])).view(dec_in_z.shape[0], -1, self.model_dim)
             agent_enc_shuffle = data['agent_enc_shuffle'] if self.agent_enc_shuffle else None
             tf_in_pos = self.pos_encoder(tf_in, num_a=agent_num, agent_enc_shuffle=agent_enc_shuffle, t_offset=self.past_frames-1 if self.pos_offset else 0)
@@ -341,17 +368,34 @@ class FutureDecoder(nn.Module):
             tf_out, attn_weights = self.tf_decoder(tf_in_pos, context, memory_mask=mem_mask, tgt_mask=tgt_mask, num_agent=data['agent_num'], need_weights=need_weights)
 
             out_tmp = tf_out.view(-1, tf_out.shape[-1])
-            if self.out_mlp_dim is not None:
-                out_tmp = self.out_mlp(out_tmp)
-            seq_out = self.out_fc(out_tmp).view(tf_out.shape[0], -1, self.forecast_dim)
+
+            # if self.out_mlp_dim is not None:
+            #     out_tmp = self.out_mlp(out_tmp)
+            # seq_out = self.out_fc(out_tmp).view(tf_out.shape[0], -1, self.forecast_dim)
+
+            seq_out = self.out_module(out_tmp)
+            seq_out = seq_out.view(tf_out.shape[0], -1, seq_out.shape[-1])
+
+            # print(f"{seq_out.shape=}")
+
             if self.pred_type == 'scene_norm' and self.sn_out_type in {'vel', 'norm'}:
                 norm_motion = seq_out.view(-1, agent_num * sample_num, seq_out.shape[-1])
                 if self.sn_out_type == 'vel':
                     norm_motion = torch.cumsum(norm_motion, dim=0)
+                    if self.pred_mode == "gauss":
+                        raise NotImplementedError
                 if self.sn_out_heading:
                     angles = data['heading'].repeat_interleave(sample_num)
                     norm_motion = rotation_2d_torch(norm_motion, angles)[0]
-                seq_out = norm_motion + pre_motion_scene_norm[[-1]]
+                    if self.pred_mode == "gauss":
+                        raise NotImplementedError
+                # print(f"{pre_motion_scene_norm.shape=}")
+                # print(f"{pre_motion_scene_norm[[-1]].shape=}")
+                # print(f"{norm_motion.shape=}")
+                # print(f"{dec_in.shape=}")
+                # print(f"{dec_in.view(-1, agent_num * sample_num, dec_in.shape[-1]).shape=}")
+                # seq_out = norm_motion + pre_motion_scene_norm[[-1]]
+                seq_out = norm_motion + dec_in.view(-1, agent_num * sample_num, dec_in.shape[-1])      # todo: check if this is correct
                 seq_out = seq_out.view(tf_out.shape[0], -1, seq_out.shape[-1])
             if self.ar_detach:
                 out_in = seq_out[-agent_num:].clone().detach()
@@ -378,7 +422,11 @@ class FutureDecoder(nn.Module):
         elif self.pred_type == 'pos':
             dec_motion = seq_out.clone()
         elif self.pred_type == 'scene_norm':
-            dec_motion = seq_out + data['scene_orig']
+            # print(f"{seq_out.shape=}")
+            # print(f"{data['scene_orig'].shape=}")
+            # dec_motion = seq_out + data['scene_orig']
+            dec_motion = seq_out
+            dec_motion[..., :self.forecast_dim] += data['scene_orig']
         else:
             dec_motion = seq_out + pre_motion[[-1]]
 
@@ -386,6 +434,11 @@ class FutureDecoder(nn.Module):
         if mode == 'infer':
             dec_motion = dec_motion.view(-1, sample_num, *dec_motion.shape[1:])        # M x Samples x frames x 3
         data[f'{mode}_dec_motion'] = dec_motion
+        if self.pred_mode == "gauss":
+            data[f'{mode}_dec_mu'] = dec_motion[..., 0:self.forecast_dim]
+            data[f'{mode}_dec_sig'] = dec_motion[..., self.forecast_dim:2*self.forecast_dim]
+            data[f'{mode}_dec_rho'] = dec_motion[..., 2*self.forecast_dim:]
+            data[f'{mode}_dec_Sig'] = self.out_module[0].covariance_matrix(sig=data[f'{mode}_dec_sig'], rho=data[f'{mode}_dec_rho'])
         if need_weights:
             data['attn_weights'] = attn_weights
 
