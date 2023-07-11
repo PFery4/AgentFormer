@@ -150,7 +150,10 @@ class ContextEncoder(nn.Module):
 
         encoder_layers = AgentFormerEncoderLayer(ctx['tf_cfg'], self.model_dim, self.nhead, self.ff_dim, self.dropout)
         self.tf_encoder = AgentFormerEncoder(encoder_layers, self.nlayer)
-        self.pos_encoder = PositionalAgentEncoding(self.model_dim, self.dropout, concat=ctx['pos_concat'], max_a_len=ctx['max_agent_len'], use_agent_enc=ctx['use_agent_enc'], agent_enc_learn=ctx['agent_enc_learn'])
+        self.pos_encoder = PositionalAgentEncoding(
+            self.model_dim, self.dropout, concat=ctx['pos_concat'], max_a_len=ctx['max_agent_len'],
+            use_agent_enc=ctx['use_agent_enc'], agent_enc_learn=ctx['agent_enc_learn']
+        )
 
     def forward(self, data):
         traj_in = []
@@ -223,7 +226,10 @@ class FutureEncoder(nn.Module):
         decoder_layers = AgentFormerDecoderLayer(ctx['tf_cfg'], self.model_dim, self.nhead, self.ff_dim, self.dropout)
         self.tf_decoder = AgentFormerDecoder(decoder_layers, self.nlayer)
 
-        self.pos_encoder = PositionalAgentEncoding(self.model_dim, self.dropout, concat=ctx['pos_concat'], max_a_len=ctx['max_agent_len'], use_agent_enc=ctx['use_agent_enc'], agent_enc_learn=ctx['agent_enc_learn'])
+        self.pos_encoder = PositionalAgentEncoding(
+            self.model_dim, self.dropout, concat=ctx['pos_concat'], max_a_len=ctx['max_agent_len'],
+            use_agent_enc=ctx['use_agent_enc'], agent_enc_learn=ctx['agent_enc_learn']
+        )
         num_dist_params = 2 * self.nz if self.z_type == 'gaussian' else self.nz     # either gaussian or discrete
         if self.out_mlp_dim is None:
             self.q_z_net = nn.Linear(self.model_dim, num_dist_params)
