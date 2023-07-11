@@ -43,6 +43,7 @@ class PositionalAgentEncoding(nn.Module):
         self.concat = concat
         self.d_model = d_model
         self.use_agent_enc = use_agent_enc
+        self.t_origin = max_t_len
         if concat:
             self.fc = nn.Linear((3 if use_agent_enc else 2) * d_model, d_model)
 
@@ -62,18 +63,6 @@ class PositionalAgentEncoding(nn.Module):
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
         pe = pe.unsqueeze(0).transpose(0, 1)                                            # (2 * max_len, 1, d_model)
-
-        # # WIP CODE
-        # print(f"{pe.shape=}")
-        # import matplotlib.pyplot as plt
-        # fig, ax = plt.subplots()
-        # pesq = pe.squeeze().T.cpu().numpy()
-        # print(f"{pesq.shape=}")
-        # pos = ax.imshow(pesq, cmap="YlGnBu", extent=(1,pesq.shape[1]+1,pesq.shape[0]+1,1))
-        # fig.colorbar(pos, ax=ax)
-        # plt.show()
-        # print(zblu)
-        # # WIP CODE
         return pe
 
     def build_agent_enc(self, max_len: int):
@@ -86,8 +75,7 @@ class PositionalAgentEncoding(nn.Module):
         return ae
 
     def get_pos_enc(self, num_t: int, num_a: int, t_offset: int):
-        # TODO: t_offset = 0 should have us sample at the origin, not at -200
-        pe = self.pe[t_offset: num_t + t_offset, :]
+        pe = self.pe[self.t_origin + t_offset: self.t_origin + t_offset + num_t, :]
 
         # # WIP CODE
         # fig, ax = plt.subplots()
@@ -100,7 +88,7 @@ class PositionalAgentEncoding(nn.Module):
         return pe
 
     def plot_positional_window(self, ax: matplotlib.axes.Axes, num_t: int, t_offset: int, back_cmap: str = "Blues", front_cmap: str = "Reds"):
-        pe = self.pe[t_offset: t_offset + num_t, :]
+        pe = self.pe[self.t_origin + t_offset: self.t_origin + t_offset + num_t, :]
 
         back_img = self.pe.squeeze().T.cpu().numpy()
         front_img = pe.squeeze().T.cpu().numpy()
@@ -109,7 +97,7 @@ class PositionalAgentEncoding(nn.Module):
         ax.set_ylim(back_img.shape[0] + 1, 1)
         pos = ax.imshow(back_img, cmap=back_cmap, extent=(-back_img.shape[1]//2, back_img.shape[1]//2, back_img.shape[0] + 1, 1))
         plt.colorbar(pos)
-        ax.imshow(front_img, cmap=front_cmap, extent=(-back_img.shape[1]//2 + t_offset, -back_img.shape[1]//2 + num_t + t_offset, back_img.shape[0] + 1, 1))
+        ax.imshow(front_img, cmap=front_cmap, extent=(t_offset, num_t + t_offset, back_img.shape[0] + 1, 1))
 
     def get_agent_enc(self, num_t: int, num_a: int, a_offset: int, agent_enc_shuffle: Union[bool, None]):
         if agent_enc_shuffle is None:
