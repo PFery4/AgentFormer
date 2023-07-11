@@ -86,7 +86,7 @@ class PositionalAgentEncoding(nn.Module):
         return ae
 
     def get_pos_enc(self, num_t: int, num_a: int, t_offset: int):
-        t_offset = 40
+        # TODO: t_offset = 0 should have us sample at the origin, not at -200
         pe = self.pe[t_offset: num_t + t_offset, :]
 
         # # WIP CODE
