@@ -3,6 +3,7 @@ import numpy as np
 from torch import nn
 from torch.nn import functional as F
 from collections import defaultdict
+from typing import Union
 import model.decoder_out_submodels as decoder_out_submodels
 from model.common.mlp import MLP
 from model.agentformer_loss import loss_func
@@ -33,7 +34,8 @@ def generate_mask(tgt_sz, src_sz, agent_num, agent_mask):
 class PositionalAgentEncoding(nn.Module):
 
     """ Positional Encoding """
-    def __init__(self, d_model, dropout=0.1, max_t_len=200, max_a_len=200, concat=False, use_agent_enc=False, agent_enc_learn=False):
+    def __init__(self, d_model: int, dropout: float = 0.1, max_t_len: int = 200, max_a_len: int = 200,
+                 concat: bool = False, use_agent_enc: bool = False, agent_enc_learn: bool = False):
         super(PositionalAgentEncoding, self).__init__()
         self.dropout = nn.Dropout(p=dropout)
         self.concat = concat
@@ -51,16 +53,16 @@ class PositionalAgentEncoding(nn.Module):
                 ae = self.build_pos_enc(max_a_len)
                 self.register_buffer('ae', ae)
 
-    def build_pos_enc(self, max_len):
-        pe = torch.zeros(max_len, self.d_model)
-        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
-        div_term = torch.exp(torch.arange(0, self.d_model, 2).float() * (-np.log(10000.0) / self.d_model))
+    def build_pos_enc(self, max_len: int):
+        pe = torch.zeros(max_len, self.d_model)                                         # (max_len, d_model)
+        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)             # (max_len, 1)
+        div_term = torch.exp(torch.arange(0, self.d_model, 2).float() * (-np.log(10000.0) / self.d_model))  #(d_model//2)
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
-        pe = pe.unsqueeze(0).transpose(0, 1)
+        pe = pe.unsqueeze(0).transpose(0, 1)                                            # (max_len, 1, d_model)
         return pe
 
-    def build_agent_enc(self, max_len):
+    def build_agent_enc(self, max_len: int):
         ae = torch.zeros(max_len, self.d_model)
         position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
         div_term = torch.exp(torch.arange(0, self.d_model, 2).float() * (-np.log(10000.0) / self.d_model))
@@ -69,12 +71,12 @@ class PositionalAgentEncoding(nn.Module):
         ae = ae.unsqueeze(0).transpose(0, 1)
         return ae
 
-    def get_pos_enc(self, num_t, num_a, t_offset):
+    def get_pos_enc(self, num_t: int, num_a: int, t_offset: int):
         pe = self.pe[t_offset: num_t + t_offset, :]
         pe = pe.repeat_interleave(num_a, dim=0)
         return pe
 
-    def get_agent_enc(self, num_t, num_a, a_offset, agent_enc_shuffle):
+    def get_agent_enc(self, num_t: int, num_a: int, a_offset: int, agent_enc_shuffle: Union[bool, None]):
         if agent_enc_shuffle is None:
             ae = self.ae[a_offset: num_a + a_offset, :]
         else:
@@ -82,7 +84,8 @@ class PositionalAgentEncoding(nn.Module):
         ae = ae.repeat(num_t, 1, 1)
         return ae
 
-    def forward(self, x, num_a, agent_enc_shuffle=None, t_offset=0, a_offset=0):
+    def forward(self, x: torch.Tensor, num_a: int, agent_enc_shuffle: Union[bool, None] = None,
+                t_offset: int = 0, a_offset: int = 0):
         num_t = x.shape[0] // num_a
         pos_enc = self.get_pos_enc(num_t, num_a, t_offset)
         if self.use_agent_enc:
