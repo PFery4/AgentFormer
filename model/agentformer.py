@@ -1,7 +1,9 @@
+import matplotlib.axes
 import torch
 import numpy as np
 from torch import nn
 from torch.nn import functional as F
+import matplotlib.pyplot as plt
 from collections import defaultdict
 from typing import Union
 import model.decoder_out_submodels as decoder_out_submodels
@@ -54,12 +56,24 @@ class PositionalAgentEncoding(nn.Module):
                 self.register_buffer('ae', ae)
 
     def build_pos_enc(self, max_len: int):
-        pe = torch.zeros(max_len, self.d_model)                                         # (max_len, d_model)
-        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)             # (max_len, 1)
+        pe = torch.zeros(2 * max_len, self.d_model)                                         # (max_len, d_model)
+        position = torch.arange(-max_len, max_len, dtype=torch.float).unsqueeze(1)             # (2 * max_len, 1)
         div_term = torch.exp(torch.arange(0, self.d_model, 2).float() * (-np.log(10000.0) / self.d_model))  #(d_model//2)
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
-        pe = pe.unsqueeze(0).transpose(0, 1)                                            # (max_len, 1, d_model)
+        pe = pe.unsqueeze(0).transpose(0, 1)                                            # (2 * max_len, 1, d_model)
+
+        # # WIP CODE
+        # print(f"{pe.shape=}")
+        # import matplotlib.pyplot as plt
+        # fig, ax = plt.subplots()
+        # pesq = pe.squeeze().T.cpu().numpy()
+        # print(f"{pesq.shape=}")
+        # pos = ax.imshow(pesq, cmap="YlGnBu", extent=(1,pesq.shape[1]+1,pesq.shape[0]+1,1))
+        # fig.colorbar(pos, ax=ax)
+        # plt.show()
+        # print(zblu)
+        # # WIP CODE
         return pe
 
     def build_agent_enc(self, max_len: int):
@@ -72,9 +86,30 @@ class PositionalAgentEncoding(nn.Module):
         return ae
 
     def get_pos_enc(self, num_t: int, num_a: int, t_offset: int):
+        t_offset = 40
         pe = self.pe[t_offset: num_t + t_offset, :]
+
+        # # WIP CODE
+        # fig, ax = plt.subplots()
+        # self.plot_positional_window(ax, num_t, t_offset)
+        # plt.show()
+        # print(zblu)
+        # # WIP CODE
+
         pe = pe.repeat_interleave(num_a, dim=0)
         return pe
+
+    def plot_positional_window(self, ax: matplotlib.axes.Axes, num_t: int, t_offset: int, back_cmap: str = "Blues", front_cmap: str = "Reds"):
+        pe = self.pe[t_offset: t_offset + num_t, :]
+
+        back_img = self.pe.squeeze().T.cpu().numpy()
+        front_img = pe.squeeze().T.cpu().numpy()
+
+        ax.set_xlim(-back_img.shape[1]//2, back_img.shape[1]//2)
+        ax.set_ylim(back_img.shape[0] + 1, 1)
+        pos = ax.imshow(back_img, cmap=back_cmap, extent=(-back_img.shape[1]//2, back_img.shape[1]//2, back_img.shape[0] + 1, 1))
+        plt.colorbar(pos)
+        ax.imshow(front_img, cmap=front_cmap, extent=(-back_img.shape[1]//2 + t_offset, -back_img.shape[1]//2 + num_t + t_offset, back_img.shape[0] + 1, 1))
 
     def get_agent_enc(self, num_t: int, num_a: int, a_offset: int, agent_enc_shuffle: Union[bool, None]):
         if agent_enc_shuffle is None:
