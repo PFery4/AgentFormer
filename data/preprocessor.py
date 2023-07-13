@@ -207,7 +207,9 @@ class preprocess(object):
             'pred_mask': pred_mask,
             'scene_map': self.geom_scene_map,
             'seq': self.seq_name,
-            'frame': frame
+            'frame': frame,
+            'past_window': [[frame - i * self.frame_skip] for i in range(self.past_frames)],
+            'future_window': [[frame + i * self.frame_skip] for i in range(1, self.future_frames + 1)]
         }
 
         return data
