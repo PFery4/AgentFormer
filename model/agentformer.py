@@ -74,30 +74,25 @@ class PositionalAgentEncoding(nn.Module):
         ae = ae.unsqueeze(0).transpose(0, 1)
         return ae
 
-    def get_pos_enc(self, num_t: int, num_a: int, t_offset: int):
+    def get_pos_enc(self, num_t: int, num_a: int, t_offset: int = 0):
         pe = self.pe[self.t_origin + t_offset: self.t_origin + t_offset + num_t, :]
-
-        # # WIP CODE
-        # fig, ax = plt.subplots()
-        # self.plot_positional_window(ax, num_t, t_offset)
-        # plt.show()
-        # print(zblu)
-        # # WIP CODE
-
         pe = pe.repeat_interleave(num_a, dim=0)
         return pe
 
-    def plot_positional_window(self, ax: matplotlib.axes.Axes, num_t: int, t_offset: int, back_cmap: str = "Blues", front_cmap: str = "Reds"):
+    def plot_positional_window(self, ax: matplotlib.axes.Axes, num_t: int, t_offset: int = 0,
+                               back_cmap: str = "Blues", front_cmap: str = "Reds") -> None:
         pe = self.pe[self.t_origin + t_offset: self.t_origin + t_offset + num_t, :]
 
         back_img = self.pe.squeeze().T.cpu().numpy()
-        front_img = pe.squeeze().T.cpu().numpy()
+        front_img = pe.squeeze(1).T.cpu().numpy()
 
         ax.set_xlim(-back_img.shape[1]//2, back_img.shape[1]//2)
         ax.set_ylim(back_img.shape[0] + 1, 1)
-        pos = ax.imshow(back_img, cmap=back_cmap, extent=(-back_img.shape[1]//2, back_img.shape[1]//2, back_img.shape[0] + 1, 1))
+        pos = ax.imshow(back_img, cmap=back_cmap,
+                        extent=(-back_img.shape[1]//2, back_img.shape[1]//2, back_img.shape[0] + 1, 1))
         plt.colorbar(pos)
-        ax.imshow(front_img, cmap=front_cmap, extent=(t_offset, num_t + t_offset, back_img.shape[0] + 1, 1))
+        ax.imshow(front_img, cmap=front_cmap,
+                  extent=(t_offset, num_t + t_offset, back_img.shape[0] + 1, 1))
 
     def get_agent_enc(self, num_t: int, num_a: int, a_offset: int, agent_enc_shuffle: Union[bool, None]):
         if agent_enc_shuffle is None:
@@ -182,7 +177,15 @@ class ContextEncoder(nn.Module):
         traj_in = torch.cat(traj_in, dim=-1)
         tf_in = self.input_fc(traj_in.view(-1, traj_in.shape[-1])).view(-1, 1, self.model_dim)
         agent_enc_shuffle = data['agent_enc_shuffle'] if self.agent_enc_shuffle else None
-        tf_in_pos = self.pos_encoder(tf_in, num_a=data['agent_num'], agent_enc_shuffle=agent_enc_shuffle)
+
+        print(f'{tf_in.shape=}')
+        tf_in_pos = self.pos_encoder(tf_in, num_a=data['agent_num'], agent_enc_shuffle=agent_enc_shuffle, t_offset=-tf_in.shape[0]//data['agent_num'])
+        # WIP CODE
+        fig, ax = plt.subplots()
+        print(f"CONTEXT ENCODER")
+        self.pos_encoder.plot_positional_window(ax=ax, num_t=tf_in.shape[0]//data['agent_num'], t_offset=-tf_in.shape[0]//data['agent_num'])
+        plt.show()
+        # WIP CODE
 
         src_agent_mask = data['agent_mask'].clone()
         src_mask = generate_mask(tf_in.shape[0], tf_in.shape[0], data['agent_num'], src_agent_mask).to(tf_in.device)
@@ -265,6 +268,12 @@ class FutureEncoder(nn.Module):
         tf_in = self.input_fc(traj_in.view(-1, traj_in.shape[-1])).view(-1, 1, self.model_dim)
         agent_enc_shuffle = data['agent_enc_shuffle'] if self.agent_enc_shuffle else None
         tf_in_pos = self.pos_encoder(tf_in, num_a=data['agent_num'], agent_enc_shuffle=agent_enc_shuffle)
+        # WIP CODE
+        fig, ax = plt.subplots()
+        print(f"FUTURE ENCODER")
+        self.pos_encoder.plot_positional_window(ax=ax, num_t=tf_in.shape[0]//data['agent_num'])
+        plt.show()
+        # WIP CODE
 
         mem_agent_mask = data['agent_mask'].clone()
         tgt_agent_mask = data['agent_mask'].clone()
@@ -381,7 +390,16 @@ class FutureDecoder(nn.Module):
         for i in range(self.future_frames):
             tf_in = self.input_fc(dec_in_z.view(-1, dec_in_z.shape[-1])).view(dec_in_z.shape[0], -1, self.model_dim)
             agent_enc_shuffle = data['agent_enc_shuffle'] if self.agent_enc_shuffle else None
-            tf_in_pos = self.pos_encoder(tf_in, num_a=agent_num, agent_enc_shuffle=agent_enc_shuffle, t_offset=self.past_frames-1 if self.pos_offset else 0)
+            toffset = -1
+            tf_in_pos = self.pos_encoder(tf_in, num_a=agent_num, agent_enc_shuffle=agent_enc_shuffle, t_offset=toffset)
+
+            # WIP CODE
+            fig, ax = plt.subplots()
+            print(f"FUTURE DECODER")
+            self.pos_encoder.plot_positional_window(ax=ax, num_t=tf_in.shape[0] // agent_num, t_offset=toffset)
+            plt.show()
+            # WIP CODE
+
             # tf_in_pos = tf_in
             mem_mask = generate_mask(tf_in.shape[0], context.shape[0], data['agent_num'], mem_agent_mask).to(tf_in.device)
             tgt_mask = generate_ar_mask(tf_in_pos.shape[0], agent_num, tgt_agent_mask).to(tf_in.device)
@@ -570,20 +588,20 @@ class AgentFormer(nn.Module):
             in_data = data
 
         self.data = defaultdict(lambda: None)
-        self.data['batch_size'] = len(in_data['pre_motion_3D'])
-        self.data['agent_num'] = len(in_data['pre_motion_3D'])
-        self.data['pre_motion'] = torch.stack(in_data['pre_motion_3D'], dim=0).to(device).transpose(0, 1).contiguous()
-        self.data['fut_motion'] = torch.stack(in_data['fut_motion_3D'], dim=0).to(device).transpose(0, 1).contiguous()
-        self.data['fut_motion_orig'] = torch.stack(in_data['fut_motion_3D'], dim=0).to(device)   # future motion without transpose
-        self.data['fut_mask'] = torch.stack(in_data['fut_motion_mask'], dim=0).to(device)
-        self.data['pre_mask'] = torch.stack(in_data['pre_motion_mask'], dim=0).to(device)
+        self.data['batch_size'] = len(in_data['pre_motion_3D'])                 # int: N
+        self.data['agent_num'] = len(in_data['pre_motion_3D'])                  # int: N
+        self.data['pre_motion'] = torch.stack(in_data['pre_motion_3D'], dim=0).to(device).transpose(0, 1).contiguous()      # (T_obs, N, 2)
+        self.data['fut_motion'] = torch.stack(in_data['fut_motion_3D'], dim=0).to(device).transpose(0, 1).contiguous()      # (T_pred, N, 2)
+        self.data['fut_motion_orig'] = torch.stack(in_data['fut_motion_3D'], dim=0).to(device)   # future motion without transpose      # (N, T_pred, 2)
+        self.data['fut_mask'] = torch.stack(in_data['fut_motion_mask'], dim=0).to(device)       # (1, T_pred)
+        self.data['pre_mask'] = torch.stack(in_data['pre_motion_mask'], dim=0).to(device)       # (1, T_obs)
         scene_orig_all_past = self.cfg.get('scene_orig_all_past', False)
         if scene_orig_all_past:
-            self.data['scene_orig'] = self.data['pre_motion'].view(-1, 2).mean(dim=0)
+            self.data['scene_orig'] = self.data['pre_motion'].view(-1, 2).mean(dim=0)       # (2)
         else:
-            self.data['scene_orig'] = self.data['pre_motion'][-1].mean(dim=0)
+            self.data['scene_orig'] = self.data['pre_motion'][-1].mean(dim=0)               # (2)
         if in_data['heading'] is not None:
-            self.data['heading'] = torch.tensor(in_data['heading']).float().to(device)
+            self.data['heading'] = torch.tensor(in_data['heading']).float().to(device)      # (N)
 
         # rotate the scene
         if self.rand_rot_scene and self.training:
@@ -592,7 +610,7 @@ class AgentFormer(nn.Module):
             else:
                 theta = torch.rand(1).to(device) * np.pi * 2
             for key in ['pre_motion', 'fut_motion', 'fut_motion_orig']:
-                self.data[f'{key}'], self.data[f'{key}_scene_norm'] = rotation_2d_torch(self.data[key], theta, self.data['scene_orig'])
+                self.data[f'{key}'], self.data[f'{key}_scene_norm'] = rotation_2d_torch(self.data[key], theta, self.data['scene_orig'])     # same shape
             if in_data['heading'] is not None:
                 self.data['heading'] += theta
         else:
@@ -600,13 +618,13 @@ class AgentFormer(nn.Module):
             for key in ['pre_motion', 'fut_motion', 'fut_motion_orig']:
                 self.data[f'{key}_scene_norm'] = self.data[key] - self.data['scene_orig']   # normalize per scene
 
-        self.data['pre_vel'] = self.data['pre_motion'][1:] - self.data['pre_motion'][:-1, :]
-        self.data['fut_vel'] = self.data['fut_motion'] - torch.cat([self.data['pre_motion'][[-1]], self.data['fut_motion'][:-1, :]])
-        self.data['cur_motion'] = self.data['pre_motion'][[-1]]
-        self.data['pre_motion_norm'] = self.data['pre_motion'][:-1] - self.data['cur_motion']   # normalize pos per agent
-        self.data['fut_motion_norm'] = self.data['fut_motion'] - self.data['cur_motion']
+        self.data['pre_vel'] = self.data['pre_motion'][1:] - self.data['pre_motion'][:-1, :]        # (T_obs - 1, N, 2)
+        self.data['fut_vel'] = self.data['fut_motion'] - torch.cat([self.data['pre_motion'][[-1]], self.data['fut_motion'][:-1, :]])    # (T_pred, N, 2)
+        self.data['cur_motion'] = self.data['pre_motion'][[-1]]                                     # (1, N, 2)
+        self.data['pre_motion_norm'] = self.data['pre_motion'][:-1] - self.data['cur_motion']   # normalize pos per agent       # (T_obs - 1, N, 2)
+        self.data['fut_motion_norm'] = self.data['fut_motion'] - self.data['cur_motion']                                        # (T_pred, N, 2)
         if in_data['heading'] is not None:
-            self.data['heading_vec'] = torch.stack([torch.cos(self.data['heading']), torch.sin(self.data['heading'])], dim=-1)
+            self.data['heading_vec'] = torch.stack([torch.cos(self.data['heading']), torch.sin(self.data['heading'])], dim=-1)      # (N, 2)
 
         # agent maps
         if self.use_map:
@@ -618,7 +636,7 @@ class AgentFormer(nn.Module):
             else:
                 patch_size = [50, 10, 50, 90]
                 rot = -np.array(in_data['heading'])  * (180 / np.pi)
-            self.data['agent_maps'] = scene_map.get_cropped_maps(scene_points, patch_size, rot).to(device)
+            self.data['agent_maps'] = scene_map.get_cropped_maps(scene_points, patch_size, rot).to(device)      # (N, 3, 100, 100)
 
         # agent shuffling
         if self.training and self.ctx['agent_enc_shuffle']:
@@ -638,7 +656,13 @@ class AgentFormer(nn.Module):
             mask[D > threshold] = float('-inf')
         else:
             mask = torch.zeros([cur_motion.shape[0], cur_motion.shape[0]]).to(device)
-        self.data['agent_mask'] = mask
+        self.data['agent_mask'] = mask          # (N, N)
+
+        self.data['past_window'] = data.get('past_window', None)
+        self.data['future_window'] = data.get('future_window', None)
+
+        print("#" * 100)
+        [print(f"{k}:\t{type(v)}\t" + (str(v.shape) if isinstance(v, torch.Tensor) else str(v))) for k, v in self.data.items()]
 
     def step_annealer(self):
         for anl in self.param_annealers:
