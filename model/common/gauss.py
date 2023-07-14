@@ -44,8 +44,9 @@ class GaussianDensityModel(nn.Module):
     def sig_matrix(sig):
         return torch.diag_embed(sig)
 
-    def covariance_matrix(self, sig, rho):
-        return self.sig_matrix(sig) @ self.corr_matrix(rho) @ self.sig_matrix(sig)
+    @classmethod
+    def covariance_matrix(cls, sig, rho):
+        return cls.sig_matrix(sig) @ cls.corr_matrix(rho) @ cls.sig_matrix(sig)
 
     def forward(self, x):
         for affine in self.affine_layers:
@@ -74,6 +75,21 @@ if __name__ == '__main__':
     from tqdm import tqdm
     from model.agentformer_loss import gaussian_twodee_nll, gaussian_twodee_nll_2, multivariate_gaussian_nll
 
+    dist_params = {
+        "mu": torch.tensor([2.5, 2.5]),
+        "sig": torch.tensor([1.5, 1.]),
+        "rho": torch.tensor([0.8])
+    }
+
+    x = torch.tensor([2., 3.])
+    gt_mu = dist_params["mu"]
+    gt_Sig = GaussianDensityModel.covariance_matrix(sig=dist_params["sig"], rho=dist_params["rho"])
+    print(f"{gt_mu=}")
+    print(f"{gt_Sig=}")
+    loss = 0.5 * torch.mean(multivariate_gaussian_nll(mu=gt_mu, Sig=gt_Sig, targets=x))
+    print(f"{loss=}")       # should be = 0.766553064
+    print("#" * 120)
+
     forecast_dim = 2
     dist_params = {
         "mu": torch.randn(forecast_dim),
@@ -85,7 +101,6 @@ if __name__ == '__main__':
     model_hidden_dims = [128, 64]
     model_activation = "relu"
     n_training_steps = 1000
-
 
     gauss = GaussianDensityModel(
         input_dim=model_input_dim, hidden_dims=model_hidden_dims, forecast_dim=forecast_dim, activation=model_activation
@@ -113,7 +128,7 @@ if __name__ == '__main__':
 
         # loss = gaussian_twodee_nll(mu=mu, sig=sig, rho=rho, targets=y)
         # loss = gaussian_twodee_nll_2(mu=mu, sig=sig, rho=rho, targets=y)
-        loss = multivariate_gaussian_nll(mu=mu, Sig=cov, targets=y)
+        loss = 0.5 * torch.mean(multivariate_gaussian_nll(mu=mu, Sig=cov, targets=y))
 
         loss.backward()
 
