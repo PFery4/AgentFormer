@@ -1,6 +1,6 @@
 import yaml
 import os
-import os.path as osp
+import os.path
 import glob
 from easydict import EasyDict
 
@@ -39,9 +39,9 @@ class Config:
         if len(model_files) == 0:
             return None
         else:
-            model_file = osp.basename(model_files[-1])
-            epoch = int(osp.splitext(model_file)[0].split('model_')[-1])
-            return epoch            
+            model_file = os.path.basename(model_files[-1])
+            epoch = int(os.path.splitext(model_file)[0].split('model_')[-1])
+            return epoch
 
     def __getattribute__(self, name):
         yml_dict = super().__getattribute__('yml_dict')
