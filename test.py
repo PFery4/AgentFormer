@@ -19,6 +19,7 @@ def get_model_prediction(data, sample_k):
     sample_motion_3D = sample_motion_3D.transpose(0, 1).contiguous()
     return recon_motion_3D, sample_motion_3D
 
+
 def save_prediction(pred, data, suffix, save_dir):
     pred_num = 0
     pred_arr = []
@@ -51,6 +52,7 @@ def save_prediction(pred, data, suffix, save_dir):
         mkdir_if_missing(fname)
         np.savetxt(fname, pred_arr, fmt="%.3f")
     return pred_num
+
 
 def test_model(generator, save_dir, cfg):
     total_num_pred = 0
@@ -87,6 +89,7 @@ def test_model(generator, save_dir, cfg):
         }
         assert total_num_pred == scene_num[generator.split]
 
+
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
@@ -107,7 +110,8 @@ if __name__ == '__main__':
 
     torch.set_default_dtype(torch.float32)
     device = torch.device('cuda', index=args.gpu) if args.gpu >= 0 and torch.cuda.is_available() else torch.device('cpu')
-    if torch.cuda.is_available(): torch.cuda.set_device(args.gpu)
+    if torch.cuda.is_available():
+        torch.cuda.set_device(args.gpu)
     torch.set_grad_enabled(False)
     log = open(os.path.join(cfg.log_dir, 'log_test.txt'), 'w')
 
