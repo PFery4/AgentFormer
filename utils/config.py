@@ -3,6 +3,7 @@ import os
 import os.path
 import glob
 from easydict import EasyDict
+from typing import Union
 
 from utils.utils import recreate_dirs
 
@@ -34,7 +35,7 @@ class Config:
         if create_dirs:
             recreate_dirs(self.tb_dir)
 
-    def get_last_epoch(self):
+    def get_last_epoch(self) -> Union[int, None]:
         model_files = sorted(glob.glob(os.path.join(self.model_dir, 'model_*.p')))
         if len(model_files) == 0:
             return None
