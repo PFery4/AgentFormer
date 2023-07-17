@@ -8,6 +8,7 @@ from utils.utils import print_log, AverageMeter, isfile, print_log, AverageMeter
 
 """ Metrics """
 
+
 def compute_ADE(pred_arr, gt_arr):
     ade = 0.0
     for pred, gt in zip(pred_arr, gt_arr):
@@ -28,6 +29,17 @@ def compute_FDE(pred_arr, gt_arr):
         fde += dist.min(axis=0)                         # (1, )
     fde /= len(pred_arr)
     return fde
+
+
+def compute_NLL(pred_arr, gt_arr) -> float:
+    # TODO: link it to the test script
+    # pred_arr (*, Samples, Frames, 5) [mux, muy, sigx, sigy, rho]
+    # gt_arr (*, Frames, 2) [x, y]
+    nll = 0.0
+    for pred, gt in zip(pred_arr, gt_arr):
+        pass
+    raise NotImplementedError
+    return nll
 
 
 def align_gt(pred, gt):
@@ -61,6 +73,7 @@ if __name__ == '__main__':
         gt_dir = f'datasets/eth_ucy/{args.dataset}'
         seq_train, seq_val, seq_test = get_ethucy_split(args.dataset)
         seq_eval = globals()[f'seq_{args.data}']
+    # TODO: Add SDD
 
     if args.log_file is None:
         log_file = os.path.join(results_dir, 'log_eval.txt')
@@ -74,6 +87,7 @@ if __name__ == '__main__':
         'ADE': compute_ADE,
         'FDE': compute_FDE
     }
+    # TODO: add probabilistic performance metrics
 
     stats_meter = {x: AverageMeter() for x in stats_func.keys()}
 
@@ -85,14 +99,15 @@ if __name__ == '__main__':
         gt_raw = []
         for line_data in gt_data:
             line_data = np.array([line_data.split(' ')])[:, [0, 1, 13, 15]][0].astype('float32')
-            if line_data[1] == -1: continue
+            if line_data[1] == -1:
+                continue
             gt_raw.append(line_data)
         gt_raw = np.stack(gt_raw)
 
         data_filelist, _ = load_list_from_folder(os.path.join(results_dir, seq_name))    
             
         for data_file in data_filelist:      # each example e.g., seq_0001 - frame_000009
-            # for reconsutrction or deterministic
+            # for reconstruction or deterministic
             if isfile(data_file):
                 all_traj = np.loadtxt(data_file, delimiter=' ', dtype='float32')        # (frames x agents) x 4
                 all_traj = np.expand_dims(all_traj, axis=0)                             # 1 x (frames x agents) x 4
@@ -103,7 +118,7 @@ if __name__ == '__main__':
                 for sample in sample_list:
                     sample = np.loadtxt(sample, delimiter=' ', dtype='float32')        # (frames x agents) x 4
                     sample_all.append(sample)
-                all_traj = np.stack(sample_all, axis=0)                                # samples x (framex x agents) x 4
+                all_traj = np.stack(sample_all, axis=0)                                # samples x (frames x agents) x 4
             else:
                 assert False, 'error'
 
