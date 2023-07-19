@@ -21,7 +21,7 @@ forecast_dim                 : 2
 # ------------------- Model -------------------------
 
 model_id: dlow
-pred_cfg: eth_agentformer_pre
+pred_cfg: sdd_agentformer_pre
 pred_epoch: 30
 qnet_mlp: [512, 256]
 share_eps: true
