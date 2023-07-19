@@ -180,12 +180,12 @@ class ContextEncoder(nn.Module):
 
         print(f'{tf_in.shape=}')
         tf_in_pos = self.pos_encoder(tf_in, num_a=data['agent_num'], agent_enc_shuffle=agent_enc_shuffle, t_offset=-tf_in.shape[0]//data['agent_num'])
-        # WIP CODE
-        fig, ax = plt.subplots()
-        print(f"CONTEXT ENCODER")
-        self.pos_encoder.plot_positional_window(ax=ax, num_t=tf_in.shape[0]//data['agent_num'], t_offset=-tf_in.shape[0]//data['agent_num'])
-        plt.show()
-        # WIP CODE
+        # # WIP CODE
+        # fig, ax = plt.subplots()
+        # print(f"CONTEXT ENCODER")
+        # self.pos_encoder.plot_positional_window(ax=ax, num_t=tf_in.shape[0]//data['agent_num'], t_offset=-tf_in.shape[0]//data['agent_num'])
+        # plt.show()
+        # # WIP CODE
 
         src_agent_mask = data['agent_mask'].clone()
         src_mask = generate_mask(tf_in.shape[0], tf_in.shape[0], data['agent_num'], src_agent_mask).to(tf_in.device)
@@ -268,12 +268,12 @@ class FutureEncoder(nn.Module):
         tf_in = self.input_fc(traj_in.view(-1, traj_in.shape[-1])).view(-1, 1, self.model_dim)
         agent_enc_shuffle = data['agent_enc_shuffle'] if self.agent_enc_shuffle else None
         tf_in_pos = self.pos_encoder(tf_in, num_a=data['agent_num'], agent_enc_shuffle=agent_enc_shuffle)
-        # WIP CODE
-        fig, ax = plt.subplots()
-        print(f"FUTURE ENCODER")
-        self.pos_encoder.plot_positional_window(ax=ax, num_t=tf_in.shape[0]//data['agent_num'])
-        plt.show()
-        # WIP CODE
+        # # WIP CODE
+        # fig, ax = plt.subplots()
+        # print(f"FUTURE ENCODER")
+        # self.pos_encoder.plot_positional_window(ax=ax, num_t=tf_in.shape[0]//data['agent_num'])
+        # plt.show()
+        # # WIP CODE
 
         mem_agent_mask = data['agent_mask'].clone()
         tgt_agent_mask = data['agent_mask'].clone()
@@ -393,12 +393,12 @@ class FutureDecoder(nn.Module):
             toffset = -1
             tf_in_pos = self.pos_encoder(tf_in, num_a=agent_num, agent_enc_shuffle=agent_enc_shuffle, t_offset=toffset)
 
-            # WIP CODE
-            fig, ax = plt.subplots()
-            print(f"FUTURE DECODER")
-            self.pos_encoder.plot_positional_window(ax=ax, num_t=tf_in.shape[0] // agent_num, t_offset=toffset)
-            plt.show()
-            # WIP CODE
+            # # WIP CODE
+            # fig, ax = plt.subplots()
+            # print(f"FUTURE DECODER")
+            # self.pos_encoder.plot_positional_window(ax=ax, num_t=tf_in.shape[0] // agent_num, t_offset=toffset)
+            # plt.show()
+            # # WIP CODE
 
             # tf_in_pos = tf_in
             mem_mask = generate_mask(tf_in.shape[0], context.shape[0], data['agent_num'], mem_agent_mask).to(tf_in.device)
