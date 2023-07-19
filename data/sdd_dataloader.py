@@ -40,6 +40,7 @@ class AgentFormerDataGeneratorForSDD:
         print(f"instantiating dataloader from {full_dataset.__class__} class")
 
         # TODO: investigate whether a split strategy such as the one used here won't possibly result in data leakage
+        # No, it won't, so long as normalization does not involve data from the test/val splits.
         split_proportions = [0.7, 0.2, 0.1]
         train_size = int(split_proportions[0] * len(full_dataset))
         val_size = int(split_proportions[1] * len(full_dataset))
