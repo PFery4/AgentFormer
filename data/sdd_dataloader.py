@@ -10,7 +10,7 @@ from utils.config import Config
 from utils.utils import print_log, get_timestring
 
 # imports from https://github.com/PFery4/occlusion-prediction
-from src.data.sdd_dataloader import StanfordDroneDataset
+from src.data.sdd_dataloader import StanfordDroneDataset, StanfordDroneDatasetWithOcclusionSim
 import src.data.sdd_extract as sdd_extract
 
 
@@ -31,7 +31,13 @@ class AgentFormerDataGeneratorForSDD:
         assert parser.dataset == "sdd", f"error: wrong dataset name: {parser.dataset} (should be \"sdd\")"
 
         self.sdd_config = sdd_extract.get_config(parser.sdd_config_file_name)
-        full_dataset = StanfordDroneDataset(self.sdd_config)
+        if not parser.get("sdd_occlusion_data", False):
+            full_dataset = StanfordDroneDataset(self.sdd_config)
+            self.motion_processing = self.generate_motion_threedee
+        else:
+            full_dataset = StanfordDroneDatasetWithOcclusionSim(self.sdd_config)
+            self.motion_processing = self.generate_motion_threedee_with_occlusion
+        print(f"instantiating dataloader from {full_dataset.__class__} class")
 
         # TODO: investigate whether a split strategy such as the one used here won't possibly result in data leakage
         split_proportions = [0.7, 0.2, 0.1]
@@ -82,51 +88,89 @@ class AgentFormerDataGeneratorForSDD:
         np_img = np.array(image_tensor.permute(0, 1, 2).numpy() * 255, dtype=np.uint8)
         return GeometricMap(data=np_img, homography=homography)
 
-    def convert_to_preprocessor_data(self, extracted_data: dict) -> dict:
+    @staticmethod
+    def generate_motion_threedee(extracted_data: dict, target_dict: dict) -> None:
 
-        pre_motion_3D = []
-        fut_motion_3D = []
-        pre_motion_mask = []
-        fut_motion_mask = []
+        pre_threedee = []
+        fut_threedee = []
+        pre_mask = []
+        fut_mask = []
         valid_id = []
 
         for agent in extracted_data["agents"]:
-            pre_motion_3D.append(
+            pre_threedee.append(
                 torch.from_numpy(agent.get_traj_section(extracted_data["past_window"])).float()
             )
-            fut_motion_3D.append(
+            fut_threedee.append(
                 torch.from_numpy(agent.get_traj_section(extracted_data["future_window"])).float()
             )
-            pre_motion_mask.append(
+            pre_mask.append(
                 torch.from_numpy(agent.get_data_availability_mask(extracted_data["past_window"])).float()
             )
-            fut_motion_mask.append(
+            fut_mask.append(
                 torch.from_numpy(agent.get_data_availability_mask(extracted_data["future_window"])).float()
             )
             valid_id.append(float(agent.id))
 
+        target_dict['pre_motion_3D'] = pre_threedee
+        target_dict['fut_motion_3D'] = fut_threedee
+        target_dict['pre_motion_mask'] = pre_mask
+        target_dict['fut_motion_mask'] = fut_mask
+        target_dict['valid_id'] = valid_id
+
+    @staticmethod
+    def generate_motion_threedee_with_occlusion(extracted_data: dict, target_dict: dict) -> None:
+        pre_threedee = []
+        fut_threedee = []
+        pre_mask = []
+        fut_mask = []
+        valid_id = []
+        full_window = np.concatenate((extracted_data["past_window"], extracted_data["future_window"]))
+
+        for agent, occlusion_mask in zip(extracted_data["agents"], extracted_data["full_window_occlusion_masks"]):
+            try:
+                last_observed_timestep = np.where(occlusion_mask[:len(extracted_data["past_window"])])[0][-1]
+            except IndexError:         # agent's past is completely unobserved, the ego has no knowledge of the agent
+                # print(f"IGNORING AGENT {agent.id}: fully occluded")
+                continue
+            pre_threedee.append(
+                torch.from_numpy(agent.get_traj_section(full_window[:last_observed_timestep+1])).float()
+            )
+            fut_threedee.append(
+                torch.from_numpy(agent.get_traj_section(full_window[last_observed_timestep+1:])).float()
+            )
+            pre_mask.append(
+                torch.from_numpy(agent.get_data_availability_mask(full_window[:last_observed_timestep+1])).float()
+            )
+            fut_mask.append(
+                torch.from_numpy(agent.get_data_availability_mask(full_window[last_observed_timestep+1:])).float()
+            )
+            valid_id.append(float(agent.id))
+
+        target_dict['pre_motion_3D'] = pre_threedee
+        target_dict['fut_motion_3D'] = fut_threedee
+        target_dict['pre_motion_mask'] = pre_mask
+        target_dict['fut_motion_mask'] = fut_mask
+        target_dict['valid_id'] = valid_id
+
+    def convert_to_preprocessor_data(self, extracted_data: dict) -> dict:
+
+        data = dict()
+        self.motion_processing(extracted_data=extracted_data, target_dict=data)
+
         heading = None
-        # from the nuscenes implementation
+        # from the nuscenes implementation:
         # pred mask is a numpy array, of shape (n_agents,), with values either 1 or 0
         pred_mask = None
 
         scene_map = self.torchimg_to_geometricmap(extracted_data["image_tensor"])
 
-        data = {
-            'pre_motion_3D': pre_motion_3D,
-            'fut_motion_3D': fut_motion_3D,
-            'fut_motion_mask': fut_motion_mask,
-            'pre_motion_mask': pre_motion_mask,
-            # 'pre_data': None,
-            # 'fut_data': None,
-            'heading': heading,
-            'valid_id': valid_id,
-            'traj_scale': self.traj_scale,
-            'pred_mask': pred_mask,
-            'scene_map': scene_map,
-            'seq': extracted_data["scene"] + "_" + extracted_data["video"],
-            'frame': extracted_data["timestep"]
-        }
+        data['heading'] = heading
+        data['traj_scale'] = self.traj_scale
+        data['pred_mask'] = pred_mask
+        data['scene_map'] = scene_map
+        data['seq'] = extracted_data["scene"] + "_" + extracted_data["video"]
+        data['frame'] = extracted_data["timestep"]
 
         return data
 
@@ -142,10 +186,14 @@ class AgentFormerDataGeneratorForSDD:
 
 
 if __name__ == '__main__':
-    print("Hello World!")
     print(sdd_extract.REPO_ROOT)
 
-    config = Config("sdd_agentformer_pre")
+    n_calls = 10
+    # config_str = "sdd_agentformer_pre"
+    config_str = "sdd_occlusion_agentformer_pre"
+
+    ####################################################################################################################
+    config = Config(config_str)
     log = open(os.path.join(config.log_dir, "log.txt"), "a+")
     time_str = get_timestring()
     print_log("time str: {}".format(time_str), log)
@@ -155,5 +203,6 @@ if __name__ == '__main__':
 
     generator = AgentFormerDataGeneratorForSDD(config, log, split="train")
     generator.shuffle()
-    print("CALLING")
-    print(generator())
+    for i in range(n_calls):
+        print("\nCALLING")
+        [print(f"{k}: {v}") for k, v in generator().items()]
