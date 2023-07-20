@@ -49,12 +49,12 @@ class PositionalAgentEncoding(nn.Module):
 
         pe = self.build_pos_enc(max_t_len)
         self.register_buffer('pe', pe)
-        if use_agent_enc:
-            if agent_enc_learn:
-                self.ae = nn.Parameter(torch.randn(max_a_len, 1, d_model) * 0.1)
-            else:
-                ae = self.build_pos_enc(max_a_len)
-                self.register_buffer('ae', ae)
+        # if use_agent_enc:
+        #     if agent_enc_learn:
+        #         self.ae = nn.Parameter(torch.randn(max_a_len, 1, d_model) * 0.1)
+        #     else:
+        #         ae = self.build_pos_enc(max_a_len)
+        #         self.register_buffer('ae', ae)
 
     def build_pos_enc(self, max_len: int):
         pe = torch.zeros(2 * max_len, self.d_model)                                         # (max_len, d_model)
@@ -65,14 +65,14 @@ class PositionalAgentEncoding(nn.Module):
         pe = pe.unsqueeze(0).transpose(0, 1)                                            # (2 * max_len, 1, d_model)
         return pe
 
-    def build_agent_enc(self, max_len: int):
-        ae = torch.zeros(max_len, self.d_model)
-        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
-        div_term = torch.exp(torch.arange(0, self.d_model, 2).float() * (-np.log(10000.0) / self.d_model))
-        ae[:, 0::2] = torch.sin(position * div_term)
-        ae[:, 1::2] = torch.cos(position * div_term)
-        ae = ae.unsqueeze(0).transpose(0, 1)
-        return ae
+    # def build_agent_enc(self, max_len: int):
+    #     ae = torch.zeros(max_len, self.d_model)
+    #     position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+    #     div_term = torch.exp(torch.arange(0, self.d_model, 2).float() * (-np.log(10000.0) / self.d_model))
+    #     ae[:, 0::2] = torch.sin(position * div_term)
+    #     ae[:, 1::2] = torch.cos(position * div_term)
+    #     ae = ae.unsqueeze(0).transpose(0, 1)
+    #     return ae
 
     def get_pos_enc(self, num_t: int, num_a: int, t_offset: int = 0):
         pe = self.pe[self.t_origin + t_offset: self.t_origin + t_offset + num_t, :]
@@ -94,30 +94,30 @@ class PositionalAgentEncoding(nn.Module):
         ax.imshow(front_img, cmap=front_cmap,
                   extent=(t_offset, num_t + t_offset, back_img.shape[0] + 1, 1))
 
-    def get_agent_enc(self, num_t: int, num_a: int, a_offset: int, agent_enc_shuffle: Union[bool, None]):
-        if agent_enc_shuffle is None:
-            ae = self.ae[a_offset: num_a + a_offset, :]
-        else:
-            ae = self.ae[agent_enc_shuffle]
-        ae = ae.repeat(num_t, 1, 1)
-        return ae
+    # def get_agent_enc(self, num_t: int, num_a: int, a_offset: int, agent_enc_shuffle: Union[bool, None]):
+    #     if agent_enc_shuffle is None:
+    #         ae = self.ae[a_offset: num_a + a_offset, :]
+    #     else:
+    #         ae = self.ae[agent_enc_shuffle]
+    #     ae = ae.repeat(num_t, 1, 1)
+    #     return ae
 
     def forward(self, x: torch.Tensor, num_a: int, agent_enc_shuffle: Union[bool, None] = None,
                 t_offset: int = 0, a_offset: int = 0):
         num_t = x.shape[0] // num_a
         pos_enc = self.get_pos_enc(num_t, num_a, t_offset)
-        if self.use_agent_enc:
-            agent_enc = self.get_agent_enc(num_t, num_a, a_offset, agent_enc_shuffle)
+        # if self.use_agent_enc:
+        #     agent_enc = self.get_agent_enc(num_t, num_a, a_offset, agent_enc_shuffle)
         if self.concat:
             feat = [x, pos_enc.repeat(1, x.size(1), 1)]
-            if self.use_agent_enc:
-                feat.append(agent_enc.repeat(1, x.size(1), 1))
-            x = torch.cat(feat, dim=-1)
-            x = self.fc(x)
+            # if self.use_agent_enc:
+            #     feat.append(agent_enc.repeat(1, x.size(1), 1))
+            # x = torch.cat(feat, dim=-1)
+            # x = self.fc(x)
         else:
             x += pos_enc
-            if self.use_agent_enc:
-                x += agent_enc
+            # if self.use_agent_enc:
+            #     x += agent_enc
         return self.dropout(x)
 
 
@@ -635,7 +635,7 @@ class AgentFormer(nn.Module):
                 rot = theta.repeat(self.data['agent_num']).cpu().numpy() * (180 / np.pi)
             else:
                 patch_size = [50, 10, 50, 90]
-                rot = -np.array(in_data['heading'])  * (180 / np.pi)
+                rot = -np.array(in_data['heading']) * (180 / np.pi)
             self.data['agent_maps'] = scene_map.get_cropped_maps(scene_points, patch_size, rot).to(device)      # (N, 3, 100, 100)
 
         # agent shuffling
