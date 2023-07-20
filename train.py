@@ -36,9 +36,15 @@ def train(epoch):
 
     # WIP CODE FOR EXPLORATION
     cnt = 0
+    cnt_stop = 100
     # WIP CODE FOR EXPLORATION
     while not generator.is_epoch_end():
         data = generator()
+        # # WIP CODE
+        # if cnt != cnt_stop:
+        #     cnt += 1
+        #     continue
+        # # WIP CODE
         if data is not None:
             # print()
             # [print(f"{k}: {type(v)}") for k, v in data.items()]
@@ -95,7 +101,8 @@ def train(epoch):
             last_generator_index = generator.index
 
         # WIP CODE FOR EXPLORATION
-        if cnt == 10:
+        if cnt == cnt_stop:
+            print(cnt)
             print(zblu)
         cnt += 1
         # WIP CODE FOR EXPLORATION
