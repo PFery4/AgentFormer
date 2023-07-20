@@ -123,8 +123,8 @@ class AgentFormerDataGeneratorForSDD:
     def generate_motion_threedee_with_occlusion(extracted_data: dict, target_dict: dict) -> None:
         pre_threedee = []
         fut_threedee = []
-        pre_mask = []
-        fut_mask = []
+        pre_masks = []
+        fut_masks = []
         valid_id = []
         full_window = np.concatenate((extracted_data["past_window"], extracted_data["future_window"]))
 
@@ -134,24 +134,28 @@ class AgentFormerDataGeneratorForSDD:
             except IndexError:         # agent's past is completely unobserved, the ego has no knowledge of the agent
                 # print(f"IGNORING AGENT {agent.id}: fully occluded")
                 continue
-            pre_threedee.append(
-                torch.from_numpy(agent.get_traj_section(full_window[:last_observed_timestep+1])).float()
-            )
-            fut_threedee.append(
-                torch.from_numpy(agent.get_traj_section(full_window[last_observed_timestep+1:])).float()
-            )
-            pre_mask.append(
-                torch.from_numpy(agent.get_data_availability_mask(full_window[:last_observed_timestep+1])).float()
-            )
-            fut_mask.append(
-                torch.from_numpy(agent.get_data_availability_mask(full_window[last_observed_timestep+1:])).float()
-            )
+            pre_mot = agent.get_traj_section(full_window)
+            pre_mot[last_observed_timestep+1:] = np.NAN
+            pre_threedee.append(torch.from_numpy(pre_mot).float())
+
+            fut_mot = agent.get_traj_section(full_window)
+            fut_mot[:last_observed_timestep+1] = np.NAN
+            fut_threedee.append(torch.from_numpy(fut_mot).float())
+
+            pre_mask = agent.get_data_availability_mask(full_window)
+            pre_mask[last_observed_timestep+1:] = 0.0
+            pre_masks.append(torch.from_numpy(pre_mask).float())
+
+            fut_mask = agent.get_data_availability_mask(full_window)
+            fut_mask[:last_observed_timestep+1] = 0.0
+            fut_masks.append(torch.from_numpy(fut_mask).float())
+
             valid_id.append(float(agent.id))
 
         target_dict['pre_motion_3D'] = pre_threedee
         target_dict['fut_motion_3D'] = fut_threedee
-        target_dict['pre_motion_mask'] = pre_mask
-        target_dict['fut_motion_mask'] = fut_mask
+        target_dict['pre_motion_mask'] = pre_masks
+        target_dict['fut_motion_mask'] = fut_masks
         target_dict['valid_id'] = valid_id
 
     def convert_to_preprocessor_data(self, extracted_data: dict) -> dict:
