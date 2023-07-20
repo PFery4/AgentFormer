@@ -112,8 +112,8 @@ class PositionalAgentEncoding(nn.Module):
             feat = [x, pos_enc.repeat(1, x.size(1), 1)]
             # if self.use_agent_enc:
             #     feat.append(agent_enc.repeat(1, x.size(1), 1))
-            # x = torch.cat(feat, dim=-1)
-            # x = self.fc(x)
+            x = torch.cat(feat, dim=-1)
+            x = self.fc(x)
         else:
             x += pos_enc
             # if self.use_agent_enc:
