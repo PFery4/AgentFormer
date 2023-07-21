@@ -174,11 +174,10 @@ class ContextEncoder(nn.Module):
                 traj_in.append(map_enc)
             else:
                 raise ValueError('unknown input_type!')
-        traj_in = torch.cat(traj_in, dim=-1)
-        tf_in = self.input_fc(traj_in.view(-1, traj_in.shape[-1])).view(-1, 1, self.model_dim)
+        traj_in = torch.cat(traj_in, dim=-1)                    # (T, N, Features)
+        tf_in = self.input_fc(traj_in.view(-1, traj_in.shape[-1])).view(-1, 1, self.model_dim)      # (T * N, 1, model_dim)
         agent_enc_shuffle = data['agent_enc_shuffle'] if self.agent_enc_shuffle else None
 
-        print(f'{tf_in.shape=}')
         tf_in_pos = self.pos_encoder(tf_in, num_a=data['agent_num'], agent_enc_shuffle=agent_enc_shuffle, t_offset=-tf_in.shape[0]//data['agent_num'])
         # # WIP CODE
         # fig, ax = plt.subplots()
