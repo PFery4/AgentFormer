@@ -489,6 +489,7 @@ class AgentAwareAttention(Module):
         - attn_output_weights: :math:`(N, L, S)` where N is the batch size,
           L is the target sequence length, S is the source sequence length.
         """
+        # TODO: Fix this with dictionary unpacking by defining the dictionary in the __init__ method
         if not self._qkv_same_embed_dim:
             return agent_aware_attention(
                 query, key, value, self.embed_dim, self.num_heads,
@@ -572,6 +573,7 @@ class AgentFormerEncoderLayer(Module):
         Shape:
             see the docs in Transformer class.
         """
+        # print(f"{src, src.shape=}")
         src2 = self.self_attn(src, src, src, attn_mask=src_mask,
                               key_padding_mask=src_key_padding_mask, num_agent=num_agent)[0]
         src = src + self.dropout1(src2)
