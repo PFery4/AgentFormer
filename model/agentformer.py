@@ -757,7 +757,6 @@ class AgentFormer(nn.Module):
         # #
         # # # WIP CODE
 
-
     def step_annealer(self):
         for anl in self.param_annealers:
             anl.step()
