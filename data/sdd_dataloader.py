@@ -92,68 +92,79 @@ class AgentFormerDataGeneratorForSDD:
     @staticmethod
     def generate_motion_threedee(extracted_data: dict, target_dict: dict) -> None:
 
-        pre_threedee = []
-        fut_threedee = []
+        # pre_threedee = []
+        # fut_threedee = []
         pre_mask = []
         fut_mask = []
         valid_id = []
 
+        full_threedee = []
+
         for agent in extracted_data["agents"]:
-            pre_threedee.append(
-                torch.from_numpy(agent.get_traj_section(extracted_data["past_window"])).float()
-            )
-            fut_threedee.append(
-                torch.from_numpy(agent.get_traj_section(extracted_data["future_window"])).float()
-            )
+            # pre_threedee.append(
+            #     torch.from_numpy(agent.get_traj_section(extracted_data["past_window"])).float()
+            # )
+            # fut_threedee.append(
+            #     torch.from_numpy(agent.get_traj_section(extracted_data["future_window"])).float()
+            # )
             pre_mask.append(
                 torch.from_numpy(agent.get_data_availability_mask(extracted_data["past_window"])).float()
             )
             fut_mask.append(
                 torch.from_numpy(agent.get_data_availability_mask(extracted_data["future_window"])).float()
             )
+            full_threedee.append(
+                torch.from_numpy(agent.get_traj_section(extracted_data["full_window"])).float()
+            )
             valid_id.append(float(agent.id))
 
-        target_dict['pre_motion_3D'] = pre_threedee
-        target_dict['fut_motion_3D'] = fut_threedee
+        # target_dict['pre_motion_3D'] = pre_threedee
+        # target_dict['fut_motion_3D'] = fut_threedee
         target_dict['pre_motion_mask'] = pre_mask
         target_dict['fut_motion_mask'] = fut_mask
         target_dict['valid_id'] = valid_id
+        target_dict['full_motion_3D'] = full_threedee
+        target_dict['obs_mask'] = [
+            torch.from_numpy(np.concatenate(
+                (np.ones_like(extracted_data["past_window"]),
+                 np.zeros_like(extracted_data["future_window"]))
+            ))
+        ] * len(extracted_data["agents"])
 
     @staticmethod
     def generate_motion_threedee_with_occlusion(extracted_data: dict, target_dict: dict) -> None:
-        pre_threedee = []
-        fut_threedee = []
         pre_masks = []
         fut_masks = []
         valid_id = []
-        full_window = np.concatenate((extracted_data["past_window"], extracted_data["future_window"]))
 
+        full_threedee = []
+        obs_mask = []
         for agent, occlusion_mask in zip(extracted_data["agents"], extracted_data["full_window_occlusion_masks"]):
             try:
                 last_observed_timestep = np.where(occlusion_mask[:len(extracted_data["past_window"])])[0][-1]
             except IndexError:         # agent's past is completely unobserved, the ego has no knowledge of the agent
                 # print(f"IGNORING AGENT {agent.id}: fully occluded")
                 continue
-            pre_mot = agent.get_traj_section(full_window)
-            pre_mot[last_observed_timestep+1:] = np.NAN
-            pre_threedee.append(torch.from_numpy(pre_mot).float())
+            full_mot = agent.get_traj_section(extracted_data["full_window"])
+            full_threedee.append(torch.from_numpy(full_mot).float())
 
-            fut_mot = agent.get_traj_section(full_window)
-            fut_mot[:last_observed_timestep+1] = np.NAN
-            fut_threedee.append(torch.from_numpy(fut_mot).float())
+            observed = occlusion_mask
+            observed[len(extracted_data["past_window"]):] = False
 
-            pre_mask = agent.get_data_availability_mask(full_window)
+            obs_mask.append(torch.from_numpy(observed.astype(float)))
+
+            pre_mask = agent.get_data_availability_mask(extracted_data["full_window"])
             pre_mask[last_observed_timestep+1:] = 0.0
             pre_masks.append(torch.from_numpy(pre_mask).float())
 
-            fut_mask = agent.get_data_availability_mask(full_window)
+            fut_mask = agent.get_data_availability_mask(extracted_data["full_window"])
             fut_mask[:last_observed_timestep+1] = 0.0
             fut_masks.append(torch.from_numpy(fut_mask).float())
 
             valid_id.append(float(agent.id))
 
-        target_dict['pre_motion_3D'] = pre_threedee
-        target_dict['fut_motion_3D'] = fut_threedee
+        target_dict['full_motion_3D'] = full_threedee
+        target_dict['obs_mask'] = obs_mask
         target_dict['pre_motion_mask'] = pre_masks
         target_dict['fut_motion_mask'] = fut_masks
         target_dict['valid_id'] = valid_id
