@@ -579,41 +579,42 @@ class AgentFormer(nn.Module):
 
     def set_data(self, data: dict) -> None:
         device = self.device
-        if self.training and len(data['pre_motion_3D']) > self.max_train_agent:
+        if self.training and len(data['full_motion_3D']) > self.max_train_agent:
             in_data = {}
-            ind = np.random.choice(len(data['pre_motion_3D']), self.max_train_agent, replace=False).tolist()
-            for key in ['pre_motion_3D', 'fut_motion_3D', 'fut_motion_mask', 'pre_motion_mask', 'heading', 'full_motion_3D', 'obs_mask']:
+            ind = np.random.choice(len(data['full_motion_3D']), self.max_train_agent, replace=False).tolist()
+            for key in ['heading', 'full_motion_3D', 'obs_mask', 'fut_motion_mask', 'pre_motion_mask']:
                 in_data[key] = [data[key][i] for i in ind if data[key] is not None]
         else:
             in_data = data
 
         self.data = defaultdict(lambda: None)
-        self.data['batch_size'] = len(in_data['pre_motion_3D'])                 # int: N
-        self.data['agent_num'] = len(in_data['pre_motion_3D'])                  # int: N
+        self.data['batch_size'] = len(in_data['full_motion_3D'])                 # int: N
+        self.data['agent_num'] = len(in_data['full_motion_3D'])                  # int: N
         ##############################################################################################################
         # Working with full_motion and obs_mask only
         full_motion = torch.stack(in_data['full_motion_3D'], dim=0).to(device).transpose(0, 1).contiguous()                     # (T_total, N, 2)
         obs_mask = torch.stack(in_data['obs_mask'], dim=0).to(device).to(dtype=torch.bool).transpose(0, 1).contiguous()         # (T_total, N)
         last_observed_timesteps = torch.stack([mask.nonzero().flatten()[-1] for mask in in_data['obs_mask']]).to(device)        # (N)
-        last_observed_pos = full_motion[last_observed_timesteps, torch.arange(full_motion.size(1))].detach().clone()
-
-        # timesteps_to_predict = torch.full_like(obs_mask, False)          # (T, N)
-        timesteps_to_predict = [torch.full(size=[full_motion.shape[0]], fill_value=False)] * len(in_data['obs_mask'])
+        last_observed_pos = full_motion[last_observed_timesteps, torch.arange(full_motion.size(1))]            # (N, 2)
+        timesteps_to_predict = []
         for k, last_obs in enumerate(last_observed_timesteps):
-            timesteps_to_predict[k][last_obs + 1:] = True
-        timesteps_to_predict = torch.stack(timesteps_to_predict, dim=0).transpose(0, 1)
+            timesteps_to_predict.append(torch.cat((
+                torch.full([int(last_obs + 1)], False),
+                torch.full([int(full_motion.shape[0] - (last_obs + 1))], True)
+            )))
+        timesteps_to_predict = torch.stack(timesteps_to_predict, dim=0).transpose(0, 1)                                         # (T_total, N)
+        fut_mask = torch.stack(in_data['fut_motion_mask'], dim=0)
+        self.data['fut_mask'] = fut_mask.to(device)       # (1, T_pred)
+        pre_mask = torch.stack(in_data['pre_motion_mask'], dim=0)
+        self.data['pre_mask'] = pre_mask.to(device)       # (1, T_obs)
 
         # define the scene origin
         scene_orig_all_past = self.cfg.get('scene_orig_all_past', False)
         if scene_orig_all_past:
-            scene_orig = full_motion[obs_mask].mean(dim=0).to(device)
+            scene_orig = full_motion[obs_mask].mean(dim=0).contiguous()           # (2)
         else:
-            scene_orig = last_observed_pos.mean(dim=0).to(device)
-        # print(f"{full_motion=}, {full_motion.shape=}")
-        # print(f"{obs_mask=}, {obs_mask.shape=}")
-        # print(f"{last_observed_timesteps=}")        # (N)
-        # print(f"{last_observed_pos=}")              # (N, 2)
-        # print(f"{scene_orig=}")
+            scene_orig = last_observed_pos.mean(dim=0).contiguous()               # (2)
+        self.data['scene_orig'] = scene_orig.to(device)
 
         # perform random rotation
         if self.rand_rot_scene and self.training:
@@ -621,88 +622,115 @@ class AgentFormer(nn.Module):
                 raise NotImplementedError
             else:
                 theta = torch.rand(1).to(device) * np.pi * 2
-                full_motion, full_motion_scene_norm = rotation_2d_torch(full_motion, theta, scene_orig)
+                full_motion, _ = rotation_2d_torch(full_motion, theta, scene_orig)
         else:
             theta = torch.zeros(1).to(device)
-            full_motion_scene_norm = full_motion - scene_orig
+            # full_motion_scene_norm = full_motion - scene_orig
 
         # create past and future tensors
-        pre_motion = torch.full_like(full_motion, float('nan'))         # validated
+        pre_motion = torch.full_like(full_motion, float('nan'))         # (T_total, N, 2)
         pre_motion[obs_mask, ...] = full_motion[obs_mask, ...]
-        pre_motion_scene_norm = pre_motion - scene_orig                 # validated
+        self.data['pre_motion'] = pre_motion.to(device)
+        pre_motion_scene_norm = pre_motion - scene_orig                 # (T_total, N, 2)
+        self.data['pre_motion_scene_norm'] = pre_motion_scene_norm.to(device)
 
-        fut_motion = torch.full_like(full_motion, float('nan'))         # validated
+        fut_motion = torch.full_like(full_motion, float('nan'))         # (T_total, N, 2)
         fut_motion[timesteps_to_predict, ...] = full_motion[timesteps_to_predict, ...]
-        fut_motion_scene_norm = fut_motion - scene_orig                 # validated
+        self.data['fut_motion'] = fut_motion.to(device)
+        fut_motion_scene_norm = fut_motion - scene_orig                 # (T_total, N, 2)
+        self.data['fut_motion_scene_norm'] = fut_motion_scene_norm.to(device)
+
         fut_motion_orig = fut_motion.detach().clone().transpose(0, 1)
-        fut_motion_orig_scene_norm = fut_motion_orig - scene_orig       # validated
+        self.data['fut_motion_orig'] = fut_motion_orig.to(device)
+        fut_motion_orig_scene_norm = fut_motion_orig - scene_orig       # (N, T_total, 2)
+        self.data['fut_motion_orig_scene_norm'] = fut_motion_orig_scene_norm.to(device)
 
-        # TODO: pre_vel, and fut_vel, and cur_motion
-        # TODO: check which motion representation modality is actually used for prediction
-        full_vel = full_motion[1:] - full_motion[:-1]
+        full_vel = full_motion[1:] - full_motion[:-1]                   # (T_total - 1, N, 2)
+        pre_vel = torch.full_like(full_vel, float('nan'))
+        pre_vel[obs_mask[1:, ...], ...] = full_vel[obs_mask[1:, ...], ...]        # (T_total - 1, N, 2)
+        self.data['pre_vel'] = pre_vel.to(device)
 
-        # pre_motion + scene_norm
-        # fut_motion + scene_norm
-        # fut_motion_orig + scene_norm
-        #
-        # pre_vel
-        # fut_vel
-        # cur_motion
-        # pre_motion_norm
-        # fut_motion_norm
+        fut_vel = torch.full_like(full_vel, float('nan'))
+        fut_vel[timesteps_to_predict[1:, ...], ...] = full_vel[timesteps_to_predict[1:, ...], ...]    # (T_total - 1, N, 2)
+        self.data['fut_vel'] = fut_vel.to(device)
+
+        cur_motion = full_motion[last_observed_timesteps, torch.arange(full_motion.size(1))].unsqueeze(0)      # (1, N, 2)
+        self.data['cur_motion'] = cur_motion.to(device)
+
+        pre_motion_norm = pre_motion - cur_motion           # (T_total, N, 2)
+        self.data['pre_motion_norm'] = pre_motion_norm.to(device)
+        fut_motion_norm = fut_motion - cur_motion           # (T_total, N, 2)
+        self.data['fut_motion_norm'] = fut_motion_norm.to(device)
 
         ##############################################################################################################
 
-        self.data['pre_motion'] = torch.stack(in_data['pre_motion_3D'], dim=0).to(device).transpose(0, 1).contiguous()      # (T_obs, N, 2)
-        self.data['fut_motion'] = torch.stack(in_data['fut_motion_3D'], dim=0).to(device).transpose(0, 1).contiguous()      # (T_pred, N, 2)
-        self.data['fut_motion_orig'] = torch.stack(in_data['fut_motion_3D'], dim=0).to(device)   # future motion without transpose      # (N, T_pred, 2)
+        # self.data['pre_motion'] = torch.stack(in_data['pre_motion_3D'], dim=0).to(device).transpose(0, 1).contiguous()      # (T_obs, N, 2)
+        # self.data['fut_motion'] = torch.stack(in_data['fut_motion_3D'], dim=0).to(device).transpose(0, 1).contiguous()      # (T_pred, N, 2)
+        # self.data['fut_motion_orig'] = torch.stack(in_data['fut_motion_3D'], dim=0).to(device)   # future motion without transpose      # (N, T_pred, 2)
         self.data['fut_mask'] = torch.stack(in_data['fut_motion_mask'], dim=0).to(device)       # (1, T_pred)
         self.data['pre_mask'] = torch.stack(in_data['pre_motion_mask'], dim=0).to(device)       # (1, T_obs)
-        if scene_orig_all_past:
-            self.data['scene_orig'] = self.data['pre_motion'].view(-1, 2).mean(dim=0)       # (2)
-        else:
-            self.data['scene_orig'] = self.data['pre_motion'][-1].mean(dim=0)               # (2)
+        # if scene_orig_all_past:
+        #     self.data['scene_orig'] = self.data['pre_motion'].view(-1, 2).mean(dim=0)       # (2)
+        # else:
+        #     self.data['scene_orig'] = self.data['pre_motion'][-1].mean(dim=0)               # (2)
         if in_data['heading'] is not None:
             self.data['heading'] = torch.tensor(in_data['heading']).float().to(device)      # (N)
 
-        # rotate the scene
-        if self.rand_rot_scene and self.training:
-            # if self.discrete_rot:
-            #     theta = torch.randint(high=24, size=(1,)).to(device) * (np.pi / 12)
-            # else:
-            #     theta = torch.rand(1).to(device) * np.pi * 2
-            for key in ['pre_motion', 'fut_motion', 'fut_motion_orig']:
-                self.data[f'{key}'], self.data[f'{key}_scene_norm'] = rotation_2d_torch(self.data[key], theta, self.data['scene_orig'])     # same shape
-            if in_data['heading'] is not None:
-                self.data['heading'] += theta
-        else:
-            theta = torch.zeros(1).to(device)
-            for key in ['pre_motion', 'fut_motion', 'fut_motion_orig']:
-                self.data[f'{key}_scene_norm'] = self.data[key] - self.data['scene_orig']   # normalize per scene
+        # # rotate the scene
+        # if self.rand_rot_scene and self.training:
+        #     # if self.discrete_rot:
+        #     #     theta = torch.randint(high=24, size=(1,)).to(device) * (np.pi / 12)
+        #     # else:
+        #     #     theta = torch.rand(1).to(device) * np.pi * 2
+        #     for key in ['pre_motion', 'fut_motion', 'fut_motion_orig']:
+        #         self.data[f'{key}'], self.data[f'{key}_scene_norm'] = rotation_2d_torch(self.data[key], theta, self.data['scene_orig'])     # same shape
+        #     if in_data['heading'] is not None:
+        #         self.data['heading'] += theta
+        # else:
+        #     theta = torch.zeros(1).to(device)
+        #     for key in ['pre_motion', 'fut_motion', 'fut_motion_orig']:
+        #         self.data[f'{key}_scene_norm'] = self.data[key] - self.data['scene_orig']   # normalize per scene
+        #
+        # self.data['pre_vel'] = self.data['pre_motion'][1:] - self.data['pre_motion'][:-1, :]        # (T_obs - 1, N, 2)
+        # self.data['fut_vel'] = self.data['fut_motion'] - torch.cat([self.data['pre_motion'][[-1]], self.data['fut_motion'][:-1, :]])    # (T_pred, N, 2)
+        # self.data['cur_motion'] = self.data['pre_motion'][[-1]]                                     # (1, N, 2)
+        # self.data['pre_motion_norm'] = self.data['pre_motion'][:-1] - self.data['cur_motion']   # normalize pos per agent       # (T_obs - 1, N, 2)
+        # self.data['fut_motion_norm'] = self.data['fut_motion'] - self.data['cur_motion']                                        # (T_pred, N, 2)
 
-        self.data['pre_vel'] = self.data['pre_motion'][1:] - self.data['pre_motion'][:-1, :]        # (T_obs - 1, N, 2)
-        self.data['fut_vel'] = self.data['fut_motion'] - torch.cat([self.data['pre_motion'][[-1]], self.data['fut_motion'][:-1, :]])    # (T_pred, N, 2)
-        self.data['cur_motion'] = self.data['pre_motion'][[-1]]                                     # (1, N, 2)
-        self.data['pre_motion_norm'] = self.data['pre_motion'][:-1] - self.data['cur_motion']   # normalize pos per agent       # (T_obs - 1, N, 2)
-        self.data['fut_motion_norm'] = self.data['fut_motion'] - self.data['cur_motion']                                        # (T_pred, N, 2)
-
-        # WIP CODE
-        for i in [0, 1, 2]:
-            print(f"checking agent {i} ########################################################")
-            print(f"{theta=}")
-            # print(f"{pre_motion[:, i, :]=}")
-            # print(f"{self.data['pre_motion'][:, i, :]=}")
-            # print(f"{pre_motion_scene_norm[:, i, :]=}")
-            # print(f"{self.data['pre_motion_scene_norm'][:, i, :]=}")
-            # print(f"{fut_motion[:, i, :]=}")
-            # print(f"{self.data['fut_motion'][:, i, :]=}")
-            # print(f"{fut_motion_scene_norm[:, i, :]=}")
-            # print(f"{self.data['fut_motion_scene_norm'][:, i, :]=}")
-            # print(f"{fut_motion_orig[i, :]=}")
-            # print(f"{self.data['fut_motion_orig'][i, :]=}")
-            # print(f"{fut_motion_orig_scene_norm[i, :]=}")
-            # print(f"{self.data['fut_motion_orig_scene_norm'][i, :]=}")
-        # WIP CODE
+        # # # WIP CODE
+        # for i in [0, 12]:
+        #     print(f"checking agent {i} ########################################################")
+        #     print(f"{theta=}")
+        #     print(f"{full_motion[:, i]=}")
+        #     print(f"{obs_mask[:, i]=}")
+        #     print(f"{last_observed_timesteps[i]=}")
+        #     print(f"{timesteps_to_predict[:, i]=}")
+        #
+        #     # print(f"{pre_motion[:, i, :]=}")
+        #     print(f"{self.data['pre_motion'][:, i, :]=}")
+        #     # print(f"{pre_motion_scene_norm[:, i, :]=}")
+        #     print(f"{self.data['pre_motion_scene_norm'][:, i, :]=}")
+        #     # print(f"{fut_motion[:, i, :]=}")
+        #     print(f"{self.data['fut_motion'][:, i, :]=}")
+        #     # print(f"{fut_motion_scene_norm[:, i, :]=}")
+        #     print(f"{self.data['fut_motion_scene_norm'][:, i, :]=}")
+        #     # print(f"{fut_motion_orig[i, :]=}")
+        #     print(f"{self.data['fut_motion_orig'][i, :]=}")
+        #     # print(f"{fut_motion_orig_scene_norm[i, :]=}")
+        #     print(f"{self.data['fut_motion_orig_scene_norm'][i, :]=}")
+        #     # print(f"{full_vel[:, i, :]=}")
+        #     # print(f"{pre_vel[:, i, :]=}")
+        #     print(f"{self.data['pre_vel'][:, i, :]=}")
+        #     # print(f"{fut_vel[:, i, :]=}")
+        #     print(f"{self.data['fut_vel'][:, i, :]=}")
+        #     # print(f"{cur_motion[:, i, :]=}")
+        #     print(f"{self.data['cur_motion'][:, i, :]=}")
+        #     # print(f"{pre_motion_norm[:, i, :]=}")
+        #     print(f"{self.data['pre_motion_norm'][:, i, :]=}")
+        #     # print(f"{fut_motion_norm[:, i, :]=}")
+        #     print(f"{self.data['fut_motion_norm'][:, i, :]=}")
+        # #
+        # # # WIP CODE
 
         if in_data['heading'] is not None:
             self.data['heading_vec'] = torch.stack([torch.cos(self.data['heading']), torch.sin(self.data['heading'])], dim=-1)      # (N, 2)
