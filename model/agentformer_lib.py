@@ -132,14 +132,38 @@ def agent_aware_attention(query: Tensor,
     assert head_dim * num_heads == embed_dim, "embed_dim must be divisible by num_heads"
     scaling = float(head_dim) ** -0.5
 
+    query_nanmask = torch.isnan(query[..., 0, 0])
+    key_nanmask = torch.isnan(key[..., 0, 0])
+    # value_nanmask = torch.isnan(value[..., 0, 0])
+    print(f"{query_nanmask, query_nanmask.shape=}")
+
+
     if not use_separate_proj_weight:
-        if torch.equal(query, key) and torch.equal(key, value):
+
+        print(f"{query[..., 0, 0], query.shape=}")
+        print(f"{key[..., 0, 0], key.shape=}")
+        print(f"{value[..., 0, 0], value.shape=}")
+        # print(f"{torch.equal(query, key)=}")
+        # print(f"{torch.equal(key, value)=}")
+        # print(f"{torch.equal(query[~torch.isnan(query)], key[~torch.isnan(key)])=}")
+        # print(f"{torch.equal(key[~torch.isnan(key)], value[~torch.isnan(value)])=}")
+
+        if torch.equal(query[~torch.isnan(query)], key[~torch.isnan(key)]) and torch.equal(key[~torch.isnan(key)], value[~torch.isnan(value)]):
             # self-attention
             q, k, v = linear(query, in_proj_weight, in_proj_bias).chunk(3, dim=-1)
+
+            # print(f"{q[..., 0, 0], q.shape=}")
+            # print(f"{k[..., 0, 0], k.shape=}")
+            # print(f"{v[..., 0, 0], v.shape=}")
+
+            # print(f"{in_proj_weight_self=}")
+
             if in_proj_weight_self is not None:
                 q_self, k_self = linear(query, in_proj_weight_self, in_proj_bias_self).chunk(2, dim=-1)
 
-        elif torch.equal(key, value):
+                # print(f"{q_self[..., 0, 0], q_self.shape=}")
+                # print(f"{k_self[..., 0, 0], k_self.shape=}")
+        elif torch.equal(key[~torch.isnan(key)], value[~torch.isnan(value)]):
             # encoder-decoder attention
             # This is inline in_proj function with in_proj_weight and in_proj_bias
             _b = in_proj_bias
@@ -155,7 +179,6 @@ def agent_aware_attention(query: Tensor,
                 k = None
                 v = None
             else:
-
                 # This is inline in_proj function with in_proj_weight and in_proj_bias
                 _b = in_proj_bias
                 _start = embed_dim
@@ -164,6 +187,9 @@ def agent_aware_attention(query: Tensor,
                 if _b is not None:
                     _b = _b[_start:]
                 k, v = linear(key, _w, _b).chunk(2, dim=-1)
+                # print(f"{q[..., 0, 0], q.shape=}")
+                # print(f"{k[..., 0, 0], k.shape=}")
+                # print(f"{v[..., 0, 0], v.shape=}")
 
             if in_proj_weight_self is not None:
                 _w = in_proj_weight_self[:embed_dim, :]
@@ -174,11 +200,15 @@ def agent_aware_attention(query: Tensor,
                 _w = in_proj_weight_self[embed_dim:, :]
                 _b = in_proj_bias_self[embed_dim:]
                 k_self = linear(key, _w, _b)
-
+                # print(f"{q_self[..., 0, 0], q_self.shape=}")
+                # print(f"{k_self[..., 0, 0], k_self.shape=}")
         else:
             raise NotImplementedError
 
     else:
+        # this bit of code is likely not used at all, as q_self and k_self are not generated
+        raise NotImplementedError("NEED TO CHECK FOR PROPER MANIPULATION OF PARTIALLY NAN TENSORS"
+                                  "(ie, NaN patterns between q, k, v and query, key, value need to match)")
         q_proj_weight_non_opt = torch.jit._unwrap_optional(q_proj_weight)
         len1, len2 = q_proj_weight_non_opt.size()
         assert len1 == embed_dim and len2 == query.size(-1)
@@ -199,6 +229,7 @@ def agent_aware_attention(query: Tensor,
             q = linear(query, q_proj_weight_non_opt, in_proj_bias)
             k = linear(key, k_proj_weight_non_opt, in_proj_bias)
             v = linear(value, v_proj_weight_non_opt, in_proj_bias)
+
     if not gaussian_kernel:
         q = q * scaling       # remove scaling
         if in_proj_weight_self is not None:
@@ -206,7 +237,7 @@ def agent_aware_attention(query: Tensor,
 
     if attn_mask is not None:
         assert attn_mask.dtype == torch.float32 or attn_mask.dtype == torch.float64 or \
-            attn_mask.dtype == torch.float16 or attn_mask.dtype == torch.uint8 or attn_mask.dtype == torch.bool, \
+               attn_mask.dtype == torch.float16 or attn_mask.dtype == torch.uint8 or attn_mask.dtype == torch.bool, \
             'Only float, byte, and bool types are supported for attn_mask, not {}'.format(attn_mask.dtype)
         if attn_mask.dtype == torch.uint8:
             warnings.warn("Byte tensor for attn_mask in nn.MultiheadAttention is deprecated. Use bool tensor instead.")
@@ -229,6 +260,7 @@ def agent_aware_attention(query: Tensor,
         key_padding_mask = key_padding_mask.to(torch.bool)
 
     if bias_k is not None and bias_v is not None:
+        raise NotImplementedError("NEED TO CHECK PROPER NAN PATTERN HANDLING IN THE FOLLOWING LINES OF CODE")
         if static_k is None and static_v is None:
             k = torch.cat([k, bias_k.repeat(1, bsz, 1)])
             v = torch.cat([v, bias_v.repeat(1, bsz, 1)])
@@ -243,6 +275,8 @@ def agent_aware_attention(query: Tensor,
         assert bias_k is None
         assert bias_v is None
 
+    # print(f"{q[..., 0], q.shape=}")
+
     q = q.contiguous().view(tgt_len, bsz * num_heads, head_dim).transpose(0, 1)
     if k is not None:
         k = k.contiguous().view(-1, bsz * num_heads, head_dim).transpose(0, 1)
@@ -252,23 +286,32 @@ def agent_aware_attention(query: Tensor,
         q_self = q_self.contiguous().view(tgt_len, bsz * num_heads, head_dim).transpose(0, 1)
         k_self = k_self.contiguous().view(-1, bsz * num_heads, head_dim).transpose(0, 1)
 
+    # print(f"{q[0, ..., 0], q.shape=}")
+
+    # print(f"{static_k=}")
     if static_k is not None:
+        raise NotImplementedError("k becomes static_k, perhaps something needs to be done here wrt NaN patterns")
         assert static_k.size(0) == bsz * num_heads
         assert static_k.size(2) == head_dim
         k = static_k
 
+    # print(f"{static_v=}")
     if static_v is not None:
+        raise NotImplementedError("v becomes static_v, perhaps something needs to be done here wrt NaN patterns")
         assert static_v.size(0) == bsz * num_heads
         assert static_v.size(2) == head_dim
         v = static_v
 
     src_len = k.size(1)
 
+    # print(f"{key_padding_mask=}")
     if key_padding_mask is not None:
         assert key_padding_mask.size(0) == bsz
         assert key_padding_mask.size(1) == src_len
 
+    # print(f"{add_zero_attn=}")
     if add_zero_attn:
+        raise NotImplementedError("NaN patterns, please check")
         src_len += 1
         k = torch.cat([k, torch.zeros((k.size(0), 1) + k.size()[2:], dtype=k.dtype, device=k.device)], dim=1)
         v = torch.cat([v, torch.zeros((v.size(0), 1) + v.size()[2:], dtype=v.dtype, device=v.device)], dim=1)
@@ -277,17 +320,32 @@ def agent_aware_attention(query: Tensor,
         if key_padding_mask is not None:
             key_padding_mask = pad(key_padding_mask, (0, 1))
 
+    # print(f"{gaussian_kernel=}")
     if gaussian_kernel:
+        raise NotImplementedError("check NaN patterns")
         qk = torch.bmm(q, k.transpose(1, 2))
         q_n = q.pow(2).sum(dim=-1).unsqueeze(-1)
         k_n = k.pow(2).sum(dim=-1).unsqueeze(1)
         qk_dist = q_n + k_n - 2 * qk
         attn_output_weights = qk_dist * scaling * 0.5
     else:
+
+        # q = q[:, ~query_nanmask, :]
+        # k = k[:, ~key_nanmask, :]
+
+        # print(f"{q[0, ... ,0], q.shape=}")
+        # print(f"{k[0, ..., 0], k.shape=}")
+
         attn_output_weights = torch.bmm(q, k.transpose(1, 2))
+        # attn_output_weights = attn_output_weights[~torch.isnan(attn_output_weights)].view(-1, torch.sum(~query_nanmask), torch.sum(~key_nanmask))
+    # print(f"{attn_output_weights[0, ...], attn_output_weights.shape=}")
+    # print(f"{torch.sum(torch.isnan(attn_output_weights))=}")
+    kv_nanmask = torch.isnan(attn_output_weights[0, ...])
+    # print(f"{kv_nanmask, kv_nanmask.shape=}")
 
     assert list(attn_output_weights.size()) == [bsz * num_heads, tgt_len, src_len]
 
+    # print(f"{in_proj_weight_self=}")
     if in_proj_weight_self is not None:
         """
         ==================================
@@ -297,18 +355,30 @@ def agent_aware_attention(query: Tensor,
         attn_output_weights_inter = attn_output_weights
         attn_weight_self_mask = torch.eye(num_agent).to(q.device)
         attn_weight_self_mask = attn_weight_self_mask.repeat([attn_output_weights.shape[1] // num_agent, attn_output_weights.shape[2] // num_agent]).unsqueeze(0)
+
         attn_output_weights_self = torch.bmm(q_self, k_self.transpose(1, 2))
 
+        assert torch.all(torch.isnan(attn_output_weights_self) == torch.isnan(attn_output_weights))
+
         attn_output_weights = attn_output_weights_inter * (1 - attn_weight_self_mask) + attn_output_weights_self * attn_weight_self_mask
+
         if attn_mask is not None:
             if attn_mask.dtype == torch.bool:
                 attn_output_weights.masked_fill_(attn_mask, float('-inf'))
             else:
                 attn_output_weights += attn_mask
 
-        attn_output_weights = softmax(
-            attn_output_weights, dim=-1)
+        # print(f"{attn_output_weights[:, ~kv_nanmask]=}")
+        # print(f"{torch.sum(torch.isnan(attn_output_weights[:, ~kv_nanmask]))=}")
+        # print(f"{attn_output_weights.shape=}")
+
+        # NO div by sqrt(d)         ????
+        attn_output_weights[:, ~kv_nanmask] = softmax(
+            attn_output_weights[:, ~kv_nanmask], dim=-1)
+        assert torch.all(torch.isnan(attn_output_weights_self) == torch.isnan(attn_output_weights))
+
     else:
+        raise NotImplementedError("Check Nan Pattern")
         if attn_mask is not None:
             if attn_mask.dtype == torch.bool:
                 attn_output_weights.masked_fill_(attn_mask, float('-inf'))
@@ -323,17 +393,34 @@ def agent_aware_attention(query: Tensor,
             )
             attn_output_weights = attn_output_weights.view(bsz * num_heads, tgt_len, src_len)
 
-
         attn_output_weights = softmax(
             attn_output_weights, dim=-1)
 
-    attn_output_weights = dropout(attn_output_weights, p=dropout_p, training=training)
+    attn_output_weights[:, ~kv_nanmask] = dropout(attn_output_weights[:, ~kv_nanmask], p=dropout_p, training=training)
+    assert torch.all(torch.isnan(attn_output_weights_self) == torch.isnan(attn_output_weights))
+
+    print(f"{attn_output_weights[:, ~kv_nanmask], attn_output_weights[:, ~kv_nanmask].shape=}")
+    print(f"{torch.sum(torch.isnan(attn_output_weights[:, ~kv_nanmask]))=}")
+
+    print(f"{v[:, ~key_nanmask], v[:, ~key_nanmask].shape=}")
+    print(f"{torch.sum(torch.isnan(v[:, ~key_nanmask]))=}")
+
+    # TODO: FINAL MATMUL BETWEEN QK AND V. NEEDS TO BE THE SAME SHAPE, AND WITHOUT CORRUPTING OUTPUT WITH NANS EVERYWHERE
+    print(zblu)
+
 
     attn_output = torch.bmm(attn_output_weights, v)
     assert list(attn_output.size()) == [bsz * num_heads, tgt_len, head_dim]
+    print(f"{[bsz, num_heads, tgt_len, head_dim]=}")
+    print(f"{attn_output.shape=}")
     attn_output = attn_output.transpose(0, 1).contiguous().view(tgt_len, bsz, embed_dim)
+    print(f"{attn_output.shape=}")
     attn_output = linear(attn_output, out_proj_weight, out_proj_bias)
+    print(f"{attn_output[..., 0, 0], attn_output.shape=}")
+    print(f"{torch.sum(torch.isnan(attn_output))=}")
 
+    print(f"{need_weights=}")
+    print(zblu)
     if need_weights:
         # average attention weights over heads
         attn_output_weights = attn_output_weights.view(bsz, num_heads, tgt_len, src_len)
