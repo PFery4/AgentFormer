@@ -104,8 +104,11 @@ class PositionalAgentEncoding(nn.Module):
 
     def forward(self, x: torch.Tensor, num_a: int, agent_enc_shuffle: Union[bool, None] = None,
                 t_offset: int = 0, a_offset: int = 0):
+        # print(f"{torch.isnan(x)[..., 0], x.shape=}")
         num_t = x.shape[0] // num_a
         pos_enc = self.get_pos_enc(num_t, num_a, t_offset)
+
+        # print(f"{torch.isnan(pos_enc)[..., 0], pos_enc.shape=}")
         # if self.use_agent_enc:
         #     agent_enc = self.get_agent_enc(num_t, num_a, a_offset, agent_enc_shuffle)
         if self.concat:
@@ -113,12 +116,23 @@ class PositionalAgentEncoding(nn.Module):
             # if self.use_agent_enc:
             #     feat.append(agent_enc.repeat(1, x.size(1), 1))
             x = torch.cat(feat, dim=-1)
+            # print(f"{torch.isnan(x)[..., 0], x.shape=}")
             x = self.fc(x)
+            # print(f"{torch.isnan(x)[..., 0], x.shape=}")
+            # print(f"{torch.isnan(x.view(-1, num_a, x.shape[-1]))[..., 0], x.shape=}")
         else:
             x += pos_enc
             # if self.use_agent_enc:
             #     x += agent_enc
-        return self.dropout(x)
+
+        isnan_mask = torch.isnan(x)
+        out = torch.full_like(x, float('nan'))
+
+        x = x[~isnan_mask]
+        x = self.dropout(x)
+
+        out[~isnan_mask] = x
+        return out
 
 
 class ContextEncoder(nn.Module):
@@ -175,10 +189,31 @@ class ContextEncoder(nn.Module):
             else:
                 raise ValueError('unknown input_type!')
         traj_in = torch.cat(traj_in, dim=-1)                    # (T, N, Features)
+
+        # print("#" * 60)
+        # print(f"{traj_in, traj_in.shape=}")
+        # print(f"{torch.isnan(traj_in)[..., 0], traj_in[..., 0].shape=}")
+
         tf_in = self.input_fc(traj_in.view(-1, traj_in.shape[-1])).view(-1, 1, self.model_dim)      # (T * N, 1, model_dim)
+        # tf_in = self.input_fc(traj_in.view(-1, traj_in.shape[-1]))      # (T * N, model_dim)
+        # tf_in = tf_in.view(-1, data["agent_num"], self.model_dim)       # (T, N, model_dim)
+        # tf_in = tf_in.view(-1, 1, self.model_dim)      # (T * N, 1, model_dim)
+        # print("#" * 60)
+        # print(f"{tf_in.shape=}")
+        # print(f"{torch.isnan(tf_in)[..., 0], tf_in[..., 0].shape=}")
+        tf_in_nan = torch.isnan(tf_in)
+
         agent_enc_shuffle = data['agent_enc_shuffle'] if self.agent_enc_shuffle else None
 
         tf_in_pos = self.pos_encoder(tf_in, num_a=data['agent_num'], agent_enc_shuffle=agent_enc_shuffle, t_offset=-tf_in.shape[0]//data['agent_num'])
+
+        # print("#" * 60)
+        # print(f"{tf_in_pos.shape=}")
+        # print(f"{torch.isnan(tf_in_pos.view(-1, data['agent_num'], tf_in_pos.shape[-1]))[..., 0], tf_in_pos[..., 0].shape=}")
+
+        tf_in_pos_nan = torch.isnan(tf_in_pos)
+        print(f"{torch.all(tf_in_nan == tf_in_pos_nan), (tf_in_nan == tf_in_pos_nan).shape=}")
+
         # # WIP CODE
         # fig, ax = plt.subplots()
         # print(f"CONTEXT ENCODER")
@@ -186,8 +221,11 @@ class ContextEncoder(nn.Module):
         # plt.show()
         # # WIP CODE
 
-        src_agent_mask = data['agent_mask'].clone()
-        src_mask = generate_mask(tf_in.shape[0], tf_in.shape[0], data['agent_num'], src_agent_mask).to(tf_in.device)
+        src_agent_mask = data['agent_mask'].clone()         # (N, N)
+        # print(f"{src_agent_mask, src_agent_mask.shape=}")
+
+        src_mask = generate_mask(tf_in.shape[0], tf_in.shape[0], data['agent_num'], src_agent_mask).to(tf_in.device)        # (T * N, T * N)
+        # print(f"{src_mask.shape=}")
 
         data['context_enc'] = self.tf_encoder(tf_in_pos, mask=src_mask, num_agent=data['agent_num'])
 
@@ -706,6 +744,7 @@ class AgentFormer(nn.Module):
         self.data['future_window'] = data.get('future_window', None)
 
         print("#" * 100)
+        print(f"{obs_mask, obs_mask.shape=}")
         [print(f"{k}:\t{type(v)}\t" + (str(v.shape) if isinstance(v, torch.Tensor) else str(v))) for k, v in self.data.items()]
         # print(f"{self.data['pre_motion']=}")
         # print(f"{self.data['fut_motion']=}")
