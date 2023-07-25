@@ -211,8 +211,8 @@ class ContextEncoder(nn.Module):
         # print(f"{tf_in_pos.shape=}")
         # print(f"{torch.isnan(tf_in_pos.view(-1, data['agent_num'], tf_in_pos.shape[-1]))[..., 0], tf_in_pos[..., 0].shape=}")
 
-        tf_in_pos_nan = torch.isnan(tf_in_pos)
-        print(f"{torch.all(tf_in_nan == tf_in_pos_nan), (tf_in_nan == tf_in_pos_nan).shape=}")
+        # tf_in_pos_nan = torch.isnan(tf_in_pos)
+        # print(f"{torch.all(tf_in_nan == tf_in_pos_nan), (tf_in_nan == tf_in_pos_nan).shape=}")
 
         # # WIP CODE
         # fig, ax = plt.subplots()
@@ -230,11 +230,21 @@ class ContextEncoder(nn.Module):
         data['context_enc'] = self.tf_encoder(tf_in_pos, mask=src_mask, num_agent=data['agent_num'])
 
         context_rs = data['context_enc'].view(-1, data['agent_num'], self.model_dim)
+
+        print(f"{data['context_enc'].shape=}")
+        print(f"{context_rs.shape=}")
+        # print(f"{context_rs[:, 0, 0], context_rs[:, 0, 0].shape=}")
+        # print(f"{context_rs[:, 12, 0], context_rs[:, 12, 0].shape=}")
         # compute per agent context
-        if self.pooling == 'mean':
+        print(f"{self.pooling=}")
+        if self.pooling == 'mean' and False:
             data['agent_context'] = torch.mean(context_rs, dim=0)
+            print(f"mean: {data['agent_context'].shape=}")
         else:
             data['agent_context'] = torch.max(context_rs, dim=0)[0]
+            print(f"max: {data['agent_context'].shape=}")
+
+        print(zbly)
 
 
 class FutureEncoder(nn.Module):
