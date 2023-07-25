@@ -201,11 +201,14 @@ class preprocess(object):
             ))
         ] * len(full_motion_3D)
 
+        timesteps = torch.from_numpy(np.arange(self.past_frames + self.future_frames) - self.past_frames + 1)
+
         data = {
             # 'pre_motion_3D': pre_motion_3D,
             # 'fut_motion_3D': fut_motion_3D,
             'full_motion_3D': full_motion_3D,
             'obs_mask': obs_mask,
+            'timesteps': timesteps,
             'fut_motion_mask': fut_motion_mask,
             'pre_motion_mask': pre_motion_mask,
             # 'pre_data': pre_data,

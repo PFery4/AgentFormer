@@ -181,6 +181,9 @@ class AgentFormerDataGeneratorForSDD:
 
         scene_map = self.torchimg_to_geometricmap(extracted_data["image_tensor"])
 
+        data['timesteps'] = torch.from_numpy(
+            np.arange(len(extracted_data["full_window"])) - len(extracted_data["past_window"]) + 1
+        )
         data['heading'] = heading
         data['traj_scale'] = self.traj_scale
         data['pred_mask'] = pred_mask
