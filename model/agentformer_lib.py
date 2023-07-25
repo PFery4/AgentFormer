@@ -135,14 +135,13 @@ def agent_aware_attention(query: Tensor,
     query_nanmask = torch.isnan(query[..., 0, 0])
     key_nanmask = torch.isnan(key[..., 0, 0])
     # value_nanmask = torch.isnan(value[..., 0, 0])
-    print(f"{query_nanmask, query_nanmask.shape=}")
-
+    # print(f"{query_nanmask, query_nanmask.shape=}")
 
     if not use_separate_proj_weight:
 
-        print(f"{query[..., 0, 0], query.shape=}")
-        print(f"{key[..., 0, 0], key.shape=}")
-        print(f"{value[..., 0, 0], value.shape=}")
+        # print(f"{query[..., 0, 0], query.shape=}")
+        # print(f"{key[..., 0, 0], key.shape=}")
+        # print(f"{value[..., 0, 0], value.shape=}")
         # print(f"{torch.equal(query, key)=}")
         # print(f"{torch.equal(key, value)=}")
         # print(f"{torch.equal(query[~torch.isnan(query)], key[~torch.isnan(key)])=}")
@@ -399,28 +398,30 @@ def agent_aware_attention(query: Tensor,
     attn_output_weights[:, ~kv_nanmask] = dropout(attn_output_weights[:, ~kv_nanmask], p=dropout_p, training=training)
     assert torch.all(torch.isnan(attn_output_weights_self) == torch.isnan(attn_output_weights))
 
-    print(f"{attn_output_weights[:, ~kv_nanmask], attn_output_weights[:, ~kv_nanmask].shape=}")
-    print(f"{torch.sum(torch.isnan(attn_output_weights[:, ~kv_nanmask]))=}")
+    # print(f"{key_nanmask, key_nanmask.shape=}")
+    # print(f"{kv_nanmask, kv_nanmask.shape=}")
+    #
+    # print(f"{attn_output_weights, attn_output_weights.shape=}")
+    # print(f"{attn_output_weights[:, ~kv_nanmask].view(-1, torch.sum(~key_nanmask), torch.sum(~key_nanmask)), attn_output_weights[:, ~kv_nanmask].view(-1, torch.sum(~key_nanmask), torch.sum(~key_nanmask)).shape=}")
+    # print(f"{torch.sum(torch.isnan(attn_output_weights[:, ~kv_nanmask]))=}")
+    #
+    # print(f"{v, v.shape=}")
+    # print(f"{v[:, ~key_nanmask], v[:, ~key_nanmask].shape=}")
+    # print(f"{torch.sum(torch.isnan(v[:, ~key_nanmask]))=}")
 
-    print(f"{v[:, ~key_nanmask], v[:, ~key_nanmask].shape=}")
-    print(f"{torch.sum(torch.isnan(v[:, ~key_nanmask]))=}")
+    attn_output = torch.full_like(v, float('nan'))
+    attn_output[:, ~key_nanmask] = torch.bmm(attn_output_weights[:, ~kv_nanmask].view(-1, torch.sum(~key_nanmask), torch.sum(~key_nanmask)), v[:, ~key_nanmask])
 
-    # TODO: FINAL MATMUL BETWEEN QK AND V. NEEDS TO BE THE SAME SHAPE, AND WITHOUT CORRUPTING OUTPUT WITH NANS EVERYWHERE
-    print(zblu)
+    # print(f"{[bsz, num_heads, tgt_len, head_dim]=}")
+    # print(f"{attn_output.shape=}")
 
-
-    attn_output = torch.bmm(attn_output_weights, v)
     assert list(attn_output.size()) == [bsz * num_heads, tgt_len, head_dim]
-    print(f"{[bsz, num_heads, tgt_len, head_dim]=}")
-    print(f"{attn_output.shape=}")
     attn_output = attn_output.transpose(0, 1).contiguous().view(tgt_len, bsz, embed_dim)
-    print(f"{attn_output.shape=}")
     attn_output = linear(attn_output, out_proj_weight, out_proj_bias)
-    print(f"{attn_output[..., 0, 0], attn_output.shape=}")
-    print(f"{torch.sum(torch.isnan(attn_output))=}")
-
-    print(f"{need_weights=}")
-    print(zblu)
+    # print(f"{attn_output[..., 0, 0], attn_output.shape=}")
+    # print(f"{torch.sum(torch.isnan(attn_output))=}")
+    #
+    # print(f"{need_weights=}")
     if need_weights:
         # average attention weights over heads
         attn_output_weights = attn_output_weights.view(bsz, num_heads, tgt_len, src_len)
