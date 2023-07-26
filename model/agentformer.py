@@ -5,7 +5,7 @@ from torch import nn
 from torch.nn import functional as F
 import matplotlib.pyplot as plt
 from collections import defaultdict
-from typing import Union
+from typing import Union, Tuple, Optional
 import model.decoder_out_submodels as decoder_out_submodels
 from model.common.mlp import MLP
 from model.agentformer_loss import loss_func
@@ -36,103 +36,57 @@ def generate_mask(tgt_sz, src_sz, agent_num, agent_mask):
 class PositionalAgentEncoding(nn.Module):
 
     """ Positional Encoding """
-    def __init__(self, d_model: int, dropout: float = 0.1, max_t_len: int = 200, max_a_len: int = 200,
-                 concat: bool = False, use_agent_enc: bool = False, agent_enc_learn: bool = False):
+    def __init__(self, d_model: int, dropout: float = 0.1, timestep_window: Tuple[int, int] = (-20, 30), concat: bool = False):
         super(PositionalAgentEncoding, self).__init__()
         self.dropout = nn.Dropout(p=dropout)
-        self.concat = concat
         self.d_model = d_model
-        self.use_agent_enc = use_agent_enc
-        self.t_origin = max_t_len
+        self.concat = concat
+        timestep_window = torch.arange(*timestep_window, dtype=torch.float).unsqueeze(1).to()       # (t_range, 1)
+        self.register_buffer('timestep_window', timestep_window)
         if concat:
-            self.fc = nn.Linear((3 if use_agent_enc else 2) * d_model, d_model)
+            self.fc = nn.Linear(2 * d_model, d_model)
 
-        pe = self.build_pos_enc(max_t_len)
+        pe = self.build_enc_table()
         self.register_buffer('pe', pe)
-        # if use_agent_enc:
-        #     if agent_enc_learn:
-        #         self.ae = nn.Parameter(torch.randn(max_a_len, 1, d_model) * 0.1)
-        #     else:
-        #         ae = self.build_pos_enc(max_a_len)
-        #         self.register_buffer('ae', ae)
 
-    def build_pos_enc(self, max_len: int):
-        pe = torch.zeros(2 * max_len, self.d_model)                                         # (max_len, d_model)
-        position = torch.arange(-max_len, max_len, dtype=torch.float).unsqueeze(1)             # (2 * max_len, 1)
+    def build_enc_table(self) -> torch.Tensor:
+        pe = torch.zeros(len(self.timestep_window), self.d_model)                                         # (t_range, d_model)
         div_term = torch.exp(torch.arange(0, self.d_model, 2).float() * (-np.log(10000.0) / self.d_model))  #(d_model//2)
-        pe[:, 0::2] = torch.sin(position * div_term)
-        pe[:, 1::2] = torch.cos(position * div_term)
-        pe = pe.unsqueeze(0).transpose(0, 1)                                            # (2 * max_len, 1, d_model)
-        return pe
+        pe[:, 0::2] = torch.sin(self.timestep_window * div_term)
+        pe[:, 1::2] = torch.cos(self.timestep_window * div_term)
+        return pe       # (t_range, d_model)
 
-    # def build_agent_enc(self, max_len: int):
-    #     ae = torch.zeros(max_len, self.d_model)
-    #     position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
-    #     div_term = torch.exp(torch.arange(0, self.d_model, 2).float() * (-np.log(10000.0) / self.d_model))
-    #     ae[:, 0::2] = torch.sin(position * div_term)
-    #     ae[:, 1::2] = torch.cos(position * div_term)
-    #     ae = ae.unsqueeze(0).transpose(0, 1)
-    #     return ae
+    def time_encode(self, sequence_timesteps: torch.Tensor) -> torch.Tensor:
+        # sequence_timesteps: (T_total)
+        # out: (T_total, self.d_model)
+        return torch.cat([self.pe[(self.timestep_window == t).squeeze(), ...] for t in sequence_timesteps], dim=0)
 
-    def get_pos_enc(self, num_t: int, num_a: int, t_offset: int = 0):
-        pe = self.pe[self.t_origin + t_offset: self.t_origin + t_offset + num_t, :]
-        pe = pe.repeat_interleave(num_a, dim=0)
-        return pe
-
-    def plot_positional_window(self, ax: matplotlib.axes.Axes, num_t: int, t_offset: int = 0,
-                               back_cmap: str = "Blues", front_cmap: str = "Reds") -> None:
-        pe = self.pe[self.t_origin + t_offset: self.t_origin + t_offset + num_t, :]
-
-        back_img = self.pe.squeeze().T.cpu().numpy()
-        front_img = pe.squeeze(1).T.cpu().numpy()
-
-        ax.set_xlim(-back_img.shape[1]//2, back_img.shape[1]//2)
-        ax.set_ylim(back_img.shape[0] + 1, 1)
-        pos = ax.imshow(back_img, cmap=back_cmap,
-                        extent=(-back_img.shape[1]//2, back_img.shape[1]//2, back_img.shape[0] + 1, 1))
-        plt.colorbar(pos)
-        ax.imshow(front_img, cmap=front_cmap,
-                  extent=(t_offset, num_t + t_offset, back_img.shape[0] + 1, 1))
-
-    # def get_agent_enc(self, num_t: int, num_a: int, a_offset: int, agent_enc_shuffle: Union[bool, None]):
-    #     if agent_enc_shuffle is None:
-    #         ae = self.ae[a_offset: num_a + a_offset, :]
-    #     else:
-    #         ae = self.ae[agent_enc_shuffle]
-    #     ae = ae.repeat(num_t, 1, 1)
-    #     return ae
-
-    def forward(self, x: torch.Tensor, num_a: int, agent_enc_shuffle: Union[bool, None] = None,
-                t_offset: int = 0, a_offset: int = 0):
-        # print(f"{torch.isnan(x)[..., 0], x.shape=}")
-        num_t = x.shape[0] // num_a
-        pos_enc = self.get_pos_enc(num_t, num_a, t_offset)
-
-        # print(f"{torch.isnan(pos_enc)[..., 0], pos_enc.shape=}")
-        # if self.use_agent_enc:
-        #     agent_enc = self.get_agent_enc(num_t, num_a, a_offset, agent_enc_shuffle)
+    def forward(self, x: torch.Tensor, time_tensor: torch.Tensor):
+        # x: (T, model_dim)
+        # time_tensor: (T)
+        pos_enc = self.time_encode(time_tensor)
         if self.concat:
-            feat = [x, pos_enc.repeat(1, x.size(1), 1)]
-            # if self.use_agent_enc:
-            #     feat.append(agent_enc.repeat(1, x.size(1), 1))
-            x = torch.cat(feat, dim=-1)
-            # print(f"{torch.isnan(x)[..., 0], x.shape=}")
+            x = torch.cat([x, pos_enc], dim=-1)
             x = self.fc(x)
-            # print(f"{torch.isnan(x)[..., 0], x.shape=}")
-            # print(f"{torch.isnan(x.view(-1, num_a, x.shape[-1]))[..., 0], x.shape=}")
         else:
             x += pos_enc
-            # if self.use_agent_enc:
-            #     x += agent_enc
+        return self.dropout(x)      # How does dropout behave on sequence tensor?
 
-        isnan_mask = torch.isnan(x)
-        out = torch.full_like(x, float('nan'))
+    @staticmethod
+    def plot_positional_window(
+            ax: matplotlib.axes.Axes, tensor: torch.Tensor, offset: int = 0, cmap: str = "Blues"
+    ) -> None:
+        """
+        # self.plot_positional_window(ax, tensor=self.pe, offset=int(self.timestep_window[0, 0]))
+        # self.plot_positional_window(ax, tensor=pos_enc)
+        """
+        img = tensor.T.cpu().numpy()
 
-        x = x[~isnan_mask]
-        x = self.dropout(x)
-
-        out[~isnan_mask] = x
-        return out
+        ax.set_xlim(offset, img.shape[1] + offset)
+        ax.set_ylim(img.shape[0] + 1, 1)
+        pos = ax.imshow(img, cmap=cmap,
+                        extent=(offset, img.shape[1] + offset, img.shape[0] + 1, 1))
+        plt.colorbar(pos)
 
 
 class ContextEncoder(nn.Module):
@@ -159,67 +113,53 @@ class ContextEncoder(nn.Module):
 
         encoder_layers = AgentFormerEncoderLayer(ctx['tf_cfg'], self.model_dim, self.nhead, self.ff_dim, self.dropout)
         self.tf_encoder = AgentFormerEncoder(encoder_layers, self.nlayer)
-        self.pos_encoder = PositionalAgentEncoding(
-            self.model_dim, self.dropout, concat=ctx['pos_concat'], max_a_len=ctx['max_agent_len'],
-            use_agent_enc=ctx['use_agent_enc'], agent_enc_learn=ctx['agent_enc_learn']
-        )
+        self.pos_encoder = PositionalAgentEncoding(self.model_dim, dropout=self.dropout, concat=ctx['pos_concat'])
 
     def forward(self, data):
         traj_in = []
+        seq_in = []
         for key in self.input_type:
             if key == 'pos':
                 traj_in.append(data['pre_motion'])
+                seq_in.append(data['pre_sequence'])
             elif key == 'vel':
                 vel = data['pre_vel']
+                vel_seq = data['pre_vel_seq']
                 if len(self.input_type) > 1:
-                    vel = torch.cat([vel[[0]], vel], dim=0)
+                    vel = torch.cat([vel[[0]], vel], dim=0)          # Imputation
+                    vel_seq = torch.cat([                            # Imputation
+                        vel_seq[:data['agent_num']],
+                        vel_seq
+                    ], dim=0)
+
                 if self.vel_heading:
+                    raise NotImplementedError("hmmm")
                     vel = rotation_2d_torch(vel, -data['heading'])[0]
                 traj_in.append(vel)
+                seq_in.append(vel_seq)
             elif key == 'norm':
                 traj_in.append(data['pre_motion_norm'])
+                raise NotImplementedError("HMMMM")
             elif key == 'scene_norm':
                 traj_in.append(data['pre_motion_scene_norm'])
+                seq_in.append(data['pre_sequence_scene_norm'])
             elif key == 'heading':
+                raise NotImplementedError("Hmmmm")
                 hv = data['heading_vec'].unsqueeze(0).repeat((data['pre_motion'].shape[0], 1, 1))
                 traj_in.append(hv)
             elif key == 'map':
+                raise NotImplementedError("hmmm")
                 map_enc = data['map_enc'].unsqueeze(0).repeat((data['pre_motion'].shape[0], 1, 1))
                 traj_in.append(map_enc)
             else:
                 raise ValueError('unknown input_type!')
         traj_in = torch.cat(traj_in, dim=-1)                    # (T, N, Features)
-
-        # print("#" * 60)
-        # print(f"{traj_in, traj_in.shape=}")
-        # print(f"{torch.isnan(traj_in)[..., 0], traj_in[..., 0].shape=}")
+        seq_in = torch.cat(seq_in, dim=-1)
 
         tf_in = self.input_fc(traj_in.view(-1, traj_in.shape[-1])).view(-1, 1, self.model_dim)      # (T * N, 1, model_dim)
-        # tf_in = self.input_fc(traj_in.view(-1, traj_in.shape[-1]))      # (T * N, model_dim)
-        # tf_in = tf_in.view(-1, data["agent_num"], self.model_dim)       # (T, N, model_dim)
-        # tf_in = tf_in.view(-1, 1, self.model_dim)      # (T * N, 1, model_dim)
-        # print("#" * 60)
-        # print(f"{tf_in.shape=}")
-        # print(f"{torch.isnan(tf_in)[..., 0], tf_in[..., 0].shape=}")
-        tf_in_nan = torch.isnan(tf_in)
+        tf_seq_in = self.input_fc(seq_in)               # (O, model_dim)
 
-        agent_enc_shuffle = data['agent_enc_shuffle'] if self.agent_enc_shuffle else None
-
-        tf_in_pos = self.pos_encoder(tf_in, num_a=data['agent_num'], agent_enc_shuffle=agent_enc_shuffle, t_offset=-tf_in.shape[0]//data['agent_num'])
-
-        # print("#" * 60)
-        # print(f"{tf_in_pos.shape=}")
-        # print(f"{torch.isnan(tf_in_pos.view(-1, data['agent_num'], tf_in_pos.shape[-1]))[..., 0], tf_in_pos[..., 0].shape=}")
-
-        # tf_in_pos_nan = torch.isnan(tf_in_pos)
-        # print(f"{torch.all(tf_in_nan == tf_in_pos_nan), (tf_in_nan == tf_in_pos_nan).shape=}")
-
-        # # WIP CODE
-        # fig, ax = plt.subplots()
-        # print(f"CONTEXT ENCODER")
-        # self.pos_encoder.plot_positional_window(ax=ax, num_t=tf_in.shape[0]//data['agent_num'], t_offset=-tf_in.shape[0]//data['agent_num'])
-        # plt.show()
-        # # WIP CODE
+        tf_in_pos = self.pos_encoder(x=tf_seq_in, time_tensor=data['pre_timesteps'])            # (O, model_dim)
 
         src_agent_mask = data['agent_mask'].clone()         # (N, N)
         # print(f"{src_agent_mask, src_agent_mask.shape=}")
@@ -276,10 +216,7 @@ class FutureEncoder(nn.Module):
         decoder_layers = AgentFormerDecoderLayer(ctx['tf_cfg'], self.model_dim, self.nhead, self.ff_dim, self.dropout)
         self.tf_decoder = AgentFormerDecoder(decoder_layers, self.nlayer)
 
-        self.pos_encoder = PositionalAgentEncoding(
-            self.model_dim, self.dropout, concat=ctx['pos_concat'], max_a_len=ctx['max_agent_len'],
-            use_agent_enc=ctx['use_agent_enc'], agent_enc_learn=ctx['agent_enc_learn']
-        )
+        self.pos_encoder = PositionalAgentEncoding(self.model_dim, dropout=self.dropout, concat=ctx['pos_concat'])
         num_dist_params = 2 * self.nz if self.z_type == 'gaussian' else self.nz     # either gaussian or discrete
         if self.out_mlp_dim is None:
             self.q_z_net = nn.Linear(self.model_dim, num_dist_params)
@@ -386,10 +323,7 @@ class FutureDecoder(nn.Module):
         decoder_layers = AgentFormerDecoderLayer(ctx['tf_cfg'], self.model_dim, self.nhead, self.ff_dim, self.dropout)
         self.tf_decoder = AgentFormerDecoder(decoder_layers, self.nlayer)
 
-        self.pos_encoder = PositionalAgentEncoding(
-            self.model_dim, self.dropout, concat=ctx['pos_concat'], max_a_len=ctx['max_agent_len'],
-            use_agent_enc=ctx['use_agent_enc'], agent_enc_learn=ctx['agent_enc_learn']
-        )
+        self.pos_encoder = PositionalAgentEncoding(self.model_dim, dropout=self.dropout, concat=ctx['pos_concat'])
 
         out_module_kwargs = {"hidden_dims": self.out_mlp_dim}
         self.out_module = getattr(decoder_out_submodels, f"{self.pred_mode}_out_module")(
@@ -629,14 +563,17 @@ class AgentFormer(nn.Module):
         if self.training and len(data['full_motion_3D']) > self.max_train_agent:
             in_data = {}
             ind = np.random.choice(len(data['full_motion_3D']), self.max_train_agent, replace=False).tolist()
-            for key in ['heading', 'full_motion_3D', 'obs_mask', 'fut_motion_mask', 'pre_motion_mask']:
+            for key in ['heading', 'full_motion_3D', 'obs_mask', 'fut_motion_mask', 'pre_motion_mask', 'timesteps', 'valid_id']:
                 in_data[key] = [data[key][i] for i in ind if data[key] is not None]
         else:
             in_data = data
 
         self.data = defaultdict(lambda: None)
-        self.data['batch_size'] = len(in_data['full_motion_3D'])                 # int: N
-        self.data['agent_num'] = len(in_data['full_motion_3D'])                  # int: N
+        self.data['valid_id'] = torch.tensor(in_data['valid_id']).to(device).to(int)
+        self.data['T_total'] = len(in_data['timesteps'])                     # int: T_total
+        self.data['batch_size'] = len(self.data['valid_id'])                 # int: N
+        self.data['agent_num'] = len(self.data['valid_id'])                  # int: N
+        self.data['timesteps'] = in_data['timesteps'].detach().clone().to(device)       # (T_total)
         full_motion = torch.stack(in_data['full_motion_3D'], dim=0).to(device).transpose(0, 1).contiguous()                     # (T_total, N, 2)
         obs_mask = torch.stack(in_data['obs_mask'], dim=0).to(device).to(dtype=torch.bool).transpose(0, 1).contiguous()         # (T_total, N)
         last_observed_timesteps = torch.stack([mask.nonzero().flatten()[-1] for mask in in_data['obs_mask']]).to(device)        # (N)
@@ -652,6 +589,8 @@ class AgentFormer(nn.Module):
         self.data['fut_mask'] = fut_mask.to(device)       # (1, T_pred)
         pre_mask = torch.stack(in_data['pre_motion_mask'], dim=0)
         self.data['pre_mask'] = pre_mask.to(device)       # (1, T_obs)
+        full_agent_mask = self.data['valid_id'].repeat(self.data['T_total'], 1)                 # (T_total, N)
+        full_timestep_mask = self.data['timesteps'].view(-1, 1).repeat(1, self.data['agent_num'])       # (T_total, N)
 
         # define the scene origin
         scene_orig_all_past = self.cfg.get('scene_orig_all_past', False)
@@ -659,6 +598,7 @@ class AgentFormer(nn.Module):
             scene_orig = full_motion[obs_mask].mean(dim=0).contiguous()           # (2)
         else:
             scene_orig = last_observed_pos.mean(dim=0).contiguous()               # (2)
+
         self.data['scene_orig'] = scene_orig.to(device)
 
         # perform random rotation
@@ -667,10 +607,11 @@ class AgentFormer(nn.Module):
                 raise NotImplementedError
             else:
                 theta = torch.rand(1).to(device) * np.pi * 2
-                full_motion, _ = rotation_2d_torch(full_motion, theta, scene_orig)
+                full_motion, full_motion_scene_norm = rotation_2d_torch(full_motion, theta, scene_orig)
         else:
             theta = torch.zeros(1).to(device)
-            # full_motion_scene_norm = full_motion - scene_orig
+            full_motion_scene_norm = full_motion - scene_orig
+
 
         # create past and future tensors
         pre_motion = torch.full_like(full_motion, float('nan'))         # (T_total, N, 2)
@@ -678,12 +619,33 @@ class AgentFormer(nn.Module):
         self.data['pre_motion'] = pre_motion.to(device)
         pre_motion_scene_norm = pre_motion - scene_orig                 # (T_total, N, 2)
         self.data['pre_motion_scene_norm'] = pre_motion_scene_norm.to(device)
+        self.data['pre_sequence'] = full_motion[obs_mask, ...]          # (O, 2), where O is equal to sum(obs_mask)
+        self.data['pre_sequence_scene_norm'] = full_motion_scene_norm[obs_mask, ...]        # (O, 2)
+        self.data['pre_agents'] = full_agent_mask[obs_mask]                                 # (O)
+        self.data['pre_timesteps'] = full_timestep_mask[obs_mask]                           # (O)
+
+        # print(f"{self.data['pre_sequence'], self.data['pre_sequence'].shape=}")
+        # print(f"{self.data['pre_agents'], self.data['pre_agents'].shape=}")
+        # print(f"{self.data['pre_timesteps'], self.data['pre_timesteps'].shape=}")
+        # print(f"{self.data['pre_motion'][:, 0, :]=}")
+        # print(f"{self.data['pre_sequence'][self.data['pre_agents']==392]=}")
+        # print(f"{self.data['pre_motion'][0, :, :]=}")
+        # print(f"{self.data['pre_sequence'][self.data['pre_timesteps']==-7]=}")
+
+        # print(f"{full_agent_mask, full_agent_mask.shape=}")
+        # print(f"{full_timestep_mask, full_timestep_mask.shape=}")
+        # print(f"{obs_mask, obs_mask.shape=}")
+        # print(f"{full_motion[..., 0], full_motion.shape=}")
 
         fut_motion = torch.full_like(full_motion, float('nan'))         # (T_total, N, 2)
         fut_motion[timesteps_to_predict, ...] = full_motion[timesteps_to_predict, ...]
         self.data['fut_motion'] = fut_motion.to(device)
         fut_motion_scene_norm = fut_motion - scene_orig                 # (T_total, N, 2)
         self.data['fut_motion_scene_norm'] = fut_motion_scene_norm.to(device)
+        self.data['fut_sequence'] = full_motion[timesteps_to_predict, ...]          # (P, 2), where P equals sum(timesteps_to_predict)
+        self.data['fut_sequence_scene_norm'] = full_motion_scene_norm[timesteps_to_predict, ...]        # (P, 2)
+        self.data['fut_agents'] = full_agent_mask[timesteps_to_predict]                                 # (P)
+        self.data['fut_timesteps'] = full_agent_mask[timesteps_to_predict]                              # (P)
 
         fut_motion_orig = fut_motion.detach().clone().transpose(0, 1)
         self.data['fut_motion_orig'] = fut_motion_orig.to(device)
@@ -694,10 +656,12 @@ class AgentFormer(nn.Module):
         pre_vel = torch.full_like(full_vel, float('nan'))
         pre_vel[obs_mask[1:, ...], ...] = full_vel[obs_mask[1:, ...], ...]        # (T_total - 1, N, 2)
         self.data['pre_vel'] = pre_vel.to(device)
+        self.data['pre_vel_seq'] = full_vel[obs_mask[1:, ...], ...]               # ()
 
         fut_vel = torch.full_like(full_vel, float('nan'))
         fut_vel[timesteps_to_predict[1:, ...], ...] = full_vel[timesteps_to_predict[1:, ...], ...]    # (T_total - 1, N, 2)
         self.data['fut_vel'] = fut_vel.to(device)
+        self.data['fut_vel_seq'] = full_vel[timesteps_to_predict[1:, ...], ...]
 
         cur_motion = full_motion[last_observed_timesteps, torch.arange(full_motion.size(1))].unsqueeze(0)      # (1, N, 2)
         self.data['cur_motion'] = cur_motion.to(device)
@@ -709,6 +673,7 @@ class AgentFormer(nn.Module):
 
         self.data['fut_mask'] = torch.stack(in_data['fut_motion_mask'], dim=0).to(device)       # (1, T_pred)
         self.data['pre_mask'] = torch.stack(in_data['pre_motion_mask'], dim=0).to(device)       # (1, T_obs)
+        # NOTE: heading does not follow the occlusion pattern
         if in_data['heading'] is not None:
             self.data['heading'] = torch.tensor(in_data['heading']).float().to(device)      # (N)
 
