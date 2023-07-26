@@ -33,11 +33,11 @@ def generate_mask(tgt_sz, src_sz, agent_num, agent_mask):
     return mask
 
 
-class PositionalAgentEncoding(nn.Module):
+class PositionalEncoding(nn.Module):
 
     """ Positional Encoding """
     def __init__(self, d_model: int, dropout: float = 0.1, timestep_window: Tuple[int, int] = (-20, 30), concat: bool = False):
-        super(PositionalAgentEncoding, self).__init__()
+        super(PositionalEncoding, self).__init__()
         self.dropout = nn.Dropout(p=dropout)
         self.d_model = d_model
         self.concat = concat
@@ -50,11 +50,14 @@ class PositionalAgentEncoding(nn.Module):
         self.register_buffer('pe', pe)
 
     def build_enc_table(self) -> torch.Tensor:
-        pe = torch.zeros(len(self.timestep_window), self.d_model)                                         # (t_range, d_model)
-        div_term = torch.exp(torch.arange(0, self.d_model, 2).float() * (-np.log(10000.0) / self.d_model))  #(d_model//2)
+        # shape (t_range, d_model)
+        pe = torch.zeros(len(self.timestep_window), self.d_model)
+
+        # shape (d_model//2)
+        div_term = torch.exp(torch.arange(0, self.d_model, 2).float() * (-np.log(10000.0) / self.d_model))
         pe[:, 0::2] = torch.sin(self.timestep_window * div_term)
         pe[:, 1::2] = torch.cos(self.timestep_window * div_term)
-        return pe       # (t_range, d_model)
+        return pe       # shape (t_range, d_model)
 
     def time_encode(self, sequence_timesteps: torch.Tensor) -> torch.Tensor:
         # sequence_timesteps: (T_total)
@@ -113,7 +116,7 @@ class ContextEncoder(nn.Module):
 
         encoder_layers = AgentFormerEncoderLayer(ctx['tf_cfg'], self.model_dim, self.nhead, self.ff_dim, self.dropout)
         self.tf_encoder = AgentFormerEncoder(encoder_layers, self.nlayer)
-        self.pos_encoder = PositionalAgentEncoding(self.model_dim, dropout=self.dropout, concat=ctx['pos_concat'])
+        self.pos_encoder = PositionalEncoding(self.model_dim, dropout=self.dropout, concat=ctx['pos_concat'])
 
     def forward(self, data):
         traj_in = []
@@ -216,7 +219,7 @@ class FutureEncoder(nn.Module):
         decoder_layers = AgentFormerDecoderLayer(ctx['tf_cfg'], self.model_dim, self.nhead, self.ff_dim, self.dropout)
         self.tf_decoder = AgentFormerDecoder(decoder_layers, self.nlayer)
 
-        self.pos_encoder = PositionalAgentEncoding(self.model_dim, dropout=self.dropout, concat=ctx['pos_concat'])
+        self.pos_encoder = PositionalEncoding(self.model_dim, dropout=self.dropout, concat=ctx['pos_concat'])
         num_dist_params = 2 * self.nz if self.z_type == 'gaussian' else self.nz     # either gaussian or discrete
         if self.out_mlp_dim is None:
             self.q_z_net = nn.Linear(self.model_dim, num_dist_params)
@@ -323,7 +326,7 @@ class FutureDecoder(nn.Module):
         decoder_layers = AgentFormerDecoderLayer(ctx['tf_cfg'], self.model_dim, self.nhead, self.ff_dim, self.dropout)
         self.tf_decoder = AgentFormerDecoder(decoder_layers, self.nlayer)
 
-        self.pos_encoder = PositionalAgentEncoding(self.model_dim, dropout=self.dropout, concat=ctx['pos_concat'])
+        self.pos_encoder = PositionalEncoding(self.model_dim, dropout=self.dropout, concat=ctx['pos_concat'])
 
         out_module_kwargs = {"hidden_dims": self.out_mlp_dim}
         self.out_module = getattr(decoder_out_submodels, f"{self.pred_mode}_out_module")(
