@@ -205,13 +205,13 @@ def agent_aware_attention(query: Tensor,
         raise NotImplementedError("NEED TO CHECK FOR PROPER MANIPULATION OF PARTIALLY NAN TENSORS"
                                   "(ie, NaN patterns between q, k, v and query, key, value need to match)")
 
-    print(f"{gaussian_kernel=}")
+    # print(f"{gaussian_kernel=}")
     if not gaussian_kernel:
         q = q * scaling       # remove scaling
         if in_proj_weight_self is not None:
             q_self = q_self * scaling       # remove scaling
 
-    print(f"{attn_mask, attn_mask.shape=}")
+    # print(f"{attn_mask, attn_mask.shape=}")
     if attn_mask is not None:
         assert attn_mask.dtype == torch.float32 or attn_mask.dtype == torch.float64 or \
                attn_mask.dtype == torch.float16 or attn_mask.dtype == torch.uint8 or attn_mask.dtype == torch.bool, \
