@@ -7,6 +7,7 @@ import warnings
 import math
 import copy
 
+import numpy as np
 import torch
 from torch.nn import functional as F
 from torch.nn.functional import *
@@ -27,8 +28,35 @@ from typing import Optional, Tuple
 Tensor = torch.Tensor       # type alias for torch tensor class
 
 
-def agent_aware_mask(q_identities: torch.Tensor, k_identities: torch.Tensor) -> torch.Tensor:
+def agent_aware_mask(q_identities: Tensor, k_identities: Tensor) -> Tensor:
     return torch.cat([(k_identities == q_val).unsqueeze(0) for q_val in q_identities], dim=0).to(q_identities.dtype)
+
+
+def visualize_mask(q_identities: Tensor, k_identities: Tensor) -> None:
+    import matplotlib.pyplot as plt
+    fig = plt.figure(figsize=(6, 6))
+    ax = fig.add_gridspec(top=0.75, right=0.75).subplots()
+
+    uniques = torch.unique(torch.cat((q_identities, k_identities), dim=0)).cpu().numpy()
+
+    ax_k = ax.inset_axes([0, 1.05, 1, 0.25], sharex=ax)
+    ax_q = ax.inset_axes([1.05, 0, 0.25, 1], sharey=ax)
+
+    agent_mask = agent_aware_mask(q_identities, k_identities)
+    print(f"{q_identities=}")
+    print(f"{k_identities=}")
+    print(f"{agent_mask=}")
+    img = agent_mask.cpu().numpy()
+    print(f"{img=}")
+    ax.imshow(img)
+
+    k_band = torch.cat([k_identities.unsqueeze(0)]*10, dim=0).cpu().numpy()
+    k_band = k_band * (255. - 0.) / (np.max(uniques) - np.min(uniques))
+    ax_k.imshow(k_band)
+    q_band = torch.cat([q_identities.unsqueeze(1)]*10, dim=1).cpu().numpy()
+    q_band = q_band * (255. - 0.) / (np.max(uniques) - np.min(uniques))
+    ax_q.imshow(q_band)
+    plt.show()
 
 
 def agent_aware_attention(query: Tensor,
@@ -44,6 +72,8 @@ def agent_aware_attention(query: Tensor,
                           dropout_p: float,
                           out_proj_weight: Tensor,
                           out_proj_bias: Tensor,
+                          q_identities: Tensor,
+                          k_identities: Tensor,
                           training: bool = True,
                           key_padding_mask: Optional[Tensor] = None,
                           need_weights: bool = True,
@@ -115,20 +145,20 @@ def agent_aware_attention(query: Tensor,
         - attn_output_weights: :math:`(N, L, S)` where N is the batch size,
           L is the target sequence length, S is the source sequence length.
     """
-    if not torch.jit.is_scripting():
-        tens_ops = (query, key, value, in_proj_weight, in_proj_bias, bias_k, bias_v,
-                    out_proj_weight, out_proj_bias)
-        if any([type(t) is not Tensor for t in tens_ops]) and has_torch_function(tens_ops):
-            # return handle_torch_function(
-            #     multi_head_attention_forward, tens_ops, query, key, value,
-            #     embed_dim_to_check, num_heads, in_proj_weight, in_proj_bias,
-            #     bias_k, bias_v, add_zero_attn, dropout_p, out_proj_weight,
-            #     out_proj_bias, training=training, key_padding_mask=key_padding_mask,
-            #     need_weights=need_weights, attn_mask=attn_mask,
-            #     use_separate_proj_weight=use_separate_proj_weight,
-            #     q_proj_weight=q_proj_weight, k_proj_weight=k_proj_weight,
-            #     v_proj_weight=v_proj_weight, static_k=static_k, static_v=static_v)
-            raise NotImplementedError
+    # if not torch.jit.is_scripting():
+    #     tens_ops = (query, key, value, in_proj_weight, in_proj_bias, bias_k, bias_v,
+    #                 out_proj_weight, out_proj_bias)
+    #     if any([type(t) is not Tensor for t in tens_ops]) and has_torch_function(tens_ops):
+    #         # return handle_torch_function(
+    #         #     multi_head_attention_forward, tens_ops, query, key, value,
+    #         #     embed_dim_to_check, num_heads, in_proj_weight, in_proj_bias,
+    #         #     bias_k, bias_v, add_zero_attn, dropout_p, out_proj_weight,
+    #         #     out_proj_bias, training=training, key_padding_mask=key_padding_mask,
+    #         #     need_weights=need_weights, attn_mask=attn_mask,
+    #         #     use_separate_proj_weight=use_separate_proj_weight,
+    #         #     q_proj_weight=q_proj_weight, k_proj_weight=k_proj_weight,
+    #         #     v_proj_weight=v_proj_weight, static_k=static_k, static_v=static_v)
+    #         raise NotImplementedError
     tgt_len, embed_dim = query.size()
     assert embed_dim == embed_dim_to_check
     # allow MHA to have different sizes for the feature dimension
@@ -307,7 +337,7 @@ def agent_aware_attention(query: Tensor,
         # attn_output_weights = qk_dist * scaling * 0.5
         raise NotImplementedError("check NaN patterns")
     else:
-        attn_output_weights = torch.bmm(q, k.transpose(1, 2))
+        attn_output_weights = torch.bmm(q, k.transpose(1, 2))       # (num_heads, tgt_len, src_len)
 
     assert list(attn_output_weights.size()) == [num_heads, tgt_len, src_len]
 
@@ -317,84 +347,58 @@ def agent_aware_attention(query: Tensor,
             Agent-Aware Attention
         ==================================
         """
-        attn_output_weights_inter = attn_output_weights
-        print(f"{attn_output_weights_inter, attn_output_weights_inter.shape=}")
-        attn_weight_self_mask = agent_aware_mask(q_identities, k_identities)
-        print(f"{attn_weight_self_mask, attn_weight_self_mask.shape=}")
-        print(zblu)
+        attn_output_weights_inter = attn_output_weights             # (num_heads, tgt_len, src_len)
+        attn_weight_self_mask = agent_aware_mask(q_identities, k_identities)        # (tgt_len, src_len)
 
         attn_output_weights_self = torch.bmm(q_self, k_self.transpose(1, 2))
 
-        assert torch.all(torch.isnan(attn_output_weights_self) == torch.isnan(attn_output_weights))
+        assert attn_weight_self_mask.shape == attn_output_weights.shape[-2:] == attn_output_weights_self.shape[-2:]
 
         attn_output_weights = attn_output_weights_inter * (1 - attn_weight_self_mask) + attn_output_weights_self * attn_weight_self_mask
 
+        # print(f"{attn_mask=}")
         if attn_mask is not None:
-            # if attn_mask.dtype == torch.bool:
-            #     attn_output_weights.masked_fill_(attn_mask, float('-inf'))
-            # else:
-            #     attn_output_weights += attn_mask
-            raise NotImplementedError
-
-        # print(f"{attn_output_weights[:, ~kv_nanmask]=}")
-        # print(f"{torch.sum(torch.isnan(attn_output_weights[:, ~kv_nanmask]))=}")
-        # print(f"{attn_output_weights.shape=}")
-
-        # NO div by sqrt(d)         ????
-        attn_output_weights[:, ~kv_nanmask] = softmax(
-            attn_output_weights[:, ~kv_nanmask], dim=-1)
-        assert torch.all(torch.isnan(attn_output_weights_self) == torch.isnan(attn_output_weights))
-
-    else:
-        raise NotImplementedError("Check Nan Pattern")
-        if attn_mask is not None:
+            assert attn_mask.shape[-2:] == attn_output_weights.shape[-2:]
             if attn_mask.dtype == torch.bool:
                 attn_output_weights.masked_fill_(attn_mask, float('-inf'))
             else:
                 attn_output_weights += attn_mask
 
-        if key_padding_mask is not None:
-            attn_output_weights = attn_output_weights.view(bsz, num_heads, tgt_len, src_len)
-            attn_output_weights = attn_output_weights.masked_fill(
-                key_padding_mask.unsqueeze(1).unsqueeze(2),
-                float('-inf'),
-            )
-            attn_output_weights = attn_output_weights.view(bsz * num_heads, tgt_len, src_len)
+        # NO div by sqrt(d)         ????
+        attn_output_weights = softmax(attn_output_weights, dim=-1)
 
-        attn_output_weights = softmax(
-            attn_output_weights, dim=-1)
+    else:
+        # if attn_mask is not None:
+        #     if attn_mask.dtype == torch.bool:
+        #         attn_output_weights.masked_fill_(attn_mask, float('-inf'))
+        #     else:
+        #         attn_output_weights += attn_mask
+        #
+        # if key_padding_mask is not None:
+        #     attn_output_weights = attn_output_weights.view(bsz, num_heads, tgt_len, src_len)
+        #     attn_output_weights = attn_output_weights.masked_fill(
+        #         key_padding_mask.unsqueeze(1).unsqueeze(2),
+        #         float('-inf'),
+        #     )
+        #     attn_output_weights = attn_output_weights.view(bsz * num_heads, tgt_len, src_len)
+        #
+        # attn_output_weights = softmax(
+        #     attn_output_weights, dim=-1)
+        raise NotImplementedError("Check Nan Pattern")
 
-    attn_output_weights[:, ~kv_nanmask] = dropout(attn_output_weights[:, ~kv_nanmask], p=dropout_p, training=training)
-    assert torch.all(torch.isnan(attn_output_weights_self) == torch.isnan(attn_output_weights))
+    attn_output_weights = dropout(attn_output_weights, p=dropout_p, training=training)
 
-    # print(f"{key_nanmask, key_nanmask.shape=}")
-    # print(f"{kv_nanmask, kv_nanmask.shape=}")
-    #
-    # print(f"{attn_output_weights, attn_output_weights.shape=}")
-    # print(f"{attn_output_weights[:, ~kv_nanmask].view(-1, torch.sum(~key_nanmask), torch.sum(~key_nanmask)), attn_output_weights[:, ~kv_nanmask].view(-1, torch.sum(~key_nanmask), torch.sum(~key_nanmask)).shape=}")
-    # print(f"{torch.sum(torch.isnan(attn_output_weights[:, ~kv_nanmask]))=}")
-    #
-    # print(f"{v, v.shape=}")
-    # print(f"{v[:, ~key_nanmask], v[:, ~key_nanmask].shape=}")
-    # print(f"{torch.sum(torch.isnan(v[:, ~key_nanmask]))=}")
+    attn_output = torch.bmm(attn_output_weights, v)         # (num_heads, tgt_len, head_dim)
 
-    attn_output = torch.full_like(v, float('nan'))
-    attn_output[:, ~key_nanmask] = torch.bmm(attn_output_weights[:, ~kv_nanmask].view(-1, torch.sum(~key_nanmask), torch.sum(~key_nanmask)), v[:, ~key_nanmask])
+    assert list(attn_output.size()) == [num_heads, tgt_len, head_dim]
+    attn_output = attn_output.transpose(0, 1).contiguous().view(tgt_len, embed_dim)     # (tgt_len, embed_dim)
+    attn_output = linear(attn_output, out_proj_weight, out_proj_bias)                   # (tgt_len, embed_dim)
 
-    # print(f"{[bsz, num_heads, tgt_len, head_dim]=}")
-    # print(f"{attn_output.shape=}")
-
-    assert list(attn_output.size()) == [bsz * num_heads, tgt_len, head_dim]
-    attn_output = attn_output.transpose(0, 1).contiguous().view(tgt_len, bsz, embed_dim)
-    attn_output = linear(attn_output, out_proj_weight, out_proj_bias)
-    # print(f"{attn_output[..., 0, 0], attn_output.shape=}")
-    # print(f"{torch.sum(torch.isnan(attn_output))=}")
-    #
     # print(f"{need_weights=}")
     if need_weights:
         # average attention weights over heads
-        attn_output_weights = attn_output_weights.view(bsz, num_heads, tgt_len, src_len)
-        return attn_output, attn_output_weights.sum(dim=1) / num_heads
+        attn_output_weights = attn_output_weights.view(num_heads, tgt_len, src_len)
+        return attn_output, attn_output_weights.sum(dim=0) / num_heads
     else:
         return attn_output, None
 
@@ -505,7 +509,7 @@ class AgentAwareAttention(Module):
 
         super().__setstate__(state)
 
-    def forward(self, query, key, value, key_padding_mask=None,
+    def forward(self, query, key, value, query_identities, key_identities, key_padding_mask=None,
                 need_weights=True, attn_mask=None, num_agent=1):
         r"""
     Args:
@@ -552,7 +556,7 @@ class AgentAwareAttention(Module):
                 query, key, value, self.embed_dim, self.num_heads,
                 self.in_proj_weight, self.in_proj_bias,
                 self.bias_k, self.bias_v, self.add_zero_attn,
-                self.dropout, self.out_proj.weight, self.out_proj.bias,
+                self.dropout, self.out_proj.weight, self.out_proj.bias, query_identities, key_identities,
                 training=self.training,
                 key_padding_mask=key_padding_mask, need_weights=need_weights,
                 attn_mask=attn_mask, use_separate_proj_weight=True,
@@ -567,7 +571,7 @@ class AgentAwareAttention(Module):
                 query, key, value, self.embed_dim, self.num_heads,
                 self.in_proj_weight, self.in_proj_bias,
                 self.bias_k, self.bias_v, self.add_zero_attn,
-                self.dropout, self.out_proj.weight, self.out_proj.bias,
+                self.dropout, self.out_proj.weight, self.out_proj.bias, query_identities, key_identities,
                 training=self.training,
                 key_padding_mask=key_padding_mask, need_weights=need_weights,
                 attn_mask=attn_mask, gaussian_kernel=self.gaussian_kernel,
@@ -619,7 +623,7 @@ class AgentFormerEncoderLayer(Module):
             state['activation'] = F.relu
         super().__setstate__(state)
 
-    def forward(self, src: Tensor, src_mask: Optional[Tensor] = None, src_key_padding_mask: Optional[Tensor] = None, num_agent=1) -> Tensor:
+    def forward(self, src: Tensor, src_identities: Tensor, src_mask: Optional[Tensor] = None, src_key_padding_mask: Optional[Tensor] = None, num_agent=1) -> Tensor:
         r"""Pass the input through the encoder layer.
 
         Args:
@@ -631,7 +635,7 @@ class AgentFormerEncoderLayer(Module):
             see the docs in Transformer class.
         """
         # print(f"{src, src.shape=}")
-        src2 = self.self_attn(src, src, src, attn_mask=src_mask,
+        src2 = self.self_attn(src, src, src, src_identities, src_identities, attn_mask=src_mask,
                               key_padding_mask=src_key_padding_mask, num_agent=num_agent)[0]
         src = src + self.dropout1(src2)
         src = self.norm1(src)
@@ -738,7 +742,14 @@ class AgentFormerEncoder(Module):
         self.num_layers = num_layers
         self.norm = norm
 
-    def forward(self, src: Tensor, mask: Optional[Tensor] = None, src_key_padding_mask: Optional[Tensor] = None, num_agent=1) -> Tensor:
+    def forward(
+            self,
+            src: Tensor,
+            src_identities: Tensor,
+            mask: Optional[Tensor] = None,
+            src_key_padding_mask: Optional[Tensor] = None,
+            num_agent: int = 1
+    ) -> Tensor:
         r"""Pass the input through the encoder layers in turn.
 
         Args:
@@ -752,7 +763,7 @@ class AgentFormerEncoder(Module):
         output = src
 
         for mod in self.layers:
-            output = mod(output, src_mask=mask, src_key_padding_mask=src_key_padding_mask, num_agent=num_agent)
+            output = mod(output, src_identities, src_mask=mask, src_key_padding_mask=src_key_padding_mask, num_agent=num_agent)
 
         if self.norm is not None:
             output = self.norm(output)
