@@ -16,7 +16,7 @@ from utils.torch import rotation_2d_torch, ExpParamAnnealer
 from utils.utils import initialize_weights
 
 
-def generate_ar_mask(sz, agent_num, agent_mask):
+def generate_ar_mask(sz: int, agent_num: int, agent_mask: torch.Tensor):
     assert sz % agent_num == 0
     T = sz // agent_num
     mask = agent_mask.repeat(T, T)
@@ -27,9 +27,11 @@ def generate_ar_mask(sz, agent_num, agent_mask):
     return mask
 
 
-def generate_mask(tgt_sz, src_sz, agent_num, agent_mask):
-    assert tgt_sz % agent_num == 0 and src_sz % agent_num == 0
-    mask = agent_mask.repeat(tgt_sz // agent_num, src_sz // agent_num)
+def generate_mask(tgt_sz: int, src_sz: int, agent_num: int, agent_mask: torch.Tensor) -> torch.Tensor:
+    # TODO: WIP WIP WIP WIP WIP WIP
+    # assert tgt_sz % agent_num == 0 and src_sz % agent_num == 0
+    # mask = agent_mask.repeat(tgt_sz // agent_num, src_sz // agent_num)
+    mask = torch.zeros(99, 99).to(agent_mask.device)
     return mask
 
 
@@ -136,24 +138,24 @@ class ContextEncoder(nn.Module):
                     ], dim=0)
 
                 if self.vel_heading:
+                    # vel = rotation_2d_torch(vel, -data['heading'])[0]
                     raise NotImplementedError("hmmm")
-                    vel = rotation_2d_torch(vel, -data['heading'])[0]
                 traj_in.append(vel)
                 seq_in.append(vel_seq)
             elif key == 'norm':
-                traj_in.append(data['pre_motion_norm'])
+                # traj_in.append(data['pre_motion_norm'])
                 raise NotImplementedError("HMMMM")
             elif key == 'scene_norm':
                 traj_in.append(data['pre_motion_scene_norm'])
                 seq_in.append(data['pre_sequence_scene_norm'])
             elif key == 'heading':
+                # hv = data['heading_vec'].unsqueeze(0).repeat((data['pre_motion'].shape[0], 1, 1))
+                # traj_in.append(hv)
                 raise NotImplementedError("Hmmmm")
-                hv = data['heading_vec'].unsqueeze(0).repeat((data['pre_motion'].shape[0], 1, 1))
-                traj_in.append(hv)
             elif key == 'map':
+                # map_enc = data['map_enc'].unsqueeze(0).repeat((data['pre_motion'].shape[0], 1, 1))
+                # traj_in.append(map_enc)
                 raise NotImplementedError("hmmm")
-                map_enc = data['map_enc'].unsqueeze(0).repeat((data['pre_motion'].shape[0], 1, 1))
-                traj_in.append(map_enc)
             else:
                 raise ValueError('unknown input_type!')
         traj_in = torch.cat(traj_in, dim=-1)                    # (T, N, Features)
@@ -165,14 +167,17 @@ class ContextEncoder(nn.Module):
         tf_in_pos = self.pos_encoder(x=tf_seq_in, time_tensor=data['pre_timesteps'])            # (O, model_dim)
 
         src_agent_mask = data['agent_mask'].clone()         # (N, N)
-        # print(f"{src_agent_mask, src_agent_mask.shape=}")
 
-        src_mask = generate_mask(tf_in.shape[0], tf_in.shape[0], data['agent_num'], src_agent_mask).to(tf_in.device)        # (T * N, T * N)
+        src_mask = generate_mask(tf_seq_in.shape[0], tf_seq_in.shape[0], data['agent_num'], src_agent_mask).to(tf_in.device)        # (T * N, T * N)
         # print(f"{src_mask.shape=}")
 
-        data['context_enc'] = self.tf_encoder(tf_in_pos, mask=src_mask, num_agent=data['agent_num'])
+        print(f"{tf_in_pos, tf_in_pos.shape=}")
+        print(f"{data['pre_agents'], data['pre_agents'].shape=}")
+        data['context_enc'] = self.tf_encoder(tf_in_pos, data['pre_agents'], mask=src_mask, num_agent=data['agent_num'])        # (O, model_dim)
 
-        context_rs = data['context_enc'].view(-1, data['agent_num'], self.model_dim)
+        # context_rs = data['context_enc'].view(-1, data['agent_num'], self.model_dim)
+
+        # TODO: Proper agent_context pooling, using identities
 
         print(f"{data['context_enc'].shape=}")
         print(f"{context_rs.shape=}")
@@ -707,13 +712,14 @@ class AgentFormer(nn.Module):
         conn_dist = self.cfg.get('conn_dist', 100000.0)
         cur_motion = self.data['cur_motion'][0]
         if conn_dist < 1000.0:
-            threshold = conn_dist / self.cfg.traj_scale
-            pdist = F.pdist(cur_motion)
-            D = torch.zeros([cur_motion.shape[0], cur_motion.shape[0]]).to(device)
-            D[np.triu_indices(cur_motion.shape[0], 1)] = pdist
-            D += D.T
-            mask = torch.zeros_like(D)
-            mask[D > threshold] = float('-inf')
+            # threshold = conn_dist / self.cfg.traj_scale
+            # pdist = F.pdist(cur_motion)
+            # D = torch.zeros([cur_motion.shape[0], cur_motion.shape[0]]).to(device)
+            # D[np.triu_indices(cur_motion.shape[0], 1)] = pdist
+            # D += D.T
+            # mask = torch.zeros_like(D)
+            # mask[D > threshold] = float('-inf')
+            raise NotImplementedError
         else:
             mask = torch.zeros([cur_motion.shape[0], cur_motion.shape[0]]).to(device)
         self.data['agent_mask'] = mask          # (N, N)
