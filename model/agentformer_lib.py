@@ -85,7 +85,6 @@ def agent_aware_attention(query: Tensor,
                           static_k: Optional[Tensor] = None,
                           static_v: Optional[Tensor] = None,
                           gaussian_kernel: bool = True,
-                          num_agent: int = 1,
                           in_proj_weight_self: Optional[Tensor] = None,
                           in_proj_bias_self: Optional[Tensor] = None
                           ) -> Tuple[Tensor, Optional[Tensor]]:
@@ -510,7 +509,7 @@ class AgentAwareAttention(Module):
         super().__setstate__(state)
 
     def forward(self, query, key, value, query_identities, key_identities, key_padding_mask=None,
-                need_weights=True, attn_mask=None, num_agent=1):
+                need_weights=True, attn_mask=None):
         r"""
     Args:
         query, key, value: map a query and a set of key-value pairs to an output.
@@ -553,29 +552,29 @@ class AgentAwareAttention(Module):
         # TODO: Fix this with dictionary unpacking by defining the dictionary in the __init__ method
         if not self._qkv_same_embed_dim:
             return agent_aware_attention(
-                query, key, value, self.embed_dim, self.num_heads,
-                self.in_proj_weight, self.in_proj_bias,
-                self.bias_k, self.bias_v, self.add_zero_attn,
-                self.dropout, self.out_proj.weight, self.out_proj.bias, query_identities, key_identities,
+                query=query, key=key, value=value, embed_dim_to_check=self.embed_dim, num_heads=self.num_heads,
+                in_proj_weight=self.in_proj_weight, in_proj_bias=self.in_proj_bias,
+                bias_k=self.bias_k, bias_v=self.bias_v, add_zero_attn=self.add_zero_attn,
+                dropout_p=self.dropout, out_proj_weight=self.out_proj.weight, out_proj_bias=self.out_proj.bias,
+                q_identities=query_identities, k_identities=key_identities,
                 training=self.training,
                 key_padding_mask=key_padding_mask, need_weights=need_weights,
                 attn_mask=attn_mask, use_separate_proj_weight=True,
                 q_proj_weight=self.q_proj_weight, k_proj_weight=self.k_proj_weight,
                 v_proj_weight=self.v_proj_weight, gaussian_kernel=self.gaussian_kernel,
-                num_agent=num_agent,
                 in_proj_weight_self=self.in_proj_weight_self,
                 in_proj_bias_self=self.in_proj_bias_self
                 )
         else:
             return agent_aware_attention(
-                query, key, value, self.embed_dim, self.num_heads,
-                self.in_proj_weight, self.in_proj_bias,
-                self.bias_k, self.bias_v, self.add_zero_attn,
-                self.dropout, self.out_proj.weight, self.out_proj.bias, query_identities, key_identities,
+                query=query, key=key, value=value, embed_dim_to_check=self.embed_dim, num_heads=self.num_heads,
+                in_proj_weight=self.in_proj_weight, in_proj_bias=self.in_proj_bias,
+                bias_k=self.bias_k, bias_v=self.bias_v, add_zero_attn=self.add_zero_attn,
+                dropout_p=self.dropout, out_proj_weight=self.out_proj.weight, out_proj_bias=self.out_proj.bias,
+                q_identities=query_identities, k_identities=key_identities,
                 training=self.training,
                 key_padding_mask=key_padding_mask, need_weights=need_weights,
                 attn_mask=attn_mask, gaussian_kernel=self.gaussian_kernel,
-                num_agent=num_agent,
                 in_proj_weight_self=self.in_proj_weight_self,
                 in_proj_bias_self=self.in_proj_bias_self
                 )
@@ -623,7 +622,10 @@ class AgentFormerEncoderLayer(Module):
             state['activation'] = F.relu
         super().__setstate__(state)
 
-    def forward(self, src: Tensor, src_identities: Tensor, src_mask: Optional[Tensor] = None, src_key_padding_mask: Optional[Tensor] = None, num_agent=1) -> Tensor:
+    def forward(
+            self, src: Tensor, src_identities: Tensor,
+            src_mask: Optional[Tensor] = None, src_key_padding_mask: Optional[Tensor] = None
+    ) -> Tensor:
         r"""Pass the input through the encoder layer.
 
         Args:
@@ -635,8 +637,9 @@ class AgentFormerEncoderLayer(Module):
             see the docs in Transformer class.
         """
         # print(f"{src, src.shape=}")
-        src2 = self.self_attn(src, src, src, src_identities, src_identities, attn_mask=src_mask,
-                              key_padding_mask=src_key_padding_mask, num_agent=num_agent)[0]
+        src2 = self.self_attn(query=src, key=src, value=src,
+                              query_identities=src_identities, key_identities=src_identities,
+                              attn_mask=src_mask, key_padding_mask=src_key_padding_mask)[0]
         src = src + self.dropout1(src2)
         src = self.norm1(src)
         src2 = self.linear2(self.dropout(self.activation(self.linear1(src))))
@@ -691,8 +694,14 @@ class AgentFormerDecoderLayer(Module):
             state['activation'] = F.relu
         super().__setstate__(state)
 
-    def forward(self, tgt: Tensor, memory: Tensor, tgt_mask: Optional[Tensor] = None, memory_mask: Optional[Tensor] = None,
-                tgt_key_padding_mask: Optional[Tensor] = None, memory_key_padding_mask: Optional[Tensor] = None, num_agent = 1, need_weights = False) -> Tensor:
+    def forward(
+            self, tgt: Tensor, memory: Tensor, tgt_identities: Tensor, mem_identities: Tensor,
+            tgt_mask: Optional[Tensor] = None,
+            memory_mask: Optional[Tensor] = None,
+            tgt_key_padding_mask: Optional[Tensor] = None,
+            memory_key_padding_mask: Optional[Tensor] = None,
+            need_weights = False
+    ) -> Tensor:
         r"""Pass the inputs (and mask) through the decoder layer.
 
         Args:
@@ -706,12 +715,16 @@ class AgentFormerDecoderLayer(Module):
         Shape:
             see the docs in Transformer class.
         """
-        tgt2, self_attn_weights = self.self_attn(tgt, tgt, tgt, attn_mask=tgt_mask,
-                              key_padding_mask=tgt_key_padding_mask, num_agent=num_agent, need_weights=need_weights)
+        tgt2, self_attn_weights = self.self_attn(
+            query=tgt, key=tgt, value=tgt, query_identities=tgt_identities, key_identities=tgt_identities,
+            attn_mask=tgt_mask, key_padding_mask=tgt_key_padding_mask, need_weights=need_weights
+        )
         tgt = tgt + self.dropout1(tgt2)
         tgt = self.norm1(tgt)
-        tgt2, cross_attn_weights = self.multihead_attn(tgt, memory, memory, attn_mask=memory_mask,
-                                   key_padding_mask=memory_key_padding_mask, num_agent=num_agent, need_weights=need_weights)
+        tgt2, cross_attn_weights = self.multihead_attn(
+            query=tgt, key=memory, value=memory, query_identities=tgt_identities, key_identities=mem_identities,
+            attn_mask=memory_mask, key_padding_mask=memory_key_padding_mask, need_weights=need_weights
+        )
         tgt = tgt + self.dropout2(tgt2)
         tgt = self.norm2(tgt)
         tgt2 = self.linear2(self.dropout(self.activation(self.linear1(tgt))))
@@ -748,7 +761,6 @@ class AgentFormerEncoder(Module):
             src_identities: Tensor,
             mask: Optional[Tensor] = None,
             src_key_padding_mask: Optional[Tensor] = None,
-            num_agent: int = 1
     ) -> Tensor:
         r"""Pass the input through the encoder layers in turn.
 
@@ -763,7 +775,9 @@ class AgentFormerEncoder(Module):
         output = src
 
         for mod in self.layers:
-            output = mod(output, src_identities, src_mask=mask, src_key_padding_mask=src_key_padding_mask, num_agent=num_agent)
+            output = mod(
+                src=output, src_identities=src_identities, src_mask=mask, src_key_padding_mask=src_key_padding_mask
+            )
 
         if self.norm is not None:
             output = self.norm(output)
@@ -794,9 +808,16 @@ class AgentFormerDecoder(Module):
         self.num_layers = num_layers
         self.norm = norm
 
-    def forward(self, tgt: Tensor, memory: Tensor, tgt_mask: Optional[Tensor] = None,
-                memory_mask: Optional[Tensor] = None, tgt_key_padding_mask: Optional[Tensor] = None,
-                memory_key_padding_mask: Optional[Tensor] = None, num_agent=1, need_weights = False) -> Tensor:
+    def forward(
+            self,
+            tgt: Tensor, memory: Tensor,
+            tgt_identities: Tensor, mem_identities: Tensor,
+            tgt_mask: Optional[Tensor] = None,
+            memory_mask: Optional[Tensor] = None,
+            tgt_key_padding_mask: Optional[Tensor] = None,
+            memory_key_padding_mask: Optional[Tensor] = None,
+            need_weights = False
+    ) -> Tensor:
         r"""Pass the inputs (and mask) through the decoder layer in turn.
 
         Args:
@@ -815,11 +836,15 @@ class AgentFormerDecoder(Module):
         self_attn_weights = [None] * len(self.layers)
         cross_attn_weights = [None] * len(self.layers)
         for i, mod in enumerate(self.layers):
-            output, self_attn_weights[i], cross_attn_weights[i] = mod(output, memory, tgt_mask=tgt_mask,
-                         memory_mask=memory_mask,
-                         tgt_key_padding_mask=tgt_key_padding_mask,
-                         memory_key_padding_mask=memory_key_padding_mask,
-                         num_agent=num_agent, need_weights=need_weights)
+            output, self_attn_weights[i], cross_attn_weights[i] = mod(
+                tgt=output, memory=memory,
+                tgt_identities=tgt_identities, mem_identities=mem_identities,
+                tgt_mask=tgt_mask,
+                memory_mask=memory_mask,
+                tgt_key_padding_mask=tgt_key_padding_mask,
+                memory_key_padding_mask=memory_key_padding_mask,
+                need_weights=need_weights
+            )
 
         if self.norm is not None:
             output = self.norm(output)
