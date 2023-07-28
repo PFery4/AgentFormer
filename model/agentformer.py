@@ -382,9 +382,12 @@ class FutureDecoder(nn.Module):
             # print(f"{pre_motion[[-1]].shape=}")
             raise NotImplementedError
         elif self.pred_type == 'scene_norm':
-            dec_in = pre_motion_scene_norm[[-1]]
-            print(f"{pre_motion_scene_norm.shape=}")
-            print(f"{pre_motion_scene_norm[[-1]].shape=}")
+
+            # dec_in = pre_motion_scene_norm[[-1]]
+            # print(f"{pre_motion_scene_norm.shape=}")
+            # print(f"{pre_motion_scene_norm[[-1]].shape=}")
+            # print(f"{data['cur_motion_scene_norm'].shape=}")
+            dec_in = data['cur_motion_scene_norm']      # TODO: something with sample_num maybe???
         else:
             # dec_in = torch.zeros_like(pre_motion[[-1]])
             raise NotImplementedError
@@ -512,8 +515,6 @@ class FutureDecoder(nn.Module):
         pre_motion_scene_norm = data['pre_motion_scene_norm'].repeat_interleave(sample_num, dim=1)
         print(f"{pre_motion_scene_norm.shape=}")
         # TODO TODO, TODO, TODO TODO TODO TODO TODOOOOOOOOOOOOOOOOO DODODODODOOOOO
-
-        print(znlu)
 
         # p(z)
         prior_key = 'p_z_dist' + ('_infer' if mode == 'infer' else '')
