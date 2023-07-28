@@ -168,31 +168,23 @@ class ContextEncoder(nn.Module):
 
         src_agent_mask = data['agent_mask'].clone()         # (N, N)
 
-        src_mask = generate_mask(tf_seq_in.shape[0], tf_seq_in.shape[0], data['agent_num'], src_agent_mask).to(tf_in.device)        # (T * N, T * N)
+        src_mask = generate_mask(tf_seq_in.shape[0], tf_seq_in.shape[0], data['agent_num'], src_agent_mask).to(tf_in.device)        # (T * N, T * N)        # TODO: FIX THIS MASK GENERATION PROCESS
         # print(f"{src_mask.shape=}")
 
-        print(f"{tf_in_pos, tf_in_pos.shape=}")
-        print(f"{data['pre_agents'], data['pre_agents'].shape=}")
         data['context_enc'] = self.tf_encoder(tf_in_pos, data['pre_agents'], mask=src_mask, num_agent=data['agent_num'])        # (O, model_dim)
 
-        # context_rs = data['context_enc'].view(-1, data['agent_num'], self.model_dim)
-
-        # TODO: Proper agent_context pooling, using identities
-
-        print(f"{data['context_enc'].shape=}")
-        print(f"{context_rs.shape=}")
-        # print(f"{context_rs[:, 0, 0], context_rs[:, 0, 0].shape=}")
-        # print(f"{context_rs[:, 12, 0], context_rs[:, 12, 0].shape=}")
         # compute per agent context
         print(f"{self.pooling=}")
         if self.pooling == 'mean' and False:
-            data['agent_context'] = torch.mean(context_rs, dim=0)
-            print(f"mean: {data['agent_context'].shape=}")
+            data['agent_context'] = torch.cat(
+                [torch.mean(data['context_enc'][data['pre_agents'] == ag_id, :], dim=0).unsqueeze(0)
+                 for ag_id in torch.unique(data['pre_agents'])], dim=0
+            )       # (N, model_dim)
         else:
-            data['agent_context'] = torch.max(context_rs, dim=0)[0]
-            print(f"max: {data['agent_context'].shape=}")
-
-        print(zbly)
+            data['agent_context'] = torch.cat(
+                [torch.max(data['context_enc'][data['pre_agents'] == ag_id, :], dim=0)[0].unsqueeze(0)
+                 for ag_id in torch.unique(data['pre_agents'])], dim=0
+            )       # (N, model_dim)
 
 
 class FutureEncoder(nn.Module):
