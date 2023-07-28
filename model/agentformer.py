@@ -27,12 +27,15 @@ def generate_ar_mask(sz: int, agent_num: int, agent_mask: torch.Tensor):
     return mask
 
 
-def generate_mask(tgt_sz: int, src_sz: int, agent_num: int, agent_mask: torch.Tensor) -> torch.Tensor:
-    # TODO: WIP WIP WIP WIP WIP WIP
-    # assert tgt_sz % agent_num == 0 and src_sz % agent_num == 0
-    # mask = agent_mask.repeat(tgt_sz // agent_num, src_sz // agent_num)
-    mask = torch.zeros(99, 99).to(agent_mask.device)
-    return mask
+def generate_mask(tgt_sz: int, src_sz: int) -> torch.Tensor:
+    # This mask generation process is responsible for ensuring the functionality discussed in the paragraph
+    # "Encoding Agent Connectivity" in the original AgentFormer article. The function presented here is modified such
+    # that all agents are connected to one another (or, in other words, the distance threshold value eta is infinite).
+    # The resulting mask is a zero's tensor,
+    # shaped like the attention matrix QK^T performed in the agent_aware_attention function
+    # If you need to apply some distance thresholding for your own experiments, you will need to change
+    # the implementation of this function accordingly.
+    return torch.zeros(tgt_sz, src_sz)
 
 
 class PositionalEncoding(nn.Module):
@@ -70,6 +73,7 @@ class PositionalEncoding(nn.Module):
         # x: (T, model_dim)
         # time_tensor: (T)
         pos_enc = self.time_encode(time_tensor)
+        print(f"{pos_enc.shape=}")
         if self.concat:
             x = torch.cat([x, pos_enc], dim=-1)
             x = self.fc(x)
@@ -121,17 +125,17 @@ class ContextEncoder(nn.Module):
         self.pos_encoder = PositionalEncoding(self.model_dim, dropout=self.dropout, concat=ctx['pos_concat'])
 
     def forward(self, data):
-        traj_in = []
+        # traj_in = []
         seq_in = []
         for key in self.input_type:
             if key == 'pos':
-                traj_in.append(data['pre_motion'])
+                # traj_in.append(data['pre_motion'])
                 seq_in.append(data['pre_sequence'])
             elif key == 'vel':
-                vel = data['pre_vel']
+                # vel = data['pre_vel']
                 vel_seq = data['pre_vel_seq']
                 if len(self.input_type) > 1:
-                    vel = torch.cat([vel[[0]], vel], dim=0)          # Imputation
+                    # vel = torch.cat([vel[[0]], vel], dim=0)          # Imputation
                     vel_seq = torch.cat([                            # Imputation
                         vel_seq[:data['agent_num']],
                         vel_seq
@@ -140,13 +144,13 @@ class ContextEncoder(nn.Module):
                 if self.vel_heading:
                     # vel = rotation_2d_torch(vel, -data['heading'])[0]
                     raise NotImplementedError("hmmm")
-                traj_in.append(vel)
+                # traj_in.append(vel)
                 seq_in.append(vel_seq)
             elif key == 'norm':
                 # traj_in.append(data['pre_motion_norm'])
                 raise NotImplementedError("HMMMM")
             elif key == 'scene_norm':
-                traj_in.append(data['pre_motion_scene_norm'])
+                # traj_in.append(data['pre_motion_scene_norm'])
                 seq_in.append(data['pre_sequence_scene_norm'])
             elif key == 'heading':
                 # hv = data['heading_vec'].unsqueeze(0).repeat((data['pre_motion'].shape[0], 1, 1))
@@ -158,24 +162,24 @@ class ContextEncoder(nn.Module):
                 raise NotImplementedError("hmmm")
             else:
                 raise ValueError('unknown input_type!')
-        traj_in = torch.cat(traj_in, dim=-1)                    # (T, N, Features)
-        seq_in = torch.cat(seq_in, dim=-1)
+        # traj_in = torch.cat(traj_in, dim=-1)                    # (T, N, Features)
+        seq_in = torch.cat(seq_in, dim=-1)                        # (O, Features)
 
-        tf_in = self.input_fc(traj_in.view(-1, traj_in.shape[-1])).view(-1, 1, self.model_dim)      # (T * N, 1, model_dim)
+        # tf_in = self.input_fc(traj_in.view(-1, traj_in.shape[-1])).view(-1, 1, self.model_dim)      # (T * N, 1, model_dim)
         tf_seq_in = self.input_fc(seq_in)               # (O, model_dim)
 
         tf_in_pos = self.pos_encoder(x=tf_seq_in, time_tensor=data['pre_timesteps'])            # (O, model_dim)
 
-        src_agent_mask = data['agent_mask'].clone()         # (N, N)
+        # src_agent_mask = data['agent_mask'].clone()         # (N, N)
 
-        src_mask = generate_mask(tf_seq_in.shape[0], tf_seq_in.shape[0], data['agent_num'], src_agent_mask).to(tf_in.device)        # (T * N, T * N)        # TODO: FIX THIS MASK GENERATION PROCESS
-        # print(f"{src_mask.shape=}")
+        src_mask = generate_mask(data['pre_timesteps'].shape[0], data['pre_timesteps'].shape[0]).to(tf_seq_in.device)        # (O, O)
 
-        data['context_enc'] = self.tf_encoder(tf_in_pos, data['pre_agents'], mask=src_mask, num_agent=data['agent_num'])        # (O, model_dim)
+        data['context_enc'] = self.tf_encoder(tf_in_pos, data['pre_agents'], mask=src_mask)        # (O, model_dim)
+        print(f"ENCODER ATTENTION: DONE!")
 
         # compute per agent context
-        print(f"{self.pooling=}")
-        if self.pooling == 'mean' and False:
+        # print(f"{self.pooling=}")
+        if self.pooling == 'mean':
             data['agent_context'] = torch.cat(
                 [torch.mean(data['context_enc'][data['pre_agents'] == ag_id, :], dim=0).unsqueeze(0)
                  for ag_id in torch.unique(data['pre_agents'])], dim=0
@@ -227,31 +231,53 @@ class FutureEncoder(nn.Module):
         initialize_weights(self.q_z_net.modules())
 
     def forward(self, data, reparam=True):
-        traj_in = []
+        # traj_in = []
+        seq_in = []
         for key in self.input_type:
             if key == 'pos':
-                traj_in.append(data['fut_motion'])
+                # traj_in.append(data['fut_motion'])
+                print(f"{data['fut_sequence'].shape=}")
+                seq_in.append(data['fut_sequence'])
             elif key == 'vel':
-                vel = data['fut_vel']
+                # vel = data['fut_vel']
+                vel_seq = data['fut_vel_seq']
+                print(f"{data['fut_vel_seq'].shape=}")
                 if self.vel_heading:
-                    vel = rotation_2d_torch(vel, -data['heading'])[0]
-                traj_in.append(vel)
+                    # vel = rotation_2d_torch(vel, -data['heading'])[0]
+                    raise NotImplementedError
+                # traj_in.append(vel)
+                seq_in.append(vel_seq)
             elif key == 'norm':
-                traj_in.append(data['fut_motion_norm'])
+                # traj_in.append(data['fut_motion_norm'])
+                raise NotImplementedError
             elif key == 'scene_norm':
-                traj_in.append(data['fut_motion_scene_norm'])
+                # traj_in.append(data['fut_motion_scene_norm'])
+                print(f"{data['fut_sequence_scene_norm'].shape=}")
+                seq_in.append(data['fut_sequence_scene_norm'])
             elif key == 'heading':
-                hv = data['heading_vec'].unsqueeze(0).repeat((data['fut_motion'].shape[0], 1, 1))
-                traj_in.append(hv)
+                # hv = data['heading_vec'].unsqueeze(0).repeat((data['fut_motion'].shape[0], 1, 1))
+                # traj_in.append(hv)
+                raise NotImplementedError
             elif key == 'map':
-                map_enc = data['map_enc'].unsqueeze(0).repeat((data['fut_motion'].shape[0], 1, 1))
-                traj_in.append(map_enc)
+                # map_enc = data['map_enc'].unsqueeze(0).repeat((data['fut_motion'].shape[0], 1, 1))
+                # traj_in.append(map_enc)
+                raise NotImplementedError
             else:
                 raise ValueError('unknown input_type!')
-        traj_in = torch.cat(traj_in, dim=-1)
-        tf_in = self.input_fc(traj_in.view(-1, traj_in.shape[-1])).view(-1, 1, self.model_dim)
-        agent_enc_shuffle = data['agent_enc_shuffle'] if self.agent_enc_shuffle else None
-        tf_in_pos = self.pos_encoder(tf_in, num_a=data['agent_num'], agent_enc_shuffle=agent_enc_shuffle)
+        # traj_in = torch.cat(traj_in, dim=-1)
+        seq_in = torch.cat(seq_in, dim=-1)      # (P, Features)
+
+        print(f"{seq_in.shape=}")
+
+        # tf_in = self.input_fc(traj_in.view(-1, traj_in.shape[-1])).view(-1, 1, self.model_dim)
+        tf_seq_in = self.input_fc(seq_in)       # (P, model_dim)
+
+        print(f"{tf_seq_in.shape=}")
+        print(f"{data['pre_timesteps']=}")
+        print(f"{data['fut_timesteps'], data['fut_timesteps'].shape=}")
+
+        # agent_enc_shuffle = data['agent_enc_shuffle'] if self.agent_enc_shuffle else None
+        tf_in_pos = self.pos_encoder(x=tf_seq_in, time_tensor=data['fut_timesteps'])        # (P, model_dim)
         # # WIP CODE
         # fig, ax = plt.subplots()
         # print(f"FUTURE ENCODER")
@@ -259,18 +285,25 @@ class FutureEncoder(nn.Module):
         # plt.show()
         # # WIP CODE
 
-        mem_agent_mask = data['agent_mask'].clone()
-        tgt_agent_mask = data['agent_mask'].clone()
-        mem_mask = generate_mask(tf_in.shape[0], data['context_enc'].shape[0], data['agent_num'], mem_agent_mask).to(tf_in.device)
-        tgt_mask = generate_mask(tf_in.shape[0], tf_in.shape[0], data['agent_num'], tgt_agent_mask).to(tf_in.device)
+        # mem_agent_mask = data['agent_mask'].clone()
+        # tgt_agent_mask = data['agent_mask'].clone()
+        mem_mask = generate_mask(data['fut_timesteps'].shape[0], data['pre_timesteps'].shape[0]).to(tf_seq_in.device)
+        tgt_mask = generate_mask(data['fut_timesteps'].shape[0], data['fut_timesteps'].shape[0]).to(tf_seq_in.device)
 
-        tf_out, _ = self.tf_decoder(tf_in_pos, data['context_enc'], memory_mask=mem_mask, tgt_mask=tgt_mask, num_agent=data['agent_num'])
-        tf_out = tf_out.view(traj_in.shape[0], -1, self.model_dim)
+        tf_out, _ = self.tf_decoder(tf_in_pos, data['context_enc'], data['fut_agents'], data['pre_agents'], memory_mask=mem_mask, tgt_mask=tgt_mask)    # (P, model_dim)
+        print(f"DECODER ATTENTION: DONE!")
 
         if self.pooling == 'mean':
-            h = torch.mean(tf_out, dim=0)
+            h = torch.cat(
+                [torch.mean(tf_out[data['fut_agents'] == ag_id, :], dim=0).unsqueeze(0)
+                 for ag_id in torch.unique(data['fut_agents'])], dim=0
+            )       # (N, model_dim)
         else:
-            h = torch.max(tf_out, dim=0)[0]
+            # h = torch.max(tf_out, dim=0)[0]
+            h = torch.cat(
+                [torch.max(tf_out[data['fut_agents'] == ag_id, :], dim=0)[0].unsqueeze(0)
+                 for ag_id in torch.unique(data['fut_agents'])], dim=0
+            )       # (N, model_dim)
         if self.out_mlp_dim is not None:
             h = self.out_mlp(h)
         q_z_params = self.q_z_net(h)
@@ -385,7 +418,7 @@ class FutureDecoder(nn.Module):
             mem_mask = generate_mask(tf_in.shape[0], context.shape[0], data['agent_num'], mem_agent_mask).to(tf_in.device)
             tgt_mask = generate_ar_mask(tf_in_pos.shape[0], agent_num, tgt_agent_mask).to(tf_in.device)
 
-            tf_out, attn_weights = self.tf_decoder(tf_in_pos, context, memory_mask=mem_mask, tgt_mask=tgt_mask, num_agent=data['agent_num'], need_weights=need_weights)
+            tf_out, attn_weights = self.tf_decoder(tf_in_pos, context, memory_mask=mem_mask, tgt_mask=tgt_mask, need_weights=need_weights)
 
             out_tmp = tf_out.view(-1, tf_out.shape[-1])
 
@@ -451,6 +484,7 @@ class FutureDecoder(nn.Module):
         raise NotImplementedError
 
     def forward(self, data, mode, sample_num=1, autoregress=True, z=None, need_weights=False):
+        # TODO: GET THIS WORKING WITH THE NEW SEQUENCE WORKFLOW
         context = data['context_enc'].repeat_interleave(sample_num, dim=1)       # 80 x 64
         pre_motion = data['pre_motion'].repeat_interleave(sample_num, dim=1)             # 10 x 80 x 2
         pre_vel = data['pre_vel'].repeat_interleave(sample_num, dim=1) if self.pred_type == 'vel' else None
@@ -645,7 +679,7 @@ class AgentFormer(nn.Module):
         self.data['fut_sequence'] = full_motion[timesteps_to_predict, ...]          # (P, 2), where P equals sum(timesteps_to_predict)
         self.data['fut_sequence_scene_norm'] = full_motion_scene_norm[timesteps_to_predict, ...]        # (P, 2)
         self.data['fut_agents'] = full_agent_mask[timesteps_to_predict]                                 # (P)
-        self.data['fut_timesteps'] = full_agent_mask[timesteps_to_predict]                              # (P)
+        self.data['fut_timesteps'] = full_timestep_mask[timesteps_to_predict]                           # (P)
 
         fut_motion_orig = fut_motion.detach().clone().transpose(0, 1)
         self.data['fut_motion_orig'] = fut_motion_orig.to(device)
@@ -720,7 +754,7 @@ class AgentFormer(nn.Module):
         self.data['future_window'] = data.get('future_window', None)
 
         print("#" * 100)
-        print(f"{obs_mask, obs_mask.shape=}")
+        # print(f"{obs_mask, obs_mask.shape=}")
         [print(f"{k}:\t{type(v)}\t" + (str(v.shape) if isinstance(v, torch.Tensor) else str(v))) for k, v in self.data.items()]
         # print(f"{self.data['pre_motion']=}")
         # print(f"{self.data['fut_motion']=}")
