@@ -28,25 +28,30 @@ def generate_ar_mask(sz: int, agent_num: int, agent_mask: torch.Tensor):
 
 
 def generate_mask(tgt_sz: int, src_sz: int) -> torch.Tensor:
-    # This mask generation process is responsible for ensuring the functionality discussed in the paragraph
-    # "Encoding Agent Connectivity" in the original AgentFormer article. The function presented here is modified such
-    # that all agents are connected to one another (or, in other words, the distance threshold value eta is infinite).
-    # The resulting mask is a zero's tensor,
-    # shaped like the attention matrix QK^T performed in the agent_aware_attention function
-    # If you need to apply some distance thresholding for your own experiments, you will need to change
-    # the implementation of this function accordingly.
+    """
+    This mask generation process is responsible for the functionality discussed in the paragraph
+    "Encoding Agent Connectivity" in the original AgentFormer paper. The function presented here is modified such
+    that all agents are connected to one another (or, in other words, the distance threshold value eta is infinite).
+    The resulting mask is a tensor full of zero's,
+    shaped like the attention matrix QK^T performed in the agent_aware_attention function
+    If you need to apply some distance thresholding for your own experiments, you will need to change
+    the implementation of this function accordingly.
+    """
     return torch.zeros(tgt_sz, src_sz)
 
 
 class PositionalEncoding(nn.Module):
 
     """ Positional Encoding """
-    def __init__(self, d_model: int, dropout: float = 0.1, timestep_window: Tuple[int, int] = (-20, 30), concat: bool = False):
+    def __init__(
+            self, d_model: int,
+            dropout: float = 0.1, timestep_window: Tuple[int, int] = (-20, 30), concat: bool = False
+    ):
         super(PositionalEncoding, self).__init__()
         self.dropout = nn.Dropout(p=dropout)
         self.d_model = d_model
         self.concat = concat
-        timestep_window = torch.arange(*timestep_window, dtype=torch.float).unsqueeze(1).to()       # (t_range, 1)
+        timestep_window = torch.arange(*timestep_window, dtype=torch.float).unsqueeze(1)       # (t_range, 1)
         self.register_buffer('timestep_window', timestep_window)
         if concat:
             self.fc = nn.Linear(2 * d_model, d_model)
@@ -62,7 +67,7 @@ class PositionalEncoding(nn.Module):
         div_term = torch.exp(torch.arange(0, self.d_model, 2).float() * (-np.log(10000.0) / self.d_model))
         pe[:, 0::2] = torch.sin(self.timestep_window * div_term)
         pe[:, 1::2] = torch.cos(self.timestep_window * div_term)
-        return pe       # shape (t_range, d_model)
+        return pe       # (t_range, d_model)
 
     def time_encode(self, sequence_timesteps: torch.Tensor) -> torch.Tensor:
         # sequence_timesteps: (T_total)
@@ -142,23 +147,23 @@ class ContextEncoder(nn.Module):
 
                 if self.vel_heading:
                     # vel = rotation_2d_torch(vel, -data['heading'])[0]
-                    raise NotImplementedError("hmmm")
+                    raise NotImplementedError("if self.vel_heading")
                 # traj_in.append(vel)
                 seq_in.append(vel_seq)
             elif key == 'norm':
                 # traj_in.append(data['pre_motion_norm'])
-                raise NotImplementedError("HMMMM")
+                raise NotImplementedError("if key == 'norm'")
             elif key == 'scene_norm':
                 # traj_in.append(data['pre_motion_scene_norm'])
                 seq_in.append(data['pre_sequence_scene_norm'])
             elif key == 'heading':
                 # hv = data['heading_vec'].unsqueeze(0).repeat((data['pre_motion'].shape[0], 1, 1))
                 # traj_in.append(hv)
-                raise NotImplementedError("Hmmmm")
+                raise NotImplementedError("if key == 'heading'")
             elif key == 'map':
                 # map_enc = data['map_enc'].unsqueeze(0).repeat((data['pre_motion'].shape[0], 1, 1))
                 # traj_in.append(map_enc)
-                raise NotImplementedError("hmmm")
+                raise NotImplementedError("if key == 'map'")
             else:
                 raise ValueError('unknown input_type!')
         # traj_in = torch.cat(traj_in, dim=-1)                    # (T, N, Features)
@@ -167,13 +172,20 @@ class ContextEncoder(nn.Module):
         # tf_in = self.input_fc(traj_in.view(-1, traj_in.shape[-1])).view(-1, 1, self.model_dim)      # (T * N, 1, model_dim)
         tf_seq_in = self.input_fc(seq_in)               # (O, model_dim)
 
-        tf_in_pos = self.pos_encoder(x=tf_seq_in, time_tensor=data['pre_timesteps'])            # (O, model_dim)
+        tf_in_pos = self.pos_encoder(
+            x=tf_seq_in,                            # (O, model_dim)
+            time_tensor=data['pre_timesteps']       # (O)
+        )                                           # (O, model_dim)
 
         # src_agent_mask = data['agent_mask'].clone()         # (N, N)
 
         src_mask = generate_mask(data['pre_timesteps'].shape[0], data['pre_timesteps'].shape[0]).to(tf_seq_in.device)        # (O, O)
 
-        data['context_enc'] = self.tf_encoder(tf_in_pos, data['pre_agents'], mask=src_mask)        # (O, model_dim)
+        data['context_enc'] = self.tf_encoder(
+            src=tf_in_pos,                          # (O, model_dim)
+            src_identities=data['pre_agents'],      # (O)
+            mask=src_mask                           # (O, O)
+        )                                           # (O, model_dim)
         print(f"ENCODER ATTENTION: DONE!")
 
         # compute per agent context
@@ -242,12 +254,12 @@ class FutureEncoder(nn.Module):
                 print(f"{data['fut_vel_seq'].shape=}")
                 if self.vel_heading:
                     # vel = rotation_2d_torch(vel, -data['heading'])[0]
-                    raise NotImplementedError
+                    raise NotImplementedError("if self.vel_heading")
                 # traj_in.append(vel)
                 seq_in.append(vel_seq)
             elif key == 'norm':
                 # traj_in.append(data['fut_motion_norm'])
-                raise NotImplementedError
+                raise NotImplementedError("if key == 'norm'")
             elif key == 'scene_norm':
                 # traj_in.append(data['fut_motion_scene_norm'])
                 print(f"{data['fut_sequence_scene_norm'].shape=}")
@@ -255,11 +267,11 @@ class FutureEncoder(nn.Module):
             elif key == 'heading':
                 # hv = data['heading_vec'].unsqueeze(0).repeat((data['fut_motion'].shape[0], 1, 1))
                 # traj_in.append(hv)
-                raise NotImplementedError
+                raise NotImplementedError("if key == 'heading'")
             elif key == 'map':
                 # map_enc = data['map_enc'].unsqueeze(0).repeat((data['fut_motion'].shape[0], 1, 1))
                 # traj_in.append(map_enc)
-                raise NotImplementedError
+                raise NotImplementedError("if key == 'map'")
             else:
                 raise ValueError('unknown input_type!')
         # traj_in = torch.cat(traj_in, dim=-1)
@@ -274,7 +286,10 @@ class FutureEncoder(nn.Module):
         print(f"{data['pre_timesteps']=}")
         print(f"{data['fut_timesteps'], data['fut_timesteps'].shape=}")
 
-        tf_in_pos = self.pos_encoder(x=tf_seq_in, time_tensor=data['fut_timesteps'])        # (P, model_dim)
+        tf_in_pos = self.pos_encoder(
+            x=tf_seq_in,                            # (P, model_dim)
+            time_tensor=data['fut_timesteps']       # (P)
+        )                                           # (P, model_dim)
         # # WIP CODE
         # fig, ax = plt.subplots()
         # print(f"FUTURE ENCODER")
@@ -287,7 +302,14 @@ class FutureEncoder(nn.Module):
         mem_mask = generate_mask(data['fut_timesteps'].shape[0], data['pre_timesteps'].shape[0]).to(tf_seq_in.device)
         tgt_mask = generate_mask(data['fut_timesteps'].shape[0], data['fut_timesteps'].shape[0]).to(tf_seq_in.device)
 
-        tf_out, _ = self.tf_decoder(tf_in_pos, data['context_enc'], data['fut_agents'], data['pre_agents'], memory_mask=mem_mask, tgt_mask=tgt_mask)    # (P, model_dim)
+        tf_out, _ = self.tf_decoder(
+            tgt=tf_in_pos,                          # (P, model_dim)
+            memory=data['context_enc'],             # (O, model_dim)
+            tgt_identities=data['fut_agents'],      # (P)
+            mem_identities=data['pre_agents'],      # (O)
+            memory_mask=mem_mask,                   # (P, O)
+            tgt_mask=tgt_mask                       # (P, P)
+        )                                           # (P, model_dim)
         print(f"DECODER ATTENTION: DONE!")
 
         if self.pooling == 'mean':
@@ -296,7 +318,6 @@ class FutureEncoder(nn.Module):
                  for ag_id in torch.unique(data['fut_agents'])], dim=0
             )       # (N, model_dim)
         else:
-            # h = torch.max(tf_out, dim=0)[0]
             h = torch.cat(
                 [torch.max(tf_out[data['fut_agents'] == ag_id, :], dim=0)[0].unsqueeze(0)
                  for ag_id in torch.unique(data['fut_agents'])], dim=0
@@ -407,11 +428,11 @@ class FutureDecoder(nn.Module):
             if key == 'heading':
                 # heading = data['heading_vec'].unsqueeze(1).repeat((1, sample_num, 1))
                 # in_arr.append(heading)
-                raise NotImplementedError
+                raise NotImplementedError("if key == 'heading'")
             elif key == 'map':
                 # map_enc = data['map_enc'].unsqueeze(1).repeat((1, sample_num, 1))
                 # in_arr.append(map_enc)
-                raise NotImplementedError
+                raise NotImplementedError("if key == 'map'")
             else:
                 raise ValueError('wrong decode input type!')
         dec_in_z = torch.cat(in_arr, dim=-1)        # (N, sample_num, nz + 2)
@@ -825,7 +846,7 @@ class AgentFormer(nn.Module):
             # D += D.T
             # mask = torch.zeros_like(D)
             # mask[D > threshold] = float('-inf')
-            raise NotImplementedError
+            raise NotImplementedError("if conn_dist < 1000.0")
         else:
             mask = torch.zeros([cur_motion.shape[0], cur_motion.shape[0]]).to(device)
         self.data['agent_mask'] = mask          # (N, N)
