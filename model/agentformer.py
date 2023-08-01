@@ -471,8 +471,7 @@ class FutureDecoder(nn.Module):
                 dec_input_sequence.view(-1, dec_input_sequence.shape[-1])       # (B * n_sample, nz + 2)
             ).view(dec_input_sequence.shape[0], -1, self.model_dim)             # (B, n_sample, model_dim)
             print(f"{tf_in.shape=}")
-            print(f"{torch.repeat_interleave(timestep_sequence, repeats=sample_num)=}")
-            print(f"{torch.repeat_interleave(timestep_sequence, repeats=sample_num).shape=}")
+
             tf_in_pos = self.pos_encoder(
                 x=tf_in,                                                        # (B, n_sample, model_dim)
                 time_tensor=timestep_sequence                                   # (B)
@@ -497,16 +496,57 @@ class FutureDecoder(nn.Module):
             ).view(*tf_out.shape[:2], -1)           # (B, n_sample, 2)
 
             if self.pred_type == 'scene_norm' and self.sn_out_type in {'vel', 'norm'}:
-                norm_motion = seq_out.view(1, -1, seq_out.shape[-1])        # (1, B * n_sample, 2)
-                print(f"{norm_motion.shape=}")
                 print(f"{self.sn_out_type=}")
+
+                norm_motion = seq_out               # (B, n_sample, 2)
+                print(f"{norm_motion.shape=}")
                 print(f"{agent_sequence=}")
                 print(f"{data['valid_id']=}")
                 print(f"{dec_in.shape=}")
 
                 # defining origins for each element in the sequence, using agent_sequence, dec_in and data['valid_id']
-                seq_origins = []
+                seq_origins = torch.cat(
+                    [dec_in[(data['valid_id'] == ag_id), ...] for ag_id in agent_sequence], dim=0
+                )      # (B, n_sample, 2)
+                seq_out = norm_motion + seq_origins     # (B, n_sample, 2)
 
+            print(f"{self.ar_detach=}")
+            if self.ar_detach:
+                # create out_in -> Partially from prediction, partially from dec_in (due to occlusion asynchronicity)
+                from_pred_indices = (timestep_sequence == torch.max(timestep_sequence))     # (B)
+                out_in_from_pred = seq_out[from_pred_indices, ...]                          # (*B, n_sample, 2)
+                z_in_from_pred = torch.cat(
+                    [z_in[agent_idx, ...] for agent_idx in agent_sequence[from_pred_indices]], dim=0
+                )                                                                           # (*B, n_sample, nz)
+                out_in_z_from_pred = torch.cat(
+                    [out_in_from_pred, z_in_from_pred], dim=-1
+                )                                                                           # (*B, n_sample, nz + 2)
+
+                from_dec_in_indices = (data['last_observed_timesteps'] == torch.max(timestep_sequence) + 1)     # (N)
+                out_in_from_dec_in = dec_in[from_dec_in_indices, ...]       # (*N, n_sample, 2)
+                z_in_from_dec_in = z_in[from_dec_in_indices, ...]           # (*N, n_sample, nz)
+                out_in_z_from_dec_in = torch.cat(
+                    [out_in_from_dec_in, z_in_from_dec_in], dim=-1
+                )                                                           # (*N, n_sample, nz + 2)
+                print(f"{timestep_sequence=}")
+                print(f"{(timestep_sequence == torch.max(timestep_sequence))=}")
+                print(f"{data['last_observed_timesteps']=}")
+                print(f"{(data['last_observed_timesteps'] == torch.max(timestep_sequence) + 1)=}")
+                print(f"{out_in_from_pred.shape=}")
+                print(f"{out_in_from_dec_in.shape=}")
+                out_in = torch.cat([out_in_from_pred, out_in_from_dec_in], dim=0)
+                print(f"{out_in.shape=}")
+                print(f"{z_in.shape=}")
+
+                # update timestep_sequence, agent_sequence
+
+                # TODO: concatenate old dec_in_z, from prediction, and from dec_in
+                # TODO: update timestep_sequence, agent_sequence
+                # TODO: update the loop relevant parameters (catch up sequence)
+                # TODO: REMEMBER TO DETACH ABOVE ^^^
+
+            else:
+                pass
             print(zblu)
 
             # example1: from future encoder
