@@ -364,9 +364,7 @@ def agent_aware_attention(query: Tensor,
                 attn_output_weights += attn_mask
 
         # NO div by sqrt(d)         ????
-        print(f"BEFORE SOFTMAX: {attn_output_weights.shape=}")
-        attn_output_weights = softmax(attn_output_weights, dim=-1)
-        print(f"AFTER SOFTMAX: {attn_output_weights.shape=}")
+        attn_output_weights = softmax(attn_output_weights, dim=-1)      # (batch_size * num_heads, tgt_len, src_len)
 
     else:
         # if attn_mask is not None:
