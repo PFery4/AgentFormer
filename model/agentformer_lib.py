@@ -158,7 +158,7 @@ def agent_aware_attention(query: Tensor,
     #         #     q_proj_weight=q_proj_weight, k_proj_weight=k_proj_weight,
     #         #     v_proj_weight=v_proj_weight, static_k=static_k, static_v=static_v)
     #         raise NotImplementedError
-    tgt_len, embed_dim = query.size()
+    tgt_len, batch_size, embed_dim = query.size()
     assert embed_dim == embed_dim_to_check
     # allow MHA to have different sizes for the feature dimension
     assert key.size(0) == value.size(0) and key.size(1) == value.size(1)
@@ -254,7 +254,7 @@ def agent_aware_attention(query: Tensor,
             if list(attn_mask.size()) != [1, query.size(0), key.size(0)]:
                 raise RuntimeError('The size of the 2D attn_mask is not correct.')
         elif attn_mask.dim() == 3:
-            # if list(attn_mask.size()) != [bsz * num_heads, query.size(0), key.size(0)]:
+            # if list(attn_mask.size()) != [batch_size * num_heads, query.size(0), key.size(0)]:
             #     raise RuntimeError('The size of the 3D attn_mask is not correct.')
             raise RuntimeError('The size of the 3D attn_mask is not correct.')
         else:
@@ -268,8 +268,8 @@ def agent_aware_attention(query: Tensor,
 
     if bias_k is not None and bias_v is not None:
         # if static_k is None and static_v is None:
-        #     k = torch.cat([k, bias_k.repeat(1, bsz, 1)])
-        #     v = torch.cat([v, bias_v.repeat(1, bsz, 1)])
+        #     k = torch.cat([k, bias_k.repeat(1, batch_size, 1)])
+        #     v = torch.cat([v, bias_v.repeat(1, batch_size, 1)])
         #     if attn_mask is not None:
         #         attn_mask = pad(attn_mask, (0, 1))
         #     if key_padding_mask is not None:
@@ -284,26 +284,26 @@ def agent_aware_attention(query: Tensor,
 
     # print(f"{q[..., 0], q.shape=}")
 
-    q = q.contiguous().view(tgt_len, num_heads, head_dim).transpose(0, 1)
+    q = q.contiguous().view(tgt_len, batch_size * num_heads, head_dim).transpose(0, 1)
     if k is not None:
-        k = k.contiguous().view(-1, num_heads, head_dim).transpose(0, 1)
+        k = k.contiguous().view(-1, batch_size * num_heads, head_dim).transpose(0, 1)
     if v is not None:
-        v = v.contiguous().view(-1, num_heads, head_dim).transpose(0, 1)
+        v = v.contiguous().view(-1, batch_size * num_heads, head_dim).transpose(0, 1)
     if in_proj_weight_self is not None:
-        q_self = q_self.contiguous().view(tgt_len, num_heads, head_dim).transpose(0, 1)
-        k_self = k_self.contiguous().view(-1, num_heads, head_dim).transpose(0, 1)
-    # q, k, v and q_self, k_self are of shape (num_heads, tgt_len, head_dim)
+        q_self = q_self.contiguous().view(tgt_len, batch_size * num_heads, head_dim).transpose(0, 1)
+        k_self = k_self.contiguous().view(-1, batch_size * num_heads, head_dim).transpose(0, 1)
+    # q, k, v and q_self, k_self are of shape (batch_size * num_heads, tgt_len, head_dim)
 
     # print(f"{static_k=}")
     if static_k is not None:
-        # assert static_k.size(0) == bsz * num_heads
+        # assert static_k.size(0) == batch_size * num_heads
         # assert static_k.size(2) == head_dim
         # k = static_k
         raise NotImplementedError("k becomes static_k, perhaps something needs to be done here wrt NaN patterns")
 
     # print(f"{static_v=}")
     if static_v is not None:
-        # assert static_v.size(0) == bsz * num_heads
+        # assert static_v.size(0) == batch_size * num_heads
         # assert static_v.size(2) == head_dim
         # v = static_v
         raise NotImplementedError("v becomes static_v, perhaps something needs to be done here wrt NaN patterns")
@@ -312,7 +312,7 @@ def agent_aware_attention(query: Tensor,
 
     # print(f"{key_padding_mask=}")
     if key_padding_mask is not None:
-        # assert key_padding_mask.size(0) == bsz
+        # assert key_padding_mask.size(0) == batch_size
         # assert key_padding_mask.size(1) == src_len
         raise NotImplementedError
 
@@ -336,9 +336,9 @@ def agent_aware_attention(query: Tensor,
         # attn_output_weights = qk_dist * scaling * 0.5
         raise NotImplementedError("check NaN patterns")
     else:
-        attn_output_weights = torch.bmm(q, k.transpose(1, 2))       # (num_heads, tgt_len, src_len)
+        attn_output_weights = torch.bmm(q, k.transpose(1, 2))       # (batch_size * num_heads, tgt_len, src_len)
 
-    assert list(attn_output_weights.size()) == [num_heads, tgt_len, src_len]
+    assert list(attn_output_weights.size()) == [batch_size * num_heads, tgt_len, src_len]
 
     if in_proj_weight_self is not None:
         """
@@ -346,10 +346,10 @@ def agent_aware_attention(query: Tensor,
             Agent-Aware Attention
         ==================================
         """
-        attn_output_weights_inter = attn_output_weights             # (num_heads, tgt_len, src_len)
+        attn_output_weights_inter = attn_output_weights             # (batch_size * num_heads, tgt_len, src_len)
         attn_weight_self_mask = agent_aware_mask(q_identities, k_identities)        # (tgt_len, src_len)
 
-        attn_output_weights_self = torch.bmm(q_self, k_self.transpose(1, 2))
+        attn_output_weights_self = torch.bmm(q_self, k_self.transpose(1, 2))    # (batch_size * num_heads, tgt_len, src_len)
 
         assert attn_weight_self_mask.shape == attn_output_weights.shape[-2:] == attn_output_weights_self.shape[-2:]
 
@@ -364,7 +364,9 @@ def agent_aware_attention(query: Tensor,
                 attn_output_weights += attn_mask
 
         # NO div by sqrt(d)         ????
+        print(f"BEFORE SOFTMAX: {attn_output_weights.shape=}")
         attn_output_weights = softmax(attn_output_weights, dim=-1)
+        print(f"AFTER SOFTMAX: {attn_output_weights.shape=}")
 
     else:
         # if attn_mask is not None:
@@ -374,12 +376,12 @@ def agent_aware_attention(query: Tensor,
         #         attn_output_weights += attn_mask
         #
         # if key_padding_mask is not None:
-        #     attn_output_weights = attn_output_weights.view(bsz, num_heads, tgt_len, src_len)
+        #     attn_output_weights = attn_output_weights.view(batch_size, num_heads, tgt_len, src_len)
         #     attn_output_weights = attn_output_weights.masked_fill(
         #         key_padding_mask.unsqueeze(1).unsqueeze(2),
         #         float('-inf'),
         #     )
-        #     attn_output_weights = attn_output_weights.view(bsz * num_heads, tgt_len, src_len)
+        #     attn_output_weights = attn_output_weights.view(batch_size * num_heads, tgt_len, src_len)
         #
         # attn_output_weights = softmax(
         #     attn_output_weights, dim=-1)
@@ -387,17 +389,17 @@ def agent_aware_attention(query: Tensor,
 
     attn_output_weights = dropout(attn_output_weights, p=dropout_p, training=training)
 
-    attn_output = torch.bmm(attn_output_weights, v)         # (num_heads, tgt_len, head_dim)
+    attn_output = torch.bmm(attn_output_weights, v)         # (batch_size * num_heads, tgt_len, head_dim)
 
-    assert list(attn_output.size()) == [num_heads, tgt_len, head_dim]
-    attn_output = attn_output.transpose(0, 1).contiguous().view(tgt_len, embed_dim)     # (tgt_len, embed_dim)
-    attn_output = linear(attn_output, out_proj_weight, out_proj_bias)                   # (tgt_len, embed_dim)
+    assert list(attn_output.size()) == [batch_size * num_heads, tgt_len, head_dim]
+    attn_output = attn_output.transpose(0, 1).contiguous().view(tgt_len, batch_size, embed_dim)     # (tgt_len, batch_size, embed_dim)
+    attn_output = linear(attn_output, out_proj_weight, out_proj_bias)                               # (tgt_len, batch_size, embed_dim)
 
     # print(f"{need_weights=}")
     if need_weights:
         # average attention weights over heads
-        attn_output_weights = attn_output_weights.view(num_heads, tgt_len, src_len)
-        return attn_output, attn_output_weights.sum(dim=0) / num_heads
+        attn_output_weights = attn_output_weights.view(batch_size, num_heads, tgt_len, src_len)
+        return attn_output, attn_output_weights.sum(dim=1) / num_heads
     else:
         return attn_output, None
 
