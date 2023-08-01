@@ -75,10 +75,9 @@ class PositionalEncoding(nn.Module):
         return torch.cat([self.pe[(self.timestep_window == t).squeeze(), ...] for t in sequence_timesteps], dim=0)
 
     def forward(self, x: torch.Tensor, time_tensor: torch.Tensor):
-        # x: (T, model_dim)
+        # x: (T, batch_size, model_dim)
         # time_tensor: (T)
-        pos_enc = self.time_encode(time_tensor)     # (T, self.d_model)
-        print(f"{pos_enc.shape=}")
+        pos_enc = self.time_encode(time_tensor).unsqueeze(1)     # (T, 1, self.d_model)
         if self.concat:
             x = torch.cat([x, pos_enc], dim=-1)
             x = self.fc(x)
@@ -170,31 +169,37 @@ class ContextEncoder(nn.Module):
         seq_in = torch.cat(seq_in, dim=-1)                        # (O, Features)
 
         # tf_in = self.input_fc(traj_in.view(-1, traj_in.shape[-1])).view(-1, 1, self.model_dim)      # (T * N, 1, model_dim)
-        tf_seq_in = self.input_fc(seq_in)               # (O, model_dim)
+        tf_seq_in = self.input_fc(seq_in).view(-1, 1, self.model_dim)               # (O, 1, model_dim)
 
         tf_in_pos = self.pos_encoder(
-            x=tf_seq_in,                            # (O, model_dim)
+            x=tf_seq_in,                            # (O, 1, model_dim)
             time_tensor=data['pre_timesteps']       # (O)
-        )                                           # (O, model_dim)
+        )                                           # (O, 1, model_dim)
 
         # src_agent_mask = data['agent_mask'].clone()         # (N, N)
 
         src_mask = generate_mask(data['pre_timesteps'].shape[0], data['pre_timesteps'].shape[0]).to(tf_seq_in.device)        # (O, O)
 
+        # print(f"{tf_in_pos.shape=}")
         data['context_enc'] = self.tf_encoder(
-            src=tf_in_pos,                          # (O, model_dim)
+            src=tf_in_pos,                          # (O, 1, model_dim)
             src_identities=data['pre_agents'],      # (O)
             mask=src_mask                           # (O, O)
-        )                                           # (O, model_dim)
+        )                                           # (O, 1, model_dim)
+        # print(f"{data['context_enc'].shape=}")
         print(f"ENCODER ATTENTION: DONE!")
 
         # compute per agent context
         # print(f"{self.pooling=}")
+
+        # TODO
         if self.pooling == 'mean':
             data['agent_context'] = torch.cat(
-                [torch.mean(data['context_enc'][data['pre_agents'] == ag_id, :], dim=0).unsqueeze(0)
+                [torch.mean(data['context_enc'][data['pre_agents'] == ag_id, ...], dim=0).unsqueeze(0)
                  for ag_id in torch.unique(data['pre_agents'])], dim=0
             )       # (N, model_dim)
+            print(f"{data['agent_context'].shape=}")
+            print(zblufs)
         else:
             data['agent_context'] = torch.cat(
                 [torch.max(data['context_enc'][data['pre_agents'] == ag_id, :], dim=0)[0].unsqueeze(0)
@@ -302,6 +307,8 @@ class FutureEncoder(nn.Module):
         mem_mask = generate_mask(data['fut_timesteps'].shape[0], data['pre_timesteps'].shape[0]).to(tf_seq_in.device)
         tgt_mask = generate_mask(data['fut_timesteps'].shape[0], data['fut_timesteps'].shape[0]).to(tf_seq_in.device)
 
+        print(f"ENCODE THIS: {tf_in_pos.shape=}")
+
         tf_out, _ = self.tf_decoder(
             tgt=tf_in_pos,                          # (P, model_dim)
             memory=data['context_enc'],             # (O, model_dim)
@@ -311,6 +318,7 @@ class FutureEncoder(nn.Module):
             memory_mask=mem_mask,                   # (P, O)
         )                                           # (P, model_dim)
         print(f"DECODER ATTENTION: DONE!")
+        print(zblu)
 
         if self.pooling == 'mean':
             h = torch.cat(
@@ -467,11 +475,13 @@ class FutureDecoder(nn.Module):
                 x=tf_in.view(-1, tf_in.shape[-1]),                                          # (B * n_sample, model_dim)
                 time_tensor=torch.repeat_interleave(timestep_sequence, repeats=sample_num)  # (B * n_sample)
             ).view(timestep_sequence.shape[0], sample_num, self.model_dim)                  # (B, n_sample, model_dim)
+            mem_mask = generate_mask(timestep_sequence.shape[0], context.shape[0])
             # print(f"{tf_in_pos=}")
             print(f"{tf_in_pos.shape=}")
             print(f"{context.shape=}")
             print(f"{agent_sequence.shape=}")
             print(f"{data['pre_agents'].shape=}")
+            print(f"{mem_mask.shape=}")
 
             print(zbly)
 
@@ -481,7 +491,7 @@ class FutureDecoder(nn.Module):
                 tgt_identities=agent_sequence,      # (B)
                 mem_identities=data['pre_agents'],  # (O)
                 tgt_mask=None,  # TODO
-                mem_mask=None   # TODO
+                mem_mask=mem_mask   # (B, O)
             )
 
             print(zblu)
