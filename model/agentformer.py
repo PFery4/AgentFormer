@@ -112,7 +112,6 @@ class ContextEncoder(nn.Module):
         self.nlayer = cfg.get('nlayer', 6)
         self.input_type = ctx['input_type']
         self.pooling = cfg.get('pooling', 'mean')
-        # self.agent_enc_shuffle = ctx['agent_enc_shuffle']
         self.vel_heading = ctx['vel_heading']
         ctx['context_dim'] = self.model_dim
         in_dim = self.motion_dim * len(self.input_type)
@@ -209,7 +208,6 @@ class FutureEncoder(nn.Module):
         self.out_mlp_dim = cfg.get('out_mlp_dim', None)
         self.input_type = ctx['fut_input_type']
         self.pooling = cfg.get('pooling', 'mean')
-        # self.agent_enc_shuffle = ctx['agent_enc_shuffle']
         self.vel_heading = ctx['vel_heading']
         # networks
         in_dim = forecast_dim * len(self.input_type)
@@ -276,7 +274,6 @@ class FutureEncoder(nn.Module):
         print(f"{data['pre_timesteps']=}")
         print(f"{data['fut_timesteps'], data['fut_timesteps'].shape=}")
 
-        # agent_enc_shuffle = data['agent_enc_shuffle'] if self.agent_enc_shuffle else None
         tf_in_pos = self.pos_encoder(x=tf_seq_in, time_tensor=data['fut_timesteps'])        # (P, model_dim)
         # # WIP CODE
         # fig, ax = plt.subplots()
@@ -339,7 +336,6 @@ class FutureDecoder(nn.Module):
         self.nlayer = cfg.get('nlayer', 6)
         self.out_mlp_dim = cfg.get('out_mlp_dim', None)
         self.pos_offset = cfg.get('pos_offset', False)
-        # self.agent_enc_shuffle = ctx['agent_enc_shuffle']
         self.learn_prior = ctx['learn_prior']
 
         # sanity check
@@ -468,7 +464,6 @@ class FutureDecoder(nn.Module):
 
         for i in range(self.future_frames):
             tf_in = self.input_fc(dec_in_z.view(-1, dec_in_z.shape[-1])).view(dec_in_z.shape[0], -1, self.model_dim)        # (N, n_sample, model_dim)
-            # agent_enc_shuffle = data['agent_enc_shuffle'] if self.agent_enc_shuffle else None
             tf_in_pos = self.pos_encoder(tf_in, num_a=agent_num, t_offset=toffset)      # TODO: REVISE SIGNATURE            # (N, n_sample, model_dim)
 
             # # WIP CODE
@@ -637,7 +632,6 @@ class AgentFormer(nn.Module):
             'max_agent_len': cfg.get('max_agent_len', 128),
             'use_agent_enc': cfg.get('use_agent_enc', False),
             'agent_enc_learn': cfg.get('agent_enc_learn', False),
-            # 'agent_enc_shuffle': cfg.get('agent_enc_shuffle', False),
             'sn_out_type': cfg.get('sn_out_type', 'scene_norm'),
             'sn_out_heading': cfg.get('sn_out_heading', False),
             'vel_heading': cfg.get('vel_heading', False),
@@ -820,12 +814,6 @@ class AgentFormer(nn.Module):
                 patch_size = [50, 10, 50, 90]
                 rot = -np.array(in_data['heading']) * (180 / np.pi)
             self.data['agent_maps'] = scene_map.get_cropped_maps(scene_points, patch_size, rot).to(device)      # (N, 3, 100, 100)
-
-        # agent shuffling
-        # if self.training and self.ctx['agent_enc_shuffle']:
-        #     self.data['agent_enc_shuffle'] = torch.randperm(self.ctx['max_agent_len'])[:self.data['agent_num']].to(device)
-        # else:
-        #     self.data['agent_enc_shuffle'] = None
 
         conn_dist = self.cfg.get('conn_dist', 100000.0)
         cur_motion = self.data['cur_motion'][0]
