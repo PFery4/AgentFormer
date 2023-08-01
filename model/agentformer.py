@@ -307,8 +307,8 @@ class FutureEncoder(nn.Module):
             memory=data['context_enc'],             # (O, model_dim)
             tgt_identities=data['fut_agents'],      # (P)
             mem_identities=data['pre_agents'],      # (O)
+            tgt_mask=tgt_mask,                      # (P, P)
             memory_mask=mem_mask,                   # (P, O)
-            tgt_mask=tgt_mask                       # (P, P)
         )                                           # (P, model_dim)
         print(f"DECODER ATTENTION: DONE!")
 
