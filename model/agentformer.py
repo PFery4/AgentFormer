@@ -451,27 +451,56 @@ class FutureDecoder(nn.Module):
         # print(f"{dec_in_z[[-1]], dec_in_z.shape=}")
         # print(f"{dec_input_sequence, dec_input_sequence.shape=}")
         # CATCH UP TO t_0
-        print("ENTERING CATCHING UP SEQUENCE:")
+        print("ENTERING BELIEF GENERATION SEQUENCE:")
         while not torch.all(catch_up_timestep_sequence == torch.zeros_like(catch_up_timestep_sequence)):
             print(f"{catch_up_timestep_sequence=}")
             # predict t+1
 
             tf_in = self.input_fc(
-                dec_input_sequence.view(-1, dec_input_sequence.shape[-1])
-            ).view(
-                dec_input_sequence.shape[0], -1, self.model_dim
-            )        # (t_catchup_sequence, n_sample, model_dim)
+                dec_input_sequence.view(-1, dec_input_sequence.shape[-1])       # (B * n_sample, nz + 2)
+            ).view(dec_input_sequence.shape[0], -1, self.model_dim)             # (B, n_sample, model_dim)
             print(f"{tf_in.shape=}")
             print(f"{tf_in.view(-1, tf_in.shape[-1]).shape=}")
             print(f"{torch.repeat_interleave(timestep_sequence, repeats=sample_num)=}")
             print(f"{torch.repeat_interleave(timestep_sequence, repeats=sample_num).shape=}")
             tf_in_pos = self.pos_encoder(
-                x=tf_in.view(-1, tf_in.shape[-1]),      # (t_catchup_sequence * n_sample, model_dim)
-                time_tensor=torch.repeat_interleave(timestep_sequence, repeats=sample_num)      # (t_catchup_sequence * n_sample)
-            ).view(timestep_sequence.shape[0], sample_num, self.model_dim)            # (t_catchup_sequence, n_sample, model_dim)
+                x=tf_in.view(-1, tf_in.shape[-1]),                                          # (B * n_sample, model_dim)
+                time_tensor=torch.repeat_interleave(timestep_sequence, repeats=sample_num)  # (B * n_sample)
+            ).view(timestep_sequence.shape[0], sample_num, self.model_dim)                  # (B, n_sample, model_dim)
             # print(f"{tf_in_pos=}")
             print(f"{tf_in_pos.shape=}")
+            print(f"{context.shape=}")
+            print(f"{agent_sequence.shape=}")
+            print(f"{data['pre_agents'].shape=}")
+
+            print(zbly)
+
+            tf_out, attn_weights = self.tf_decoder(
+                tgt=tf_in_pos,          # (B, n_sample, model_dim)
+                memory=context,         # (O, model_dim)
+                tgt_identities=agent_sequence,      # (B)
+                mem_identities=data['pre_agents'],  # (O)
+                tgt_mask=None,  # TODO
+                mem_mask=None   # TODO
+            )
+
             print(zblu)
+
+            # example1: from future encoder
+            # tf_out, _ = self.tf_decoder(
+            #     tgt=tf_in_pos,  # (P, model_dim)
+            #     memory=data['context_enc'],  # (O, model_dim)
+            #     tgt_identities=data['fut_agents'],  # (P)
+            #     mem_identities=data['pre_agents'],  # (O)
+            #     memory_mask=mem_mask,  # (P, O)
+            #     tgt_mask=tgt_mask  # (P, P)
+            # )  # (P, model_dim)
+
+            # example2: from original autoregressive implementation
+            # tf_out, attn_weights = self.tf_decoder(
+            #     tf_in_pos, context,
+            #     memory_mask=mem_mask, tgt_mask=tgt_mask, need_weights=need_weights
+            # )  # (N, n_sample, model_dim)
 
             catch_up_timestep_sequence[indices_to_predict] += 1
 
