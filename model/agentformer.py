@@ -14,6 +14,7 @@ from model.agentformer_lib import AgentFormerEncoderLayer, AgentFormerDecoderLay
 from model.map_encoder import MapEncoder
 from utils.torch import rotation_2d_torch, ExpParamAnnealer
 from utils.utils import initialize_weights
+from typing import List
 
 
 def generate_ar_mask(sz: int, agent_num: int, agent_mask: torch.Tensor):
@@ -24,6 +25,15 @@ def generate_ar_mask(sz: int, agent_num: int, agent_mask: torch.Tensor):
         i1 = t * agent_num
         i2 = (t+1) * agent_num
         mask[i1:i2, i2:] = float('-inf')
+    return mask
+
+
+def generate_ar_mask_with_variable_agents_per_timestep(timestep_sequence: torch.Tensor) -> torch.Tensor:
+    stop_at = torch.argmax(timestep_sequence)
+    mask = torch.zeros(timestep_sequence.shape[0], timestep_sequence.shape[0])
+    for idx in range(stop_at):
+        mask_seq = (timestep_sequence > timestep_sequence[idx])
+        mask[idx, mask_seq] = float('-inf')
     return mask
 
 
@@ -461,31 +471,41 @@ class FutureDecoder(nn.Module):
                 dec_input_sequence.view(-1, dec_input_sequence.shape[-1])       # (B * n_sample, nz + 2)
             ).view(dec_input_sequence.shape[0], -1, self.model_dim)             # (B, n_sample, model_dim)
             print(f"{tf_in.shape=}")
-            print(f"{tf_in.view(-1, tf_in.shape[-1]).shape=}")
             print(f"{torch.repeat_interleave(timestep_sequence, repeats=sample_num)=}")
             print(f"{torch.repeat_interleave(timestep_sequence, repeats=sample_num).shape=}")
             tf_in_pos = self.pos_encoder(
-                x=tf_in.view(-1, tf_in.shape[-1]),                                          # (B * n_sample, model_dim)
-                time_tensor=torch.repeat_interleave(timestep_sequence, repeats=sample_num)  # (B * n_sample)
-            ).view(timestep_sequence.shape[0], sample_num, self.model_dim)                  # (B, n_sample, model_dim)
-            mem_mask = generate_mask(timestep_sequence.shape[0], context.shape[0])
-            # print(f"{tf_in_pos=}")
-            print(f"{tf_in_pos.shape=}")
-            print(f"{context.shape=}")
-            print(f"{agent_sequence.shape=}")
-            print(f"{data['pre_agents'].shape=}")
-            print(f"{mem_mask.shape=}")
+                x=tf_in,                                                        # (B, n_sample, model_dim)
+                time_tensor=timestep_sequence                                   # (B)
+            ).view(timestep_sequence.shape[0], sample_num, self.model_dim)      # (B, n_sample, model_dim)
 
-            print(zbly)
+            tgt_mask = generate_ar_mask_with_variable_agents_per_timestep(timestep_sequence=timestep_sequence).to(tf_in.device)
+            mem_mask = generate_mask(timestep_sequence.shape[0], context.shape[0]).to(tf_in.device)
 
             tf_out, attn_weights = self.tf_decoder(
-                tgt=tf_in_pos,          # (B, n_sample, model_dim)
-                memory=context,         # (O, model_dim)
+                tgt=tf_in_pos,                      # (B, n_sample, model_dim)
+                memory=context,                     # (O, n_sample, model_dim)
                 tgt_identities=agent_sequence,      # (B)
                 mem_identities=data['pre_agents'],  # (O)
-                tgt_mask=None,  # TODO
-                mem_mask=mem_mask   # (B, O)
-            )
+                tgt_mask=tgt_mask,                  # (B, B)
+                memory_mask=mem_mask                # (B, O)
+            )                                       # (B, n_sample, model_dim)
+
+            print(f"{tf_out.shape=}")
+
+            seq_out = self.out_module(
+                tf_out.view(-1, tf_out.shape[-1])   # (B * n_sample, model_dim)
+            ).view(*tf_out.shape[:2], -1)           # (B, n_sample, 2)
+
+            if self.pred_type == 'scene_norm' and self.sn_out_type in {'vel', 'norm'}:
+                norm_motion = seq_out.view(1, -1, seq_out.shape[-1])        # (1, B * n_sample, 2)
+                print(f"{norm_motion.shape=}")
+                print(f"{self.sn_out_type=}")
+                print(f"{agent_sequence=}")
+                print(f"{data['valid_id']=}")
+                print(f"{dec_in.shape=}")
+
+                # defining origins for each element in the sequence, using agent_sequence, dec_in and data['valid_id']
+                seq_origins = []
 
             print(zblu)
 
@@ -510,7 +530,8 @@ class FutureDecoder(nn.Module):
 
         # PREDICT THE FUTURE
 
-        print(zbly)
+        print("DONE WITH THE CATCHING UP")
+        print(zblu)
 
         mem_agent_mask = data['agent_mask'].clone()
         tgt_agent_mask = data['agent_mask'].clone()
