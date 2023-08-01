@@ -191,18 +191,14 @@ class ContextEncoder(nn.Module):
 
         # compute per agent context
         # print(f"{self.pooling=}")
-
-        # TODO
         if self.pooling == 'mean':
             data['agent_context'] = torch.cat(
-                [torch.mean(data['context_enc'][data['pre_agents'] == ag_id, ...], dim=0).unsqueeze(0)
+                [torch.mean(data['context_enc'][data['pre_agents'] == ag_id, ...], dim=0)
                  for ag_id in torch.unique(data['pre_agents'])], dim=0
             )       # (N, model_dim)
-            print(f"{data['agent_context'].shape=}")
-            print(zblufs)
         else:
             data['agent_context'] = torch.cat(
-                [torch.max(data['context_enc'][data['pre_agents'] == ag_id, :], dim=0)[0].unsqueeze(0)
+                [torch.max(data['context_enc'][data['pre_agents'] == ag_id, :], dim=0)[0]
                  for ag_id in torch.unique(data['pre_agents'])], dim=0
             )       # (N, model_dim)
 
@@ -285,16 +281,16 @@ class FutureEncoder(nn.Module):
         print(f"{seq_in.shape=}")
 
         # tf_in = self.input_fc(traj_in.view(-1, traj_in.shape[-1])).view(-1, 1, self.model_dim)
-        tf_seq_in = self.input_fc(seq_in)       # (P, model_dim)
+        tf_seq_in = self.input_fc(seq_in).view(-1, 1, self.model_dim)       # (P, 1, model_dim)
 
         print(f"{tf_seq_in.shape=}")
         print(f"{data['pre_timesteps']=}")
         print(f"{data['fut_timesteps'], data['fut_timesteps'].shape=}")
 
         tf_in_pos = self.pos_encoder(
-            x=tf_seq_in,                            # (P, model_dim)
+            x=tf_seq_in,                            # (P, 1, model_dim)
             time_tensor=data['fut_timesteps']       # (P)
-        )                                           # (P, model_dim)
+        )                                           # (P, 1, model_dim)
         # # WIP CODE
         # fig, ax = plt.subplots()
         # print(f"FUTURE ENCODER")
@@ -307,27 +303,24 @@ class FutureEncoder(nn.Module):
         mem_mask = generate_mask(data['fut_timesteps'].shape[0], data['pre_timesteps'].shape[0]).to(tf_seq_in.device)
         tgt_mask = generate_mask(data['fut_timesteps'].shape[0], data['fut_timesteps'].shape[0]).to(tf_seq_in.device)
 
-        print(f"ENCODE THIS: {tf_in_pos.shape=}")
-
         tf_out, _ = self.tf_decoder(
-            tgt=tf_in_pos,                          # (P, model_dim)
-            memory=data['context_enc'],             # (O, model_dim)
+            tgt=tf_in_pos,                          # (P, 1, model_dim)
+            memory=data['context_enc'],             # (O, 1, model_dim)
             tgt_identities=data['fut_agents'],      # (P)
             mem_identities=data['pre_agents'],      # (O)
             tgt_mask=tgt_mask,                      # (P, P)
             memory_mask=mem_mask,                   # (P, O)
-        )                                           # (P, model_dim)
+        )                                           # (P, 1, model_dim)
         print(f"DECODER ATTENTION: DONE!")
-        print(zblu)
 
         if self.pooling == 'mean':
             h = torch.cat(
-                [torch.mean(tf_out[data['fut_agents'] == ag_id, :], dim=0).unsqueeze(0)
+                [torch.mean(tf_out[data['fut_agents'] == ag_id, :], dim=0)
                  for ag_id in torch.unique(data['fut_agents'])], dim=0
             )       # (N, model_dim)
         else:
             h = torch.cat(
-                [torch.max(tf_out[data['fut_agents'] == ag_id, :], dim=0)[0].unsqueeze(0)
+                [torch.max(tf_out[data['fut_agents'] == ag_id, :], dim=0)[0]
                  for ag_id in torch.unique(data['fut_agents'])], dim=0
             )       # (N, model_dim)
         if self.out_mlp_dim is not None:
