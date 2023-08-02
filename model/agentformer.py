@@ -407,7 +407,7 @@ class FutureDecoder(nn.Module):
             data: dict,
             context: torch.Tensor,
             sample_num: int
-    ):
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
 
         # Embed input sequence in high-dim space
         tf_in = self.input_fc(
@@ -527,7 +527,7 @@ class FutureDecoder(nn.Module):
         )  # (B + *~B + *~N)
         print(f"{timestep_sequence=}")
 
-        return dec_input_sequence, agent_sequence, timestep_sequence
+        return seq_out, dec_input_sequence, agent_sequence, timestep_sequence
 
     def decode_traj_ar(self, data, mode, context, pre_motion, pre_vel, pre_motion_scene_norm, z, sample_num, need_weights=False):
         agent_num = data['agent_num']
@@ -600,7 +600,7 @@ class FutureDecoder(nn.Module):
         while not torch.all(catch_up_timestep_sequence == torch.zeros_like(catch_up_timestep_sequence)):
             print(f"\nBEGINNING LOOP: {catch_up_timestep_sequence=}")
 
-            dec_input_sequence, agent_sequence, timestep_sequence = self.decode_next_timestep(
+            _, dec_input_sequence, agent_sequence, timestep_sequence = self.decode_next_timestep(
                 dec_in_orig=dec_in,
                 z_in_orig=z_in,
                 dec_input_sequence=dec_input_sequence,
@@ -613,14 +613,13 @@ class FutureDecoder(nn.Module):
 
             catch_up_timestep_sequence[catch_up_timestep_sequence == torch.min(catch_up_timestep_sequence)] += 1
 
-
         print("DONE WITH THE CATCHING UP")
         # PREDICT THE FUTURE
 
         for i in range(self.future_frames):
             print(f"\nBEGINNING FUTURE LOOP: {i}")
 
-            dec_input_sequence, agent_sequence, timestep_sequence = self.decode_next_timestep(
+            seq_out, dec_input_sequence, agent_sequence, timestep_sequence = self.decode_next_timestep(
                 dec_in_orig=dec_in,
                 z_in_orig=z_in,
                 dec_input_sequence=dec_input_sequence,
@@ -633,7 +632,6 @@ class FutureDecoder(nn.Module):
 
         print(f"DONE PREDICTING")
         print(zblu)
-
 
         seq_out = seq_out.view(-1, agent_num * sample_num, seq_out.shape[-1])
         data[f'{mode}_seq_out'] = seq_out
