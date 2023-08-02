@@ -399,14 +399,14 @@ class FutureDecoder(nn.Module):
 
     def decode_next_timestep(
             self,
-            dec_in_orig: torch.Tensor,
-            z_in_orig: torch.Tensor,
-            dec_input_sequence: torch.Tensor,
-            timestep_sequence: torch.Tensor,
-            agent_sequence: torch.Tensor,
+            dec_in_orig: torch.Tensor,              # (N, n_sample, 2)
+            z_in_orig: torch.Tensor,                # (N, n_sample, nz)
+            dec_input_sequence: torch.Tensor,       # (B, n_sample, nz + 2)
+            timestep_sequence: torch.Tensor,        # (B)
+            agent_sequence: torch.Tensor,           # (B)
             data: dict,
-            context: torch.Tensor,
-            sample_num: int
+            context: torch.Tensor,                  # (O, n_sample, model_dim)
+            sample_num: int                         # n_sample
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
 
         # Embed input sequence in high-dim space
@@ -631,6 +631,25 @@ class FutureDecoder(nn.Module):
             )
 
         print(f"DONE PREDICTING")
+        print(f"{seq_out.shape=}")
+        print(f"{agent_sequence, agent_sequence.shape=}")
+        print(f"{timestep_sequence, timestep_sequence.shape=}")
+
+        # timestep_sequence is defined as the timesteps corresponding to the observations / predictions in the *input*
+        # sequence that is being fed to the model. The timesteps corresponding to the *predicted* sequence are shifted
+        # by one from this original timestep_sequence. Additionally, the model did not actually consume the given
+        # timestep_sequence at the last loop iteration. The timestep_sequence (and its corresponding trajectory and
+        # agent sequences) was extended at the last loop iteration without being fed to the model. In order to obtain
+        # the actual sequences of predicted timesteps and agents, we need to remove the indices corresponding to the
+        # last timestep value present in the *input* timestep sequence.
+        keep_indices = (timestep_sequence < torch.max(timestep_sequence))
+        pred_timestep_sequence = (timestep_sequence[keep_indices] + 1).detach().clone()
+        pred_agent_sequence = (agent_sequence[keep_indices]).detach().clone()
+
+        print(f"{pred_agent_sequence, pred_timestep_sequence.shape=}")
+        print(f"{pred_timestep_sequence, pred_timestep_sequence.shape=}")
+
+        print(f"{data['fut_timesteps']=}")
         print(zblu)
 
         seq_out = seq_out.view(-1, agent_num * sample_num, seq_out.shape[-1])
