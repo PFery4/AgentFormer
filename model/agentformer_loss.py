@@ -4,17 +4,17 @@ from numpy import pi
 
 def compute_motion_mse(data, cfg):
 
-    print(f"INDEX MAPPING")
+    # print(f"INDEX MAPPING")
     idx_map = index_mapping_gt_seq_pred_seq(
         ag_gt=data['fut_agents'],
         tsteps_gt=data['fut_timesteps'],
         ag_pred=data['train_dec_agents'],
         tsteps_pred=data['train_dec_timesteps']
     )
-    print(f"{idx_map=}")
+    # print(f"{idx_map=}")
 
-    modded_ag_gt = data['fut_agents'][idx_map]
-    modded_t_gt = data['fut_timesteps'][idx_map]
+    # modded_ag_gt = data['fut_agents'][idx_map]
+    # modded_t_gt = data['fut_timesteps'][idx_map]
     # print(f"{data['fut_agents']=}")
     # print(f"{data['fut_timesteps']=}")
     # print(f"{modded_ag_gt=}")
@@ -22,35 +22,19 @@ def compute_motion_mse(data, cfg):
     # print(f"{data['train_dec_agents']=}")
     # print(f"{data['train_dec_timesteps']=}")
 
-    assert torch.all(modded_t_gt == data['train_dec_timesteps'])
-    assert torch.all(modded_ag_gt == data['train_dec_agents'])
-
+    # assert torch.all(modded_t_gt == data['train_dec_timesteps'])
+    # assert torch.all(modded_ag_gt == data['train_dec_agents'])
     # assert torch.all(data['fut_timesteps'] == data['train_dec_timesteps'])
     # assert torch.all(data['fut_agents'] == data['train_dec_agents'])
 
-    print(f"{data['fut_sequence'][idx_map].shape=}")
-    print(f"{data['train_dec_motion'].squeeze(1).shape=}")
+    # print(f"{data['fut_sequence'][idx_map].shape=}")
+    # print(f"{data['train_dec_motion'].squeeze(1).shape=}")
 
     diff = data['fut_sequence'][idx_map] - data['train_dec_motion'].squeeze(1)
-    # TODO: something with 'mask'
 
-    print(f"{data['fut_mask']=}")
-
-    loss_unweighted = diff.pow(2).sum()
-    # TODO: something with 'normalize'
-    loss = loss_unweighted * cfg['weight']
-
-    print(f"{loss=}")
-
-    print(zblu)
-
-    diff = data['fut_motion_orig'] - data['train_dec_motion']       # (N, T_pred, 2)
-    if cfg.get('mask', True):
-        mask = data['fut_mask']
-        diff *= mask.unsqueeze(2)
     loss_unweighted = diff.pow(2).sum()
     if cfg.get('normalize', True):
-        loss_unweighted /= diff.shape[0]
+        loss_unweighted /= data['agent_num']
     loss = loss_unweighted * cfg['weight']
     return loss, loss_unweighted
 
@@ -160,7 +144,7 @@ def compute_z_kld(data, cfg):
 
 
 def compute_sample_loss(data, cfg):
-    # todo: Maybe this sampler loss needs also to be done wrt gaussian nll, instead of MSE
+    # todo: We need to modify this sampler loss to respect the new prediction framework
     diff = data['infer_dec_motion'][..., :data['fut_motion_orig'].shape[-1]] - data['fut_motion_orig'].unsqueeze(1)
     if cfg.get('mask', True):
         mask = data['fut_mask'].unsqueeze(1).unsqueeze(-1)
