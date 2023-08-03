@@ -3,7 +3,7 @@ from numpy import pi
 
 
 def compute_motion_mse(data, cfg):
-    diff = data['fut_motion_orig'] - data['train_dec_motion']
+    diff = data['fut_motion_orig'] - data['train_dec_motion']       # (N, T_pred, 2)
     if cfg.get('mask', True):
         mask = data['fut_mask']
         diff *= mask.unsqueeze(2)
