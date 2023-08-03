@@ -3,6 +3,47 @@ from numpy import pi
 
 
 def compute_motion_mse(data, cfg):
+
+    print(f"INDEX MAPPING")
+    idx_map = index_mapping_gt_seq_pred_seq(
+        ag_gt=data['fut_agents'],
+        tsteps_gt=data['fut_timesteps'],
+        ag_pred=data['train_dec_agents'],
+        tsteps_pred=data['train_dec_timesteps']
+    )
+    print(f"{idx_map=}")
+
+    modded_ag_gt = data['fut_agents'][idx_map]
+    modded_t_gt = data['fut_timesteps'][idx_map]
+    # print(f"{data['fut_agents']=}")
+    # print(f"{data['fut_timesteps']=}")
+    # print(f"{modded_ag_gt=}")
+    # print(f"{modded_t_gt=}")
+    # print(f"{data['train_dec_agents']=}")
+    # print(f"{data['train_dec_timesteps']=}")
+
+    assert torch.all(modded_t_gt == data['train_dec_timesteps'])
+    assert torch.all(modded_ag_gt == data['train_dec_agents'])
+
+    # assert torch.all(data['fut_timesteps'] == data['train_dec_timesteps'])
+    # assert torch.all(data['fut_agents'] == data['train_dec_agents'])
+
+    print(f"{data['fut_sequence'][idx_map].shape=}")
+    print(f"{data['train_dec_motion'].squeeze(1).shape=}")
+
+    diff = data['fut_sequence'][idx_map] - data['train_dec_motion'].squeeze(1)
+    # TODO: something with 'mask'
+
+    print(f"{data['fut_mask']=}")
+
+    loss_unweighted = diff.pow(2).sum()
+    # TODO: something with 'normalize'
+    loss = loss_unweighted * cfg['weight']
+
+    print(f"{loss=}")
+
+    print(zblu)
+
     diff = data['fut_motion_orig'] - data['train_dec_motion']       # (N, T_pred, 2)
     if cfg.get('mask', True):
         mask = data['fut_mask']
@@ -96,6 +137,17 @@ def compute_gauss_nll(data, cfg):
     loss_unweighted = 0.5 * loss_unweighted         # why 0.5? -> https://stats.stackexchange.com/questions/521091/optimizing-gaussian-negative-log-likelihood
     loss = loss_unweighted * cfg['weight']
     return loss, loss_unweighted
+
+
+def index_mapping_gt_seq_pred_seq(ag_gt, tsteps_gt, ag_pred, tsteps_pred):
+    """
+    given 4 sequences of shape (T):
+    returns a tensor of indices that provides the mapping between ground truth (agent, timestep) pairs and predicted
+    (agent, timestep) pairs.
+    """
+    gt_seq = torch.stack([tsteps_gt.detach().clone(), ag_gt.detach().clone()], dim=1)
+    pred_seq = torch.stack([tsteps_pred.detach().clone(), ag_pred.detach().clone()], dim=1)
+    return torch.cat([torch.nonzero(torch.all(gt_seq == elem, dim=1)) for elem in pred_seq]).squeeze()
 
 
 def compute_z_kld(data, cfg):
