@@ -584,12 +584,14 @@ class FutureDecoder(nn.Module):
         dec_in_z = torch.cat(in_arr, dim=-1)        # (N, sample_num, nz + 2)
         # print(f"{dec_in_z.shape=}")
 
-        catch_up_timestep_sequence = data['last_observed_timesteps']                                    # (N)
+        # print(f"{data['last_observed_timesteps']=}")
+
+        catch_up_timestep_sequence = data['last_observed_timesteps'].detach().clone()                   # (N)
         starting_seq_indices = (catch_up_timestep_sequence == torch.min(catch_up_timestep_sequence))    # (*~N) (subset)
 
         timestep_sequence = catch_up_timestep_sequence[starting_seq_indices].to(dec_in.device)          # (*~N) == (B)
-        agent_sequence = data['valid_id'][starting_seq_indices]                     # (B)
-        dec_input_sequence = dec_in_z[starting_seq_indices, ...]                    # (B, sample_num, nz + 2)
+        agent_sequence = data['valid_id'][starting_seq_indices].detach().clone()    # (B)
+        dec_input_sequence = dec_in_z[starting_seq_indices, ...].detach().clone()   # (B, sample_num, nz + 2)
 
         # print("#" * 100)
         # print(f"{catch_up_timestep_sequence=}")
