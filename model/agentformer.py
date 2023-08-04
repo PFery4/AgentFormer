@@ -811,7 +811,6 @@ class AgentFormer(nn.Module):
         self.to(device)
 
     def set_data(self, data: dict) -> None:
-        device = self.device
         if self.training and len(data['full_motion_3D']) > self.max_train_agent:
             in_data = {}
             ind = np.random.choice(len(data['full_motion_3D']), self.max_train_agent, replace=False).tolist()
@@ -821,14 +820,14 @@ class AgentFormer(nn.Module):
             in_data = data
 
         self.data = defaultdict(lambda: None)
-        self.data['valid_id'] = torch.tensor(in_data['valid_id']).to(device).to(int)
+        self.data['valid_id'] = torch.tensor(in_data['valid_id']).to(self.device).to(int)
         self.data['T_total'] = len(in_data['timesteps'])                     # int: T_total
         self.data['batch_size'] = len(self.data['valid_id'])                 # int: N
         self.data['agent_num'] = len(self.data['valid_id'])                  # int: N
-        self.data['timesteps'] = in_data['timesteps'].detach().clone().to(device)       # (T_total)
-        full_motion = torch.stack(in_data['full_motion_3D'], dim=0).to(device).transpose(0, 1).contiguous()                     # (T_total, N, 2)
-        obs_mask = torch.stack(in_data['obs_mask'], dim=0).to(device).to(dtype=torch.bool).transpose(0, 1).contiguous()         # (T_total, N)
-        last_observed_timestep_indices = torch.stack([mask.nonzero().flatten()[-1] for mask in in_data['obs_mask']]).to(device)        # (N)
+        self.data['timesteps'] = in_data['timesteps'].detach().clone().to(self.device)       # (T_total)
+        full_motion = torch.stack(in_data['full_motion_3D'], dim=0).to(self.device).transpose(0, 1).contiguous()                     # (T_total, N, 2)
+        obs_mask = torch.stack(in_data['obs_mask'], dim=0).to(self.device).to(dtype=torch.bool).transpose(0, 1).contiguous()         # (T_total, N)
+        last_observed_timestep_indices = torch.stack([mask.nonzero().flatten()[-1] for mask in in_data['obs_mask']]).to(self.device)        # (N)
         last_observed_pos = full_motion[last_observed_timestep_indices, torch.arange(full_motion.size(1))]            # (N, 2)
         timesteps_to_predict = []
         for k, last_obs in enumerate(last_observed_timestep_indices):
@@ -838,14 +837,14 @@ class AgentFormer(nn.Module):
             )))
         timesteps_to_predict = torch.stack(timesteps_to_predict, dim=0).transpose(0, 1)                                         # (T_total, N)
         fut_mask = torch.stack(in_data['fut_motion_mask'], dim=0)
-        self.data['fut_mask'] = fut_mask.to(device)       # (1, T_pred)
+        self.data['fut_mask'] = fut_mask.to(self.device)       # (1, T_pred)
         pre_mask = torch.stack(in_data['pre_motion_mask'], dim=0)
-        self.data['pre_mask'] = pre_mask.to(device)       # (1, T_obs)
+        self.data['pre_mask'] = pre_mask.to(self.device)       # (1, T_obs)
         full_agent_mask = self.data['valid_id'].repeat(self.data['T_total'], 1)                 # (T_total, N)
         full_timestep_mask = self.data['timesteps'].view(-1, 1).repeat(1, self.data['agent_num'])       # (T_total, N)
         self.data['last_observed_timesteps'] = torch.tensor(
             [self.data['timesteps'][last_obs] for last_obs in last_observed_timestep_indices]
-        ).to(device)        # (N)
+        ).to(self.device)        # (N)
 
         # define the scene origin
         scene_orig_all_past = self.cfg.get('scene_orig_all_past', False)
@@ -854,26 +853,26 @@ class AgentFormer(nn.Module):
         else:
             scene_orig = last_observed_pos.mean(dim=0).contiguous()               # (2)
 
-        self.data['scene_orig'] = scene_orig.to(device)
+        self.data['scene_orig'] = scene_orig.to(self.device)
 
         # perform random rotation
         if self.rand_rot_scene and self.training:
             if self.discrete_rot:
                 raise NotImplementedError
             else:
-                theta = torch.rand(1).to(device) * np.pi * 2
+                theta = torch.rand(1).to(self.device) * np.pi * 2
                 full_motion, full_motion_scene_norm = rotation_2d_torch(full_motion, theta, scene_orig)
         else:
-            theta = torch.zeros(1).to(device)
+            theta = torch.zeros(1).to(self.device)
             full_motion_scene_norm = full_motion - scene_orig
 
 
         # create past and future tensors
         pre_motion = torch.full_like(full_motion, float('nan'))         # (T_total, N, 2)
         pre_motion[obs_mask, ...] = full_motion[obs_mask, ...]
-        self.data['pre_motion'] = pre_motion.to(device)
+        self.data['pre_motion'] = pre_motion.to(self.device)
         pre_motion_scene_norm = pre_motion - scene_orig                 # (T_total, N, 2)
-        self.data['pre_motion_scene_norm'] = pre_motion_scene_norm.to(device)
+        self.data['pre_motion_scene_norm'] = pre_motion_scene_norm.to(self.device)
         self.data['pre_sequence'] = full_motion[obs_mask, ...]          # (O, 2), where O is equal to sum(obs_mask)
         self.data['pre_sequence_scene_norm'] = full_motion_scene_norm[obs_mask, ...]        # (O, 2)
         self.data['pre_agents'] = full_agent_mask[obs_mask]                                 # (O)
@@ -894,18 +893,18 @@ class AgentFormer(nn.Module):
 
         fut_motion = torch.full_like(full_motion, float('nan'))         # (T_total, N, 2)
         fut_motion[timesteps_to_predict, ...] = full_motion[timesteps_to_predict, ...]
-        self.data['fut_motion'] = fut_motion.to(device)
+        self.data['fut_motion'] = fut_motion.to(self.device)
         fut_motion_scene_norm = fut_motion - scene_orig                 # (T_total, N, 2)
-        self.data['fut_motion_scene_norm'] = fut_motion_scene_norm.to(device)
+        self.data['fut_motion_scene_norm'] = fut_motion_scene_norm.to(self.device)
         self.data['fut_sequence'] = full_motion[timesteps_to_predict, ...]          # (P, 2), where P equals sum(timesteps_to_predict)
         self.data['fut_sequence_scene_norm'] = full_motion_scene_norm[timesteps_to_predict, ...]        # (P, 2)
         self.data['fut_agents'] = full_agent_mask[timesteps_to_predict]                                 # (P)
         self.data['fut_timesteps'] = full_timestep_mask[timesteps_to_predict]                           # (P)
 
         fut_motion_orig = fut_motion.detach().clone().transpose(0, 1)
-        self.data['fut_motion_orig'] = fut_motion_orig.to(device)
+        self.data['fut_motion_orig'] = fut_motion_orig.to(self.device)
         fut_motion_orig_scene_norm = fut_motion_orig - scene_orig       # (N, T_total, 2)
-        self.data['fut_motion_orig_scene_norm'] = fut_motion_orig_scene_norm.to(device)
+        self.data['fut_motion_orig_scene_norm'] = fut_motion_orig_scene_norm.to(self.device)
 
         full_vel = torch.zeros_like(full_motion)                        # (T_total, N, 2)
         full_vel[1:, ...] = full_motion[1:, ...] - full_motion[:-1, ...]
@@ -919,16 +918,16 @@ class AgentFormer(nn.Module):
 
         fut_vel = torch.full_like(full_vel, float('nan'))
         fut_vel[timesteps_to_predict, ...] = full_vel[timesteps_to_predict, ...]    # (T_total, N, 2)
-        self.data['fut_vel'] = fut_vel.to(device)
+        self.data['fut_vel'] = fut_vel.to(self.device)
         self.data['fut_vel_seq'] = full_vel[timesteps_to_predict, ...]
 
         # print(f"{obs_mask=}")
         # print(f"{timesteps_to_predict=}")
 
         cur_motion = full_motion[last_observed_timestep_indices, torch.arange(full_motion.size(1))].unsqueeze(0)      # (1, N, 2)
-        self.data['cur_motion'] = cur_motion.to(device)
+        self.data['cur_motion'] = cur_motion.to(self.device)
         cur_motion_scene_norm = full_motion_scene_norm[last_observed_timestep_indices, torch.arange(full_motion_scene_norm.size(1))].unsqueeze(0)
-        self.data['cur_motion_scene_norm'] = cur_motion_scene_norm.to(device)                   # (1, N, 2)
+        self.data['cur_motion_scene_norm'] = cur_motion_scene_norm.to(self.device)                   # (1, N, 2)
 
         # print(f"{self.data['pre_motion_scene_norm'], self.data['pre_motion_scene_norm'].shape=}")
         # print(f"{self.data['cur_motion_scene_norm'], self.data['cur_motion_scene_norm'].shape=}")
@@ -937,15 +936,15 @@ class AgentFormer(nn.Module):
         # print(f"{last_observed_timestep_indices=}")
 
         pre_motion_norm = pre_motion - cur_motion           # (T_total, N, 2)
-        self.data['pre_motion_norm'] = pre_motion_norm.to(device)
+        self.data['pre_motion_norm'] = pre_motion_norm.to(self.device)
         fut_motion_norm = fut_motion - cur_motion           # (T_total, N, 2)
-        self.data['fut_motion_norm'] = fut_motion_norm.to(device)
+        self.data['fut_motion_norm'] = fut_motion_norm.to(self.device)
 
-        self.data['fut_mask'] = torch.stack(in_data['fut_motion_mask'], dim=0).to(device)       # (1, T_pred)
-        self.data['pre_mask'] = torch.stack(in_data['pre_motion_mask'], dim=0).to(device)       # (1, T_obs)
+        self.data['fut_mask'] = torch.stack(in_data['fut_motion_mask'], dim=0).to(self.device)       # (1, T_pred)
+        self.data['pre_mask'] = torch.stack(in_data['pre_motion_mask'], dim=0).to(self.device)       # (1, T_obs)
         # NOTE: heading does not follow the occlusion pattern
         if in_data['heading'] is not None:
-            self.data['heading'] = torch.tensor(in_data['heading']).float().to(device)      # (N)
+            self.data['heading'] = torch.tensor(in_data['heading']).float().to(self.device)      # (N)
 
         # NOTE: heading does not follow the occlusion pattern
         if in_data['heading'] is not None:
@@ -963,7 +962,7 @@ class AgentFormer(nn.Module):
             else:
                 patch_size = [50, 10, 50, 90]
                 rot = -np.array(in_data['heading']) * (180 / np.pi)
-            self.data['agent_maps'] = scene_map.get_cropped_maps(scene_points, patch_size, rot).to(device)      # (N, 3, 100, 100)
+            self.data['agent_maps'] = scene_map.get_cropped_maps(scene_points, patch_size, rot).to(self.device)      # (N, 3, 100, 100)
 
         conn_dist = self.cfg.get('conn_dist', 100000.0)
         cur_motion = self.data['cur_motion'][0]
@@ -977,7 +976,7 @@ class AgentFormer(nn.Module):
             # mask[D > threshold] = float('-inf')
             raise NotImplementedError("if conn_dist < 1000.0")
         else:
-            mask = torch.zeros([cur_motion.shape[0], cur_motion.shape[0]]).to(device)
+            mask = torch.zeros([cur_motion.shape[0], cur_motion.shape[0]]).to(self.device)
         self.data['agent_mask'] = mask          # (N, N)
 
         self.data['past_window'] = data.get('past_window', None)
