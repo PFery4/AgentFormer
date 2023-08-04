@@ -688,15 +688,6 @@ class FutureDecoder(nn.Module):
 
     def forward(self, data, mode, sample_num=1, autoregress=True, z=None, need_weights=False):
         context = data['context_enc'].repeat_interleave(sample_num, dim=1)       # [O, sample_num * model_dim]
-        # print(f"{data['pre_motion'].shape=}")
-        pre_motion = data['pre_motion'].repeat_interleave(sample_num, dim=1)             # [O, sample_num * model_dim, 2]
-        # print(f"{pre_motion.shape=}")
-        # print(f"{data['pre_vel'].shape=}")
-        # pre_vel = data['pre_vel'].repeat_interleave(sample_num, dim=1) if self.pred_type == 'vel' else None     # [O, sample_num * model_dim, 2]
-        # print(f"{pre_vel.shape=}")
-        # print(f"{data['pre_motion_scene_norm'].shape=}")
-        # pre_motion_scene_norm = data['pre_motion_scene_norm'].repeat_interleave(sample_num, dim=1)
-        # print(f"{pre_motion_scene_norm.shape=}")
 
         # p(z)
         prior_key = 'p_z_dist' + ('_infer' if mode == 'infer' else '')
@@ -709,9 +700,14 @@ class FutureDecoder(nn.Module):
                 data[prior_key] = Categorical(params=p_z_params)
         else:
             if self.z_type == 'gaussian':
-                data[prior_key] = Normal(mu=torch.zeros(pre_motion.shape[1], self.nz).to(pre_motion.device), logvar=torch.zeros(pre_motion.shape[1], self.nz).to(pre_motion.device))
+                data[prior_key] = Normal(
+                    mu=torch.zeros(sample_num * data['agent_num'], self.nz).to(data['context_enc'].device),
+                    logvar=torch.zeros(sample_num * data['agent_num'], self.nz).to(data['context_enc'].device)
+                )
             else:
-                data[prior_key] = Categorical(logits=torch.zeros(pre_motion.shape[1], self.nz).to(pre_motion.device))
+                data[prior_key] = Categorical(
+                    logits=torch.zeros(sample_num * data['agent_num'], self.nz).to(data['context_enc'].device)
+                )
 
         if z is None:
             if mode in {'train', 'recon'}:
@@ -731,9 +727,7 @@ class FutureDecoder(nn.Module):
                 sample_num=sample_num,
                 need_weights=need_weights
             )
-        # else:
-        #     self.decode_traj_batch(data, mode, context, pre_motion, pre_vel, pre_motion_scene_norm, z, sample_num)
-        
+
 
 class AgentFormer(nn.Module):
     """ AgentFormer """
@@ -838,10 +832,6 @@ class AgentFormer(nn.Module):
                  torch.full([int(self.data['T_total'] - (last_obs + 1))], True))
             ) for last_obs in last_observed_timestep_indices], dim=0
         ).transpose(0, 1)                                                           # [T_total, N]
-        # fut_mask = torch.stack(in_data['fut_motion_mask'], dim=0)
-        # self.data['fut_mask'] = fut_mask.to(self.device)       # [N, T_total]
-        # pre_mask = torch.stack(in_data['pre_motion_mask'], dim=0)
-        # self.data['pre_mask'] = pre_mask.to(self.device)       # [N, T_total]
 
         full_agent_mask = self.data['valid_id'].repeat(self.data['T_total'], 1)                         # [T_total, N]
         full_timestep_mask = self.data['timesteps'].view(-1, 1).repeat(1, self.data['agent_num'])       # [T_total, N]
@@ -869,56 +859,15 @@ class AgentFormer(nn.Module):
             full_motion_scene_norm = full_motion - scene_orig
 
         # create past and future tensors
-        # pre_motion = torch.full_like(full_motion, float('nan'))         # [T_total, N, 2]
-        # pre_motion[obs_mask, ...] = full_motion[obs_mask, ...]
-        # self.data['pre_motion'] = pre_motion.to(self.device)
-        # pre_motion_scene_norm = pre_motion - scene_orig                 # [T_total, N, 2]
-        # self.data['pre_motion_scene_norm'] = pre_motion_scene_norm.to(self.device)
         self.data['pre_sequence'] = full_motion[obs_mask, ...].clone().detach()          # [O, 2], where O is equal to sum(obs_mask)
         self.data['pre_sequence_scene_norm'] = full_motion_scene_norm[obs_mask, ...].clone().detach()        # [O, 2]
         self.data['pre_agents'] = full_agent_mask[obs_mask].clone().detach()                                 # [O]
         self.data['pre_timesteps'] = full_timestep_mask[obs_mask].clone().detach()                           # [O]
-        # print(f"{self.data['pre_sequence'], self.data['pre_sequence'].shape, self.data['pre_sequence'].dtype=}")
-        # print(f"{self.data['pre_sequence_scene_norm'], self.data['pre_sequence_scene_norm'].shape, self.data['pre_sequence_scene_norm'].dtype=}")
-        # print(f"{self.data['pre_agents'], self.data['pre_agents'].shape, self.data['pre_agents'].dtype=}")
-        # print(f"{self.data['pre_timesteps'], self.data['pre_timesteps'].shape, self.data['pre_timesteps'].dtype=}")
-        # fig, ax = plt.subplots()
-        # tens_to_show = self.data['pre_sequence_scene_norm'].cpu()
-        # ax.scatter(tens_to_show[:, 0], tens_to_show[:, 1])
-        # plt.show()
 
-        # print(f"{self.data['pre_sequence'], self.data['pre_sequence'].shape=}")
-        # print(f"{self.data['pre_agents'], self.data['pre_agents'].shape=}")
-        # print(f"{self.data['pre_timesteps'], self.data['pre_timesteps'].shape=}")
-        # print(f"{self.data['pre_motion'][:, 0, :]=}")
-        # print(f"{self.data['pre_sequence'][self.data['pre_agents']==392]=}")
-        # print(f"{self.data['pre_motion'][0, :, :]=}")
-        # print(f"{self.data['pre_sequence'][self.data['pre_timesteps']==-7]=}")
-
-        # print(f"{full_agent_mask, full_agent_mask.shape=}")
-        # print(f"{full_timestep_mask, full_timestep_mask.shape=}")
-        # print(f"{obs_mask, obs_mask.shape=}")
-        # print(f"{full_motion[..., 0], full_motion.shape=}")
-
-        # fut_motion = torch.full_like(full_motion, float('nan'))         # [T_total, N, 2]
-        # fut_motion[timesteps_to_predict, ...] = full_motion[timesteps_to_predict, ...]
-        # self.data['fut_motion'] = fut_motion.to(self.device)
-        # fut_motion_scene_norm = fut_motion - scene_orig                 # [T_total, N, 2]
-        # self.data['fut_motion_scene_norm'] = fut_motion_scene_norm.to(self.device)
         self.data['fut_sequence'] = full_motion[timesteps_to_predict, ...].clone().detach()          # [P, 2], where P equals sum(timesteps_to_predict)
         self.data['fut_sequence_scene_norm'] = full_motion_scene_norm[timesteps_to_predict, ...].clone().detach()        # [P, 2]
         self.data['fut_agents'] = full_agent_mask[timesteps_to_predict].clone().detach()                                 # [P]
         self.data['fut_timesteps'] = full_timestep_mask[timesteps_to_predict].clone().detach()                           # [P]
-        # print(f"{self.data['fut_sequence'], self.data['fut_sequence'].shape, self.data['fut_sequence'].dtype=}")
-        # print(f"{self.data['fut_sequence_scene_norm'], self.data['fut_sequence_scene_norm'].shape, self.data['fut_sequence_scene_norm'].dtype=}")
-        # print(f"{self.data['fut_agents'], self.data['fut_agents'].shape, self.data['fut_agents'].dtype=}")
-        # print(f"{self.data['fut_timesteps'], self.data['fut_timesteps'].shape, self.data['fut_timesteps'].dtype=}")
-
-
-        # fut_motion_orig = fut_motion.detach().clone().transpose(0, 1)
-        # self.data['fut_motion_orig'] = fut_motion_orig.to(self.device)
-        # fut_motion_orig_scene_norm = fut_motion_orig - scene_orig       # [N, T_total, 2]
-        # self.data['fut_motion_orig_scene_norm'] = fut_motion_orig_scene_norm.to(self.device)
 
         full_vel = torch.zeros_like(full_motion)                        # [T_total, N, 2]
         full_vel[1:, ...] = full_motion[1:, ...] - full_motion[:-1, ...]
@@ -927,39 +876,16 @@ class AgentFormer(nn.Module):
 
         pre_vel_seq = full_vel.detach().clone()
         pre_vel_seq[torch.logical_and(obs_mask, ~shift_obs_mask), ...] = 0.0
-
         self.data['pre_vel_seq'] = pre_vel_seq[obs_mask, ...]                       # [O, 2]
-        # print(f"{self.data['pre_vel_seq'], self.data['pre_vel_seq'].shape, self.data['pre_vel_seq'].dtype=}")
 
-        # fut_vel = torch.full_like(full_vel, float('nan'))
-        # fut_vel[timesteps_to_predict, ...] = full_vel[timesteps_to_predict, ...]    # [T_total, N, 2]
-        # self.data['fut_vel'] = fut_vel.to(self.device)
         self.data['fut_vel_seq'] = full_vel[timesteps_to_predict, ...]              # [P, 2]
-        # print(f"{self.data['fut_vel_seq'], self.data['fut_vel_seq'].shape, self.data['fut_vel_seq'].dtype=}")
 
-        # print(f"{obs_mask=}")
-        # print(f"{timesteps_to_predict=}")
-
+        # create tensors for the last observed position of each agent
         cur_motion = full_motion[last_observed_timestep_indices, torch.arange(self.data['agent_num'])].unsqueeze(0)      # [1, N, 2]
         self.data['cur_motion'] = cur_motion.to(self.device)
         cur_motion_scene_norm = full_motion_scene_norm[last_observed_timestep_indices, torch.arange(self.data['agent_num'])].unsqueeze(0)
         self.data['cur_motion_scene_norm'] = cur_motion_scene_norm.to(self.device)                   # [1, N, 2]
 
-        # print(f"{self.data['pre_motion_scene_norm'], self.data['pre_motion_scene_norm'].shape=}")
-        # print(f"{self.data['cur_motion_scene_norm'], self.data['cur_motion_scene_norm'].shape=}")
-        # print(f"{self.data['pre_timesteps']=}")
-        # print(f"{self.data['pre_agents']=}")
-        # print(f"{last_observed_timestep_indices=}")
-
-        # pre_motion_norm = pre_motion - cur_motion           # [T_total, N, 2]
-        # self.data['pre_motion_norm'] = pre_motion_norm.to(self.device)
-        # fut_motion_norm = fut_motion - cur_motion           # [T_total, N, 2]
-        # self.data['fut_motion_norm'] = fut_motion_norm.to(self.device)
-
-        # self.data['fut_mask'] = torch.stack(in_data['fut_motion_mask'], dim=0).to(self.device)       # [1, T_pred]
-        # self.data['pre_mask'] = torch.stack(in_data['pre_motion_mask'], dim=0).to(self.device)       # [1, T_obs]
-
-        # OLD CODE FOR HEADING
         # # NOTE: heading does not follow the occlusion pattern
         # if in_data['heading'] is not None:
         #     self.data['heading'] = torch.tensor(in_data['heading']).float().to(self.device)      # [N]
@@ -995,61 +921,6 @@ class AgentFormer(nn.Module):
         else:
             mask = torch.zeros([cur_motion.shape[0], cur_motion.shape[0]]).to(self.device)
         self.data['agent_mask'] = mask          # [N, N]
-
-        # self.data['past_window'] = data.get('past_window', None)
-        # self.data['future_window'] = data.get('future_window', None)
-
-        print("#" * 100)
-        # print(f"{obs_mask, obs_mask.shape=}")
-        [print(f"{k}:\t{type(v)}\t" + (str(v.shape) if isinstance(v, torch.Tensor) else str(v))) for k, v in self.data.items()]
-        # print(f"{self.data['pre_motion']=}")
-        # print(f"{self.data['fut_motion']=}")
-        # print(f"{self.data['pre_mask']=}")
-        # print(f"{self.data['fut_mask']=}")
-        # print(f"{self.data['scene_orig']=}")
-        # print(f"{self.data['pre_motion_scene_norm']=}")
-        # print(f"{self.data['fut_motion_scene_norm']=}")
-        # print(f"{self.data['pre_vel']=}")
-        # print(f"{self.data['fut_vel']=}")
-        # print(f"{self.data['cur_motion']=}")
-        # print(f"{self.data['pre_motion_norm']=}")
-        # print(f"{self.data['fut_motion_norm']=}")
-        # print(f"{self.data['agent_mask']=}")
-
-        # # # WIP CODE
-        # for i in [0, 12]:
-        #     print(f"checking agent {i} ########################################################")
-        #     print(f"{theta=}")
-        #     print(f"{full_motion[:, i]=}")
-        #     print(f"{obs_mask[:, i]=}")
-        #     print(f"{last_observed_timesteps[i]=}")
-        #     print(f"{timesteps_to_predict[:, i]=}")
-        #
-        #     # print(f"{pre_motion[:, i, :]=}")
-        #     print(f"{self.data['pre_motion'][:, i, :]=}")
-        #     # print(f"{pre_motion_scene_norm[:, i, :]=}")
-        #     print(f"{self.data['pre_motion_scene_norm'][:, i, :]=}")
-        #     # print(f"{fut_motion[:, i, :]=}")
-        #     print(f"{self.data['fut_motion'][:, i, :]=}")
-        #     # print(f"{fut_motion_scene_norm[:, i, :]=}")
-        #     print(f"{self.data['fut_motion_scene_norm'][:, i, :]=}")
-        #     # print(f"{fut_motion_orig[i, :]=}")
-        #     print(f"{self.data['fut_motion_orig'][i, :]=}")
-        #     # print(f"{fut_motion_orig_scene_norm[i, :]=}")
-        #     print(f"{self.data['fut_motion_orig_scene_norm'][i, :]=}")
-        #     # print(f"{full_vel[:, i, :]=}")
-        #     # print(f"{pre_vel[:, i, :]=}")
-        #     print(f"{self.data['pre_vel'][:, i, :]=}")
-        #     # print(f"{fut_vel[:, i, :]=}")
-        #     print(f"{self.data['fut_vel'][:, i, :]=}")
-        #     # print(f"{cur_motion[:, i, :]=}")
-        #     print(f"{self.data['cur_motion'][:, i, :]=}")
-        #     # print(f"{pre_motion_norm[:, i, :]=}")
-        #     print(f"{self.data['pre_motion_norm'][:, i, :]=}")
-        #     # print(f"{fut_motion_norm[:, i, :]=}")
-        #     print(f"{self.data['fut_motion_norm'][:, i, :]=}")
-        # #
-        # # # WIP CODE
 
     def step_annealer(self):
         for anl in self.param_annealers:
