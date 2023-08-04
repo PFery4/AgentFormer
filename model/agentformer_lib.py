@@ -169,7 +169,7 @@ def agent_aware_attention(query: Tensor,
 
     if not use_separate_proj_weight:
         if torch.equal(query, key) and torch.equal(key, value):
-            # self-attention. each tensor is of shape (tgt_len, embed_dim)
+            # self-attention. each tensor is of shape [tgt_len, embed_dim]
             q, k, v = linear(query, in_proj_weight, in_proj_bias).chunk(3, dim=-1)
             if in_proj_weight_self is not None:
                 q_self, k_self = linear(query, in_proj_weight_self, in_proj_bias_self).chunk(2, dim=-1)
@@ -207,7 +207,7 @@ def agent_aware_attention(query: Tensor,
                 k_self = linear(key, _w, _b)
         else:
             raise NotImplementedError
-    # q, k, v and q_self, k_self are of shape (tgt_len, embed_dim)
+    # q, k, v and q_self, k_self are of shape [tgt_len, embed_dim]
 
     else:
         # # this bit of code is likely not used at all, as q_self and k_self are not generated
@@ -292,7 +292,7 @@ def agent_aware_attention(query: Tensor,
     if in_proj_weight_self is not None:
         q_self = q_self.contiguous().view(tgt_len, batch_size * num_heads, head_dim).transpose(0, 1)
         k_self = k_self.contiguous().view(-1, batch_size * num_heads, head_dim).transpose(0, 1)
-    # q, k, v and q_self, k_self are of shape (batch_size * num_heads, tgt_len, head_dim)
+    # q, k, v and q_self, k_self are of shape [batch_size * num_heads, tgt_len, head_dim]
 
     # print(f"{static_k=}")
     if static_k is not None:
@@ -336,7 +336,7 @@ def agent_aware_attention(query: Tensor,
         # attn_output_weights = qk_dist * scaling * 0.5
         raise NotImplementedError("check NaN patterns")
     else:
-        attn_output_weights = torch.bmm(q, k.transpose(1, 2))       # (batch_size * num_heads, tgt_len, src_len)
+        attn_output_weights = torch.bmm(q, k.transpose(1, 2))       # [batch_size * num_heads, tgt_len, src_len]
 
     assert list(attn_output_weights.size()) == [batch_size * num_heads, tgt_len, src_len]
 
@@ -346,10 +346,10 @@ def agent_aware_attention(query: Tensor,
             Agent-Aware Attention
         ==================================
         """
-        attn_output_weights_inter = attn_output_weights             # (batch_size * num_heads, tgt_len, src_len)
-        attn_weight_self_mask = agent_aware_mask(q_identities, k_identities)        # (tgt_len, src_len)
+        attn_output_weights_inter = attn_output_weights             # [batch_size * num_heads, tgt_len, src_len]
+        attn_weight_self_mask = agent_aware_mask(q_identities, k_identities)        # [tgt_len, src_len]
 
-        attn_output_weights_self = torch.bmm(q_self, k_self.transpose(1, 2))    # (batch_size * num_heads, tgt_len, src_len)
+        attn_output_weights_self = torch.bmm(q_self, k_self.transpose(1, 2))    # [batch_size * num_heads, tgt_len, src_len]
 
         assert attn_weight_self_mask.shape == attn_output_weights.shape[-2:] == attn_output_weights_self.shape[-2:]
 
@@ -364,7 +364,7 @@ def agent_aware_attention(query: Tensor,
                 attn_output_weights += attn_mask
 
         # NO div by sqrt(d)         ????
-        attn_output_weights = softmax(attn_output_weights, dim=-1)      # (batch_size * num_heads, tgt_len, src_len)
+        attn_output_weights = softmax(attn_output_weights, dim=-1)      # [batch_size * num_heads, tgt_len, src_len]
 
     else:
         # if attn_mask is not None:
@@ -387,11 +387,11 @@ def agent_aware_attention(query: Tensor,
 
     attn_output_weights = dropout(attn_output_weights, p=dropout_p, training=training)
 
-    attn_output = torch.bmm(attn_output_weights, v)         # (batch_size * num_heads, tgt_len, head_dim)
+    attn_output = torch.bmm(attn_output_weights, v)         # [batch_size * num_heads, tgt_len, head_dim]
 
     assert list(attn_output.size()) == [batch_size * num_heads, tgt_len, head_dim]
-    attn_output = attn_output.transpose(0, 1).contiguous().view(tgt_len, batch_size, embed_dim)     # (tgt_len, batch_size, embed_dim)
-    attn_output = linear(attn_output, out_proj_weight, out_proj_bias)                               # (tgt_len, batch_size, embed_dim)
+    attn_output = attn_output.transpose(0, 1).contiguous().view(tgt_len, batch_size, embed_dim)     # [tgt_len, batch_size, embed_dim]
+    attn_output = linear(attn_output, out_proj_weight, out_proj_bias)                               # [tgt_len, batch_size, embed_dim]
 
     # print(f"{need_weights=}")
     if need_weights:
