@@ -149,13 +149,8 @@ class ContextEncoder(nn.Module):
             elif key == 'vel':
                 # vel = data['pre_vel']
                 vel_seq = data['pre_vel_seq']
-                if len(self.input_type) > 1:
-                    # vel = torch.cat([vel[[0]], vel], dim=0)          # Imputation
-                    vel_seq = torch.cat([                            # Imputation
-                        vel_seq[:data['agent_num']],
-                        vel_seq
-                    ], dim=0)
-
+                # print(f"{data['agent_num']=}")
+                # print(f"{vel_seq.shape=}")
                 if self.vel_heading:
                     # vel = rotation_2d_torch(vel, -data['heading'])[0]
                     raise NotImplementedError("if self.vel_heading")
@@ -166,6 +161,7 @@ class ContextEncoder(nn.Module):
                 raise NotImplementedError("if key == 'norm'")
             elif key == 'scene_norm':
                 # traj_in.append(data['pre_motion_scene_norm'])
+                print(f"{data['pre_sequence_scene_norm'].shape=}")
                 seq_in.append(data['pre_sequence_scene_norm'])
             elif key == 'heading':
                 # hv = data['heading_vec'].unsqueeze(0).repeat((data['pre_motion'].shape[0], 1, 1))
@@ -911,16 +907,23 @@ class AgentFormer(nn.Module):
         fut_motion_orig_scene_norm = fut_motion_orig - scene_orig       # (N, T_total, 2)
         self.data['fut_motion_orig_scene_norm'] = fut_motion_orig_scene_norm.to(device)
 
-        full_vel = full_motion[1:] - full_motion[:-1]                   # (T_total - 1, N, 2)
-        pre_vel = torch.full_like(full_vel, float('nan'))
-        pre_vel[obs_mask[1:, ...], ...] = full_vel[obs_mask[1:, ...], ...]        # (T_total - 1, N, 2)
-        self.data['pre_vel'] = pre_vel.to(device)
-        self.data['pre_vel_seq'] = full_vel[obs_mask[1:, ...], ...]               # ()
+        full_vel = torch.zeros_like(full_motion)                        # (T_total, N, 2)
+        full_vel[1:, ...] = full_motion[1:, ...] - full_motion[:-1, ...]
+        shift_obs_mask = torch.full_like(obs_mask, False)
+        shift_obs_mask[1:, ...] = obs_mask[:-1, ...]
+
+        pre_vel_seq = full_vel.detach().clone()
+        pre_vel_seq[torch.logical_and(obs_mask, ~shift_obs_mask), ...] = 0.0
+
+        self.data['pre_vel_seq'] = pre_vel_seq[obs_mask, ...]                       # (T_total, N, 2)
 
         fut_vel = torch.full_like(full_vel, float('nan'))
-        fut_vel[timesteps_to_predict[1:, ...], ...] = full_vel[timesteps_to_predict[1:, ...], ...]    # (T_total - 1, N, 2)
+        fut_vel[timesteps_to_predict, ...] = full_vel[timesteps_to_predict, ...]    # (T_total, N, 2)
         self.data['fut_vel'] = fut_vel.to(device)
-        self.data['fut_vel_seq'] = full_vel[timesteps_to_predict[1:, ...], ...]
+        self.data['fut_vel_seq'] = full_vel[timesteps_to_predict, ...]
+
+        # print(f"{obs_mask=}")
+        # print(f"{timesteps_to_predict=}")
 
         cur_motion = full_motion[last_observed_timestep_indices, torch.arange(full_motion.size(1))].unsqueeze(0)      # (1, N, 2)
         self.data['cur_motion'] = cur_motion.to(device)
