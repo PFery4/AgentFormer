@@ -152,18 +152,44 @@ def compute_z_kld(data, cfg):
 
 
 def compute_sample_loss(data, cfg):
-    # todo: We need to modify this sampler loss to respect the new prediction framework
-    diff = data['infer_dec_motion'][..., :data['fut_motion_orig'].shape[-1]] - data['fut_motion_orig'].unsqueeze(1)
-    if cfg.get('mask', True):
-        mask = data['fut_mask'].unsqueeze(1).unsqueeze(-1)
-        diff *= mask
-    dist = diff.pow(2).sum(dim=-1).sum(dim=-1)
+    # print(f"{data['fut_sequence'].shape=}")
+    # print(f"{data['fut_sequence'].unsqueeze(1).shape=}")
+    # print(f"{data['train_dec_motion'].shape=}")
+    # print(f"{data['infer_dec_motion'].shape=}")
+    # print(f"{data['infer_dec_agents'].shape=}")
+    # print(f"{data['infer_dec_timesteps'].shape=}")
+
+    idx_map = index_mapping_gt_seq_pred_seq(
+        ag_gt=data['fut_agents'],
+        tsteps_gt=data['fut_timesteps'],
+        ag_pred=data['infer_dec_agents'],
+        tsteps_pred=data['infer_dec_timesteps']
+    )
+
+    # print("diff = data['infer_dec_motion'] - data['fut_sequence'].unsqueeze(1)")
+    diff = data['infer_dec_motion'] - data['fut_sequence'][idx_map].unsqueeze(1)
+    # print(f"{diff.shape=}")
+
+    dist = diff.pow(2).sum(-1)
+    # print(f"{dist.shape=}")
+
+    dist = torch.stack(
+        [(dist[data['infer_dec_agents'] == ag_id]).sum(0)/torch.sum(data['infer_dec_agents'] == ag_id)
+         for ag_id in torch.unique(data['infer_dec_agents'])], dim=0
+    )
+    # print(f"{dist.shape=}")
+
     loss_unweighted = dist.min(dim=1)[0]
+    # print(f"{loss_unweighted.shape=}")
+
     if cfg.get('normalize', True):
         loss_unweighted = loss_unweighted.mean()
     else:
         loss_unweighted = loss_unweighted.sum()
     loss = loss_unweighted * cfg['weight']
+
+    # print(f"{loss.shape=}")
+    # print(f"{loss_unweighted.shape=}")
     return loss, loss_unweighted
 
 
