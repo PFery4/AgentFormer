@@ -2,10 +2,9 @@ import matplotlib.axes
 import torch
 import numpy as np
 from torch import nn
-from torch.nn import functional as F
 import matplotlib.pyplot as plt
 from collections import defaultdict
-from typing import Union, Tuple, Optional
+from typing import Tuple
 import model.decoder_out_submodels as decoder_out_submodels
 from model.common.mlp import MLP
 from model.agentformer_loss import loss_func
@@ -14,10 +13,9 @@ from model.agentformer_lib import AgentFormerEncoderLayer, AgentFormerDecoderLay
 from model.map_encoder import MapEncoder
 from utils.torch import rotation_2d_torch, ExpParamAnnealer
 from utils.utils import initialize_weights
-from typing import List
 
 
-def generate_ar_mask(sz: int, agent_num: int, agent_mask: torch.Tensor):
+def generate_ar_mask(sz: int, agent_num: int, agent_mask: torch.Tensor) -> torch.Tensor:
     assert sz % agent_num == 0
     T = sz // agent_num
     mask = agent_mask.repeat(T, T)
@@ -29,6 +27,7 @@ def generate_ar_mask(sz: int, agent_num: int, agent_mask: torch.Tensor):
 
 
 def generate_ar_mask_with_variable_agents_per_timestep(timestep_sequence: torch.Tensor) -> torch.Tensor:
+    # timestep_sequence [T]
     stop_at = torch.argmax(timestep_sequence)
     mask = torch.zeros(timestep_sequence.shape[0], timestep_sequence.shape[0])
     for idx in range(stop_at):
@@ -140,43 +139,25 @@ class ContextEncoder(nn.Module):
         self.pos_encoder = PositionalEncoding(self.model_dim, dropout=self.dropout, concat=ctx['pos_concat'])
 
     def forward(self, data):
-        # traj_in = []
         seq_in = []
         for key in self.input_type:
             if key == 'pos':
-                # traj_in.append(data['pre_motion'])
                 seq_in.append(data['pre_sequence'])
             elif key == 'vel':
-                # vel = data['pre_vel']
                 vel_seq = data['pre_vel_seq']
-                # print(f"{data['agent_num']=}")
-                # print(f"{vel_seq.shape=}")
                 if self.vel_heading:
                     # vel = rotation_2d_torch(vel, -data['heading'])[0]
                     raise NotImplementedError("if self.vel_heading")
-                # traj_in.append(vel)
                 seq_in.append(vel_seq)
-            elif key == 'norm':
-                # traj_in.append(data['pre_motion_norm'])
-                raise NotImplementedError("if key == 'norm'")
+            elif key in ['norm', 'heading', 'map']:
+                raise NotImplementedError(f"input type not implemented: {key}")
             elif key == 'scene_norm':
-                # traj_in.append(data['pre_motion_scene_norm'])
                 print(f"{data['pre_sequence_scene_norm'].shape=}")
                 seq_in.append(data['pre_sequence_scene_norm'])
-            elif key == 'heading':
-                # hv = data['heading_vec'].unsqueeze(0).repeat((data['pre_motion'].shape[0], 1, 1))
-                # traj_in.append(hv)
-                raise NotImplementedError("if key == 'heading'")
-            elif key == 'map':
-                # map_enc = data['map_enc'].unsqueeze(0).repeat((data['pre_motion'].shape[0], 1, 1))
-                # traj_in.append(map_enc)
-                raise NotImplementedError("if key == 'map'")
             else:
                 raise ValueError('unknown input_type!')
-        # traj_in = torch.cat(traj_in, dim=-1)                    # [T, N, Features]
         seq_in = torch.cat(seq_in, dim=-1)                        # [O, Features]
 
-        # tf_in = self.input_fc(traj_in.view(-1, traj_in.shape[-1])).view(-1, 1, self.model_dim)      # [T * N, 1, model_dim]
         tf_seq_in = self.input_fc(seq_in).view(-1, 1, self.model_dim)               # [O, 1, model_dim]
 
         tf_in_pos = self.pos_encoder(
@@ -184,9 +165,10 @@ class ContextEncoder(nn.Module):
             time_tensor=data['pre_timesteps']       # [O]
         )                                           # [O, 1, model_dim]
 
-        # src_agent_mask = data['agent_mask'].clone()         # [N, N]
-
-        src_mask = generate_mask(data['pre_timesteps'].shape[0], data['pre_timesteps'].shape[0]).to(tf_seq_in.device)        # [O, O]
+        src_mask = generate_mask(
+            data['pre_timesteps'].shape[0],
+            data['pre_timesteps'].shape[0]
+        ).to(tf_seq_in.device)        # [O, O]
 
         # print(f"{tf_in_pos.shape=}")
         data['context_enc'] = self.tf_encoder(
@@ -195,7 +177,6 @@ class ContextEncoder(nn.Module):
             mask=src_mask                           # [O, O]
         )                                           # [O, 1, model_dim]
         # print(f"{data['context_enc'].shape=}")
-        print(f"ENCODER ATTENTION: DONE!")
 
         # compute per agent context
         # print(f"{self.pooling=}")
@@ -250,64 +231,31 @@ class FutureEncoder(nn.Module):
         initialize_weights(self.q_z_net.modules())
 
     def forward(self, data, reparam=True):
-        # traj_in = []
         seq_in = []
         for key in self.input_type:
             if key == 'pos':
-                # traj_in.append(data['fut_motion'])
-                print(f"{data['fut_sequence'].shape=}")
                 seq_in.append(data['fut_sequence'])
             elif key == 'vel':
-                # vel = data['fut_vel']
                 vel_seq = data['fut_vel_seq']
-                print(f"{data['fut_vel_seq'].shape=}")
                 if self.vel_heading:
                     # vel = rotation_2d_torch(vel, -data['heading'])[0]
                     raise NotImplementedError("if self.vel_heading")
-                # traj_in.append(vel)
                 seq_in.append(vel_seq)
-            elif key == 'norm':
-                # traj_in.append(data['fut_motion_norm'])
-                raise NotImplementedError("if key == 'norm'")
+            elif key in ['norm', 'heading', 'map']:
+                raise NotImplementedError(f"input type not implemented: {key}")
             elif key == 'scene_norm':
-                # traj_in.append(data['fut_motion_scene_norm'])
-                print(f"{data['fut_sequence_scene_norm'].shape=}")
                 seq_in.append(data['fut_sequence_scene_norm'])
-            elif key == 'heading':
-                # hv = data['heading_vec'].unsqueeze(0).repeat((data['fut_motion'].shape[0], 1, 1))
-                # traj_in.append(hv)
-                raise NotImplementedError("if key == 'heading'")
-            elif key == 'map':
-                # map_enc = data['map_enc'].unsqueeze(0).repeat((data['fut_motion'].shape[0], 1, 1))
-                # traj_in.append(map_enc)
-                raise NotImplementedError("if key == 'map'")
             else:
                 raise ValueError('unknown input_type!')
-        # traj_in = torch.cat(traj_in, dim=-1)
         seq_in = torch.cat(seq_in, dim=-1)      # [P, Features]
 
-        print(f"{seq_in.shape=}")
-
-        # tf_in = self.input_fc(traj_in.view(-1, traj_in.shape[-1])).view(-1, 1, self.model_dim)
         tf_seq_in = self.input_fc(seq_in).view(-1, 1, self.model_dim)       # [P, 1, model_dim]
-
-        print(f"{tf_seq_in.shape=}")
-        print(f"{data['pre_timesteps']=}")
-        print(f"{data['fut_timesteps'], data['fut_timesteps'].shape=}")
 
         tf_in_pos = self.pos_encoder(
             x=tf_seq_in,                            # [P, 1, model_dim]
             time_tensor=data['fut_timesteps']       # [P]
         )                                           # [P, 1, model_dim]
-        # # WIP CODE
-        # fig, ax = plt.subplots()
-        # print(f"FUTURE ENCODER")
-        # self.pos_encoder.plot_positional_window(ax=ax, num_t=tf_in.shape[0]//data['agent_num'])
-        # plt.show()
-        # # WIP CODE
 
-        # mem_agent_mask = data['agent_mask'].clone()
-        # tgt_agent_mask = data['agent_mask'].clone()
         mem_mask = generate_mask(data['fut_timesteps'].shape[0], data['pre_timesteps'].shape[0]).to(tf_seq_in.device)
         tgt_mask = generate_mask(data['fut_timesteps'].shape[0], data['fut_timesteps'].shape[0]).to(tf_seq_in.device)
 
@@ -319,7 +267,6 @@ class FutureEncoder(nn.Module):
             tgt_mask=tgt_mask,                      # [P, P]
             memory_mask=mem_mask,                   # [P, O]
         )                                           # [P, 1, model_dim]
-        print(f"DECODER ATTENTION: DONE!")
 
         if self.pooling == 'mean':
             h = torch.cat(
@@ -529,18 +476,9 @@ class FutureDecoder(nn.Module):
         return seq_out, dec_input_sequence, agent_sequence, timestep_sequence, attn_weights
 
     def decode_traj_ar(self, data, mode, context, z, sample_num, need_weights=False):
-        agent_num = data['agent_num']
         # retrieving the most recent observation for each agent
         # print(f"{self.pred_type=}")
-        if self.pred_type == 'vel':
-            # dec_in = pre_vel[[-1]]
-            # print(f"{pre_vel[[-1]].shape=}")
-            raise NotImplementedError
-        elif self.pred_type == 'pos':
-            # dec_in = pre_motion[[-1]]
-            # print(f"{pre_motion[[-1]].shape=}")
-            raise NotImplementedError
-        elif self.pred_type == 'scene_norm':
+        if self.pred_type == 'scene_norm':
             # dec_in = pre_motion_scene_norm[[-1]]  # [1, sample_num * N, 2]
             # print(f"{pre_motion_scene_norm.shape=}")
             # print(f"{pre_motion_scene_norm[[0]], pre_motion_scene_norm[[0]].shape=}")
@@ -655,23 +593,12 @@ class FutureDecoder(nn.Module):
         # seq_out = seq_out.view(-1, agent_num * sample_num, seq_out.shape[-1])
         # data[f'{mode}_seq_out'] = seq_out
 
-        if self.pred_type == 'vel':
-            # dec_motion = torch.cumsum(seq_out, dim=0)
-            # dec_motion += pre_motion[[-1]]
-            raise NotImplementedError
-        elif self.pred_type == 'pos':
-            # dec_motion = seq_out.clone()
-            raise NotImplementedError
-        elif self.pred_type == 'scene_norm':
+        if self.pred_type == 'scene_norm':
             dec_motion = seq_out
             dec_motion[..., :self.forecast_dim] += data['scene_orig']       # [T_sequence, n_sample, 2]
         else:
-            # dec_motion = seq_out + pre_motion[[-1]]
             raise NotImplementedError
 
-        # dec_motion = dec_motion.transpose(0, 1).contiguous()       # M x frames x 7
-        # if mode == 'infer':
-        #     dec_motion = dec_motion.view(-1, sample_num, *dec_motion.shape[1:])        # M x Samples x frames x 3
         data[f'{mode}_dec_motion'] = dec_motion                     # [T_sequence, n_sample, 2]
         data[f'{mode}_dec_agents'] = pred_agent_sequence            # [T_sequence]
         data[f'{mode}_dec_timesteps'] = pred_timestep_sequence      # [T_sequence]
@@ -682,9 +609,6 @@ class FutureDecoder(nn.Module):
             data[f'{mode}_dec_Sig'] = self.out_module[0].covariance_matrix(sig=data[f'{mode}_dec_sig'], rho=data[f'{mode}_dec_rho'])
         if need_weights:
             data['attn_weights'] = attn_weights
-
-    # def decode_traj_batch(self, data, mode, context, pre_motion, pre_vel, pre_motion_scene_norm, z, sample_num):
-    #     raise NotImplementedError
 
     def forward(self, data, mode, sample_num=1, autoregress=True, z=None, need_weights=False):
         context = data['context_enc'].repeat_interleave(sample_num, dim=1)       # [O, sample_num * model_dim]
