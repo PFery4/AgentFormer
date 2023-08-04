@@ -2,7 +2,10 @@ import torch
 from numpy import pi
 
 
-def compute_motion_mse(data, cfg):
+def compute_motion_mse(
+        data: dict,
+        cfg: dict
+):
 
     # print(f"INDEX MAPPING")
     idx_map = index_mapping_gt_seq_pred_seq(
@@ -123,7 +126,12 @@ def compute_gauss_nll(data, cfg):
     return loss, loss_unweighted
 
 
-def index_mapping_gt_seq_pred_seq(ag_gt, tsteps_gt, ag_pred, tsteps_pred):
+def index_mapping_gt_seq_pred_seq(
+        ag_gt: torch.Tensor,
+        tsteps_gt: torch.Tensor,
+        ag_pred: torch.Tensor,
+        tsteps_pred: torch.Tensor
+) -> torch.Tensor:
     """
     given 4 sequences of shape (T):
     returns a tensor of indices that provides the mapping between ground truth (agent, timestep) pairs and predicted
