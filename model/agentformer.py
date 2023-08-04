@@ -230,7 +230,7 @@ class FutureEncoder(nn.Module):
         # initialize
         initialize_weights(self.q_z_net.modules())
 
-    def forward(self, data, reparam=True):
+    def forward(self, data):
         seq_in = []
         for key in self.input_type:
             if key == 'pos':
