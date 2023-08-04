@@ -729,7 +729,7 @@ class AgentFormer(nn.Module):
         if self.training and len(data['full_motion_3D']) > self.max_train_agent:
             in_data = {}
             ind = np.random.choice(len(data['full_motion_3D']), self.max_train_agent, replace=False).tolist()
-            for key in ['heading', 'full_motion_3D', 'obs_mask', 'fut_motion_mask', 'pre_motion_mask', 'timesteps', 'valid_id']:
+            for key in ['heading', 'full_motion_3D', 'obs_mask', 'timesteps', 'valid_id']:
                 in_data[key] = [data[key][i] for i in ind if data[key] is not None]
         else:
             in_data = data

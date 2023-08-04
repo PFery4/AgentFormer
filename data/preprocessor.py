@@ -191,8 +191,8 @@ class preprocess(object):
             pred_mask = None
             heading = None
 
-        pre_motion_3D, pre_motion_mask = self.PreMotion(pre_data, valid_id)
-        fut_motion_3D, fut_motion_mask = self.FutureMotion(fut_data, valid_id)
+        pre_motion_3D, _ = self.PreMotion(pre_data, valid_id)
+        fut_motion_3D, _ = self.FutureMotion(fut_data, valid_id)
         full_motion_3D = [torch.cat((pre_mot, fut_mot), dim=0) for pre_mot, fut_mot in zip(pre_motion_3D, fut_motion_3D)]
         obs_mask = [
             torch.from_numpy(np.concatenate(
@@ -204,15 +204,9 @@ class preprocess(object):
         timesteps = torch.from_numpy(np.arange(self.past_frames + self.future_frames) - self.past_frames + 1)
 
         data = {
-            # 'pre_motion_3D': pre_motion_3D,
-            # 'fut_motion_3D': fut_motion_3D,
             'full_motion_3D': full_motion_3D,
             'obs_mask': obs_mask,
             'timesteps': timesteps,
-            'fut_motion_mask': fut_motion_mask,
-            'pre_motion_mask': pre_motion_mask,
-            # 'pre_data': pre_data,
-            # 'fut_data': fut_data,
             'heading': heading,
             'valid_id': valid_id,
             'traj_scale': self.traj_scale,
