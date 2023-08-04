@@ -51,9 +51,9 @@ def gaussian_twodee_nll(mu, sig, rho, targets, eps: float = 1e-20):
     targets.shape -> (*, 2)
     reduction -> ["mean", "sum", "tensor"]
     """
-    mux, muy = mu[..., 0].unsqueeze(-1), mu[..., 1].unsqueeze(-1)  # shape (*, 1)
-    sigx, sigy = sig[..., 0].unsqueeze(-1), sig[..., 1].unsqueeze(-1)  # shape (*, 1)
-    gt_x, gt_y = targets[..., 0].unsqueeze(-1), targets[..., 1].unsqueeze(-1)  # shape (*, 1)
+    mux, muy = mu[..., 0].unsqueeze(-1), mu[..., 1].unsqueeze(-1)  # shape [*, 1]
+    sigx, sigy = sig[..., 0].unsqueeze(-1), sig[..., 1].unsqueeze(-1)  # shape [*, 1]
+    gt_x, gt_y = targets[..., 0].unsqueeze(-1), targets[..., 1].unsqueeze(-1)  # shape [*, 1]
 
     norm_x, norm_y = (gt_x - mux) / sigx, (gt_y - muy) / sigy
 
@@ -78,9 +78,9 @@ def gaussian_twodee_nll_2(mu, sig, rho, targets, eps: float = 1e-20):
     rho.shape -> (*, 1)
     targets.shape -> (*, 2)
     """
-    mux, muy = mu[..., 0].unsqueeze(-1), mu[..., 1].unsqueeze(-1)  # shape (*, 1)
-    sigx, sigy = sig[..., 0].unsqueeze(-1), sig[..., 1].unsqueeze(-1)  # shape (*, 1)
-    gt_x, gt_y = targets[..., 0].unsqueeze(-1), targets[..., 1].unsqueeze(-1)  # shape (*, 1)
+    mux, muy = mu[..., 0].unsqueeze(-1), mu[..., 1].unsqueeze(-1)  # shape [*, 1]
+    sigx, sigy = sig[..., 0].unsqueeze(-1), sig[..., 1].unsqueeze(-1)  # shape [*, 1]
+    gt_x, gt_y = targets[..., 0].unsqueeze(-1), targets[..., 1].unsqueeze(-1)  # shape [*, 1]
 
     sigx_sq, sigy_sq = sigx ** 2, sigy ** 2
     min_r = 1 - rho ** 2
@@ -102,10 +102,10 @@ def multivariate_gaussian_nll(mu, Sig, targets, eps: float = 1e-20):
     Sig.shape -> (*, N, N)
     targets.shape -> (*, N)
     """
-    norm = (targets - mu).unsqueeze(-1)     # (*, N, 1)
+    norm = (targets - mu).unsqueeze(-1)     # [*, N, 1]
 
-    t1 = (norm.transpose(-2, -1) @ torch.linalg.inv(torch.clamp(Sig, min=eps)) @ norm).view(mu.shape[:-1])      # (*)
-    t2 = torch.log(torch.linalg.det(torch.clamp(Sig, min=eps)))                                                 # (*)
+    t1 = (norm.transpose(-2, -1) @ torch.linalg.inv(torch.clamp(Sig, min=eps)) @ norm).view(mu.shape[:-1])      # [*]
+    t2 = torch.log(torch.linalg.det(torch.clamp(Sig, min=eps)))                                                 # [*]
     # t3 = torch.log(torch.sum(torch.ones_like(mu) * (2 * pi)**2, dim=-1))
 
     result = t1 + t2    # + t3
