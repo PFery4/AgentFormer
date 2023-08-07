@@ -847,6 +847,11 @@ class AgentFormer(nn.Module):
             mask = torch.zeros([cur_motion.shape[0], cur_motion.shape[0]]).to(self.device)
         self.data['agent_mask'] = mask          # [N, N]
 
+    def visualize_data_dict(self):
+        [print(f"{k}: {type(v)}") for k, v in self.data.items()]
+        fig, ax = plt.subplots()
+        print(zbluo)
+
     def step_annealer(self):
         for anl in self.param_annealers:
             anl.step()

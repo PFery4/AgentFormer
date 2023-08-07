@@ -73,6 +73,8 @@ def train(epoch):
             # [print(f"{k}: {type(v)}" + (f": {v.shape}" if isinstance(v, torch.Tensor) else "")) for k, v in model.data.items()]
             # print()
 
+            # model.visualize_data_dict()
+
             model_data = model()
             total_loss, loss_dict, loss_unweighted_dict = model.compute_loss()
 
