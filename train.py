@@ -36,7 +36,7 @@ def train(epoch):
 
     # WIP CODE FOR EXPLORATION
     cnt = 0
-    cnt_stop = 100
+    cnt_stop = 1000
     # WIP CODE FOR EXPLORATION
     while not generator.is_epoch_end():
         data = generator()
@@ -102,7 +102,9 @@ def train(epoch):
 
         # WIP CODE FOR EXPLORATION
         if cnt == cnt_stop:
-            print(cnt)
+            total_time = time.time()
+            print(f"time since beginning: {total_time - since_train} s")
+            print(f"# instances trained on: {cnt}")
             print(zblu)
         cnt += 1
         # WIP CODE FOR EXPLORATION
