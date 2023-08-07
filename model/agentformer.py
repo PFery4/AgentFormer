@@ -152,7 +152,7 @@ class ContextEncoder(nn.Module):
             elif key in ['norm', 'heading', 'map']:
                 raise NotImplementedError(f"input type not implemented: {key}")
             elif key == 'scene_norm':
-                print(f"{data['pre_sequence_scene_norm'].shape=}")
+                # print(f"{data['pre_sequence_scene_norm'].shape=}")
                 seq_in.append(data['pre_sequence_scene_norm'])
             else:
                 raise ValueError('unknown input_type!')
@@ -877,7 +877,7 @@ class AgentFormer(nn.Module):
         total_loss = 0
         loss_dict = {}
         loss_unweighted_dict = {}
-        print(f"{self.loss_names=}")
+        # print(f"{self.loss_names=}")
         for loss_name in self.loss_names:
             loss, loss_unweighted = loss_func[loss_name](self.data, self.loss_cfg[loss_name])
             total_loss += loss
