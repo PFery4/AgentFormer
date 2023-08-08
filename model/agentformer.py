@@ -794,16 +794,25 @@ class AgentFormer(nn.Module):
         self.data['fut_agents'] = full_agent_mask[timesteps_to_predict].clone().detach()                                 # [P]
         self.data['fut_timesteps'] = full_timestep_mask[timesteps_to_predict].clone().detach()                           # [P]
 
-        full_vel = torch.zeros_like(full_motion)                        # [T_total, N, 2]
-        full_vel[1:, ...] = full_motion[1:, ...] - full_motion[:-1, ...]
-        shift_obs_mask = torch.full_like(obs_mask, False)
-        shift_obs_mask[1:, ...] = obs_mask[:-1, ...]
+        pre_vel_seq = torch.full_like(full_motion, float('nan')).to(self.device)                    # [T_total, N, 2]
+        for agent_i in range(self.data['agent_num']):
+            obs_indices = torch.nonzero(obs_mask[:, agent_i]).squeeze()
 
-        pre_vel_seq = full_vel.detach().clone()
-        pre_vel_seq[torch.logical_and(obs_mask, ~shift_obs_mask), ...] = 0.0
+            # no information about velocity for the first observation: assume zero velocity
+            pre_vel_seq[obs_indices[0], agent_i, :] = 0
+
+            # impute velocities for subsequent timesteps by position differentiation
+            # (normalizing by timestep gap for cases of occlusion)
+            motion_diff = full_motion[obs_indices[1:], agent_i, :] - full_motion[obs_indices[:-1], agent_i, :]
+            pre_vel_seq[obs_indices[1:], agent_i, :] = motion_diff / (obs_indices[1:] - obs_indices[:-1]).unsqueeze(1)
+
         self.data['pre_vel_seq'] = pre_vel_seq[obs_mask, ...]                       # [O, 2]
+        assert not torch.any(torch.isnan(self.data['pre_vel_seq']))
 
+        full_vel = torch.full_like(full_motion, float('nan')).to(self.device)                        # [T_total, N, 2]
+        full_vel[1:, ...] = full_motion[1:, ...] - full_motion[:-1, ...]
         self.data['fut_vel_seq'] = full_vel[timesteps_to_predict, ...]              # [P, 2]
+        assert not torch.any(torch.isnan(self.data['fut_vel_seq']))
 
         # create tensors for the last observed position of each agent
         cur_motion = full_motion[last_observed_timestep_indices, torch.arange(self.data['agent_num'])].unsqueeze(0)      # [1, N, 2]
