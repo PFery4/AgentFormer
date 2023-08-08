@@ -140,10 +140,10 @@ class AgentFormerDataGeneratorForSDD:
         full_threedee = []
         obs_mask = []
         for agent, occlusion_mask in zip(extracted_data["agents"], extracted_data["full_window_occlusion_masks"]):
-            try:
+            if np.sum(occlusion_mask[:len(extracted_data['past_window'])]) >= 2:
                 last_observed_timestep = np.where(occlusion_mask[:len(extracted_data["past_window"])])[0][-1]
-            except IndexError:         # agent's past is completely unobserved, the ego has no knowledge of the agent
-                # print(f"IGNORING AGENT {agent.id}: fully occluded")
+            else:         # agent's past is completely unobserved, the ego has no knowledge of the agent
+                # print(f"IGNORING AGENT {agent.id}: not enough observations")
                 continue
             full_mot = agent.get_traj_section(extracted_data["full_window"])
             full_threedee.append(torch.from_numpy(full_mot).float())
