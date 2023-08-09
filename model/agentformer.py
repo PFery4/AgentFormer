@@ -744,6 +744,10 @@ class AgentFormer(nn.Module):
         full_motion = torch.stack(
             in_data['full_motion_3D'], dim=0
         ).to(self.device).transpose(0, 1).contiguous()                              # [T_total, N, 2]
+
+        # scaling the coordinate positions by some factor
+        full_motion = full_motion * 0.01
+
         obs_mask = torch.stack(
             in_data['obs_mask'], dim=0
         ).to(self.device).to(dtype=torch.bool).transpose(0, 1).contiguous()         # [T_total, N]
@@ -782,6 +786,8 @@ class AgentFormer(nn.Module):
         else:
             theta = torch.zeros(1).to(self.device)
             full_motion_scene_norm = full_motion - scene_orig
+
+        # print(f"{torch.max(torch.linalg.norm(full_motion_scene_norm, dim=-1))=}")
 
         # create past and future tensors
         self.data['pre_sequence'] = full_motion[obs_mask, ...].clone().detach()          # [O, 2], where O is equal to sum(obs_mask)

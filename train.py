@@ -2,6 +2,8 @@ import os
 import sys
 import argparse
 import time
+
+import matplotlib.pyplot as plt
 import torch
 from torch import optim
 from torch.utils.tensorboard import SummaryWriter
@@ -37,6 +39,7 @@ def train(epoch):
     # WIP CODE FOR EXPLORATION
     cnt = 0
     cnt_stop = 1000
+    loss_vals = []
     # WIP CODE FOR EXPLORATION
     while not generator.is_epoch_end():
         data = generator()
@@ -77,6 +80,7 @@ def train(epoch):
 
             model_data = model()
             total_loss, loss_dict, loss_unweighted_dict = model.compute_loss()
+            loss_vals.append(float(total_loss))
 
             # print("AFTER:")
             # print(f"{model.data['batch_size']=}")
@@ -107,6 +111,10 @@ def train(epoch):
             total_time = time.time()
             print(f"time since beginning: {total_time - since_train} s")
             print(f"# instances trained on: {cnt}")
+            print(f"{loss_vals=}")
+            fig, ax = plt.subplots()
+            ax.plot(range(len(loss_vals)), loss_vals)
+            plt.show()
             print(zblu)
         cnt += 1
         # WIP CODE FOR EXPLORATION
