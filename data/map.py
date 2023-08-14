@@ -1,7 +1,6 @@
 """
 Code borrowed from Trajectron++: https://github.com/StanfordASL/Trajectron-plus-plus/blob/ef0165a93ee5ba8cdc14f9b999b3e00070cd8588/trajectron/environment/map.py
 """
-
 import torch
 import numpy as np
 import cv2
@@ -54,7 +53,34 @@ class GeometricMap(Map):
     def as_image(self):
         # We have to transpose x and y to rows and columns. Assumes origin is lower left for image
         # Also we move the channels to the last dimension
-        return (np.transpose(self.data, (2, 1, 0))).astype(np.uint)
+        return (np.transpose(self.data, (2, 1, 0))).astype(np.uint8)
+
+    def get_map_dimensions(self):
+        return self.data.shape[1:]      # [W, H]
+
+    def rotate_around_center(self, theta: float):
+        """
+        performs rotation of the map along the center. automatically expands map boundaries and applies reflect padding.
+        this process does not remove any croppings of the map.
+        """
+        (W, H) = self.get_map_dimensions()
+        (cX, cY) = (W//2, H//2)
+        theta = np.radians(theta)
+        cos = np.cos(theta)
+        sin = np.sin(theta)
+
+        nW = int((H * np.abs(sin)) + (W * np.abs(cos)))
+        nH = int((H * np.abs(cos)) + (W * np.abs(sin)))
+
+        Matrix = np.array([[cos, sin, nW//2 - cos*cX - sin*cY],
+                           [-sin, cos, nH//2 + sin*cX - cos*cY],
+                           [0, 0, 1]])
+        self.homography = Matrix
+
+        img = self.as_image()
+        img = cv2.warpAffine(img, self.homography[:-1, ...], (nW, nH), borderMode=cv2.BORDER_REFLECT_101)
+
+        self.data = np.transpose(img, (2, 1, 0))
 
     def get_padded_map(self, padding_x, padding_y, device):
         if self._last_padding == (padding_x, padding_y):
@@ -142,10 +168,10 @@ class GeometricMap(Map):
             angles = torch.zeros(batch_size)
 
         rotated_map_batched = cls.batch_rotate(padded_map_batched/255.,
-                                                center_patches.float(),
-                                                angles,
-                                                long_size,
-                                                lat_size)
+                                               center_patches.float(),
+                                               angles,
+                                               long_size,
+                                               lat_size)
 
         del padded_map_batched
 
@@ -206,9 +232,9 @@ class GeometricMap(Map):
             for t in range(fut_motion.shape[0]):
                 pos = fut_motion[i, t]
                 pos = np.round(self.to_map_points(pos)).astype(int)
-                img = cv2.line(img, (prev_pos[1], prev_pos[0]), (pos[1], pos[0]), (0, 255, 0), 2) 
+                img = cv2.line(img, (prev_pos[1], prev_pos[0]), (pos[1], pos[0]), (0, 255, 0), 2)
 
-            # draw heading
+                # draw heading
             theta = heading[i]
             v= np.array([5.0, 0.0])
             v_new = v.copy()
@@ -216,7 +242,7 @@ class GeometricMap(Map):
             v_new[1] = v[0] * np.sin(theta) + v[1] * np.cos(theta)
             vend = pre_motion[i, -1] + v_new
             vend = np.round(self.to_map_points(vend)).astype(int)
-            img = cv2.line(img, (cur_pos[1], cur_pos[0]), (vend[1], vend[0]), (0, 255, 255), 2) 
+            img = cv2.line(img, (cur_pos[1], cur_pos[0]), (vend[1], vend[0]), (0, 255, 255), 2)
 
         fname = f'out/agent_maps/{data["seq"]}_{data["frame"]}_vis.png'
         os.makedirs(os.path.dirname(fname), exist_ok=True)
