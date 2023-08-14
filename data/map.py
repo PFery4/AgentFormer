@@ -65,17 +65,17 @@ class GeometricMap(Map):
         this process does not remove any croppings of the map.
         """
         (W, H) = self.get_map_dimensions()
-        (cX, cY) = (W//2, H//2)
+        (cX, cY) = (W/2, H/2)
         cos = np.cos(theta)
         sin = np.sin(theta)
 
         nW = int((H * np.abs(sin)) + (W * np.abs(cos)))
         nH = int((H * np.abs(cos)) + (W * np.abs(sin)))
 
-        Matrix = np.array([[cos, sin, nW//2 - cos*cX - sin*cY],
-                           [-sin, cos, nH//2 + sin*cX - cos*cY],
+        Matrix = np.array([[cos, sin, nW/2 - cos*cX - sin*cY],
+                           [-sin, cos, nH/2 + sin*cX - cos*cY],
                            [0, 0, 1]])
-        self.homography = Matrix
+        self.homography = Matrix        # perhaps needs to be matrix multiplied instead of assigned to
 
         img = self.as_image()
         img = cv2.warpAffine(img, self.homography[:-1, ...], (nW, nH), borderMode=cv2.BORDER_REFLECT_101)
@@ -215,7 +215,6 @@ class GeometricMap(Map):
         if org_shape is not None:
             map_points = map_points.reshape(org_shape)
         return map_points
-
 
     def visualize_data(self, data):
         pre_motion = np.stack(data['pre_motion_3D']) * data['traj_scale']
