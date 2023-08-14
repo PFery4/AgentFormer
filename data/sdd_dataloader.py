@@ -1,9 +1,12 @@
 import os.path
 import random
 from io import TextIOWrapper
+
+import matplotlib.pyplot as plt
 import torch
 import sys
 import numpy as np
+import skgeom as sg
 
 from data.map import GeometricMap
 from utils.config import Config
@@ -11,6 +14,9 @@ from utils.utils import print_log, get_timestring
 
 # imports from https://github.com/PFery4/occlusion-prediction
 from src.data.sdd_dataloader import StanfordDroneDataset, StanfordDroneDatasetWithOcclusionSim
+from src.visualization.plot_utils import plot_sg_polygon
+import src.occlusion_simulation.visibility as visibility
+import src.occlusion_simulation.polygon_generation as poly_gen
 import src.data.sdd_extract as sdd_extract
 
 
@@ -24,6 +30,7 @@ class AgentFormerDataGeneratorForSDD:
         self.past_frames = parser.past_frames
         self.min_past_frames = parser.min_past_frames
         self.frame_skip = parser.get('frame_skip', 1)
+        self.rand_rot_scene = parser.get('rand_rot_scene', False)
         self.phase = phase
         self.split = split
         assert phase in ['training', 'testing'], 'error'
@@ -133,12 +140,14 @@ class AgentFormerDataGeneratorForSDD:
 
     @staticmethod
     def generate_motion_threedee_with_occlusion(extracted_data: dict, target_dict: dict) -> None:
-        pre_masks = []
-        fut_masks = []
-        valid_id = []
 
-        full_threedee = []
+        full_threedee = np.stack([agent.get_traj_section(extracted_data['full_window']) for agent in extracted_data['agents']])
+        valid_id = np.stack([float(agent.id) for agent in extracted_data['agents']])
+
+        print(f"{full_threedee.shape=}")
+        print(zblu)
         obs_mask = []
+
         for agent, occlusion_mask in zip(extracted_data["agents"], extracted_data["full_window_occlusion_masks"]):
             if np.sum(occlusion_mask[:len(extracted_data['past_window'])]) >= 2:
                 last_observed_timestep = np.where(occlusion_mask[:len(extracted_data["past_window"])])[0][-1]
@@ -153,33 +162,99 @@ class AgentFormerDataGeneratorForSDD:
 
             obs_mask.append(torch.from_numpy(observed.astype(float)))
 
-            pre_mask = agent.get_data_availability_mask(extracted_data["full_window"])
-            pre_mask[last_observed_timestep+1:] = 0.0
-            pre_masks.append(torch.from_numpy(pre_mask).float())
-
-            fut_mask = agent.get_data_availability_mask(extracted_data["full_window"])
-            fut_mask[:last_observed_timestep+1] = 0.0
-            fut_masks.append(torch.from_numpy(fut_mask).float())
-
             valid_id.append(float(agent.id))
 
         target_dict['full_motion_3D'] = full_threedee
         target_dict['obs_mask'] = obs_mask
-        target_dict['pre_motion_mask'] = pre_masks
-        target_dict['fut_motion_mask'] = fut_masks
         target_dict['valid_id'] = valid_id
+
+    def remove_agents_with_too_few_observations(self):
+        pass
 
     def convert_to_preprocessor_data(self, extracted_data: dict) -> dict:
 
         data = dict()
-        self.motion_processing(extracted_data=extracted_data, target_dict=data)
 
         heading = None
         # from the nuscenes implementation:
         # pred mask is a numpy array, of shape (n_agents,), with values either 1 or 0
         pred_mask = None
 
-        scene_map = self.torchimg_to_geometricmap(extracted_data["image_tensor"])
+        [print(f"{k}: {type(v)}") for k, v in extracted_data.items()]
+
+        # perform the loading of the map
+        img = extracted_data['scene_image']
+        scene_map = GeometricMap(data=np.transpose(img, (2, 1, 0)), homography=np.eye(3))
+        if self.rand_rot_scene:
+            data["theta"] = float(np.random.rand() * 2 * np.pi)
+        else:
+            data["theta"] = 0.0
+        scene_map.rotate_around_center(data["theta"])
+
+        # extract all agent trajectories
+        all_trajs = np.stack(
+            [agent.get_traj_section(extracted_data['full_window']) for agent in extracted_data['agents']]
+        )   # [N, T, 2]
+        ego = extracted_data['ego_point']
+        occluders = extracted_data['occluders']
+
+        rot_trajs = scene_map.to_map_points(scene_pts=all_trajs)
+        rot_ego = scene_map.to_map_points(scene_pts=ego)
+        rot_occluders = []
+        for occluder in occluders:
+            p1 = scene_map.to_map_points(scene_pts=occluder[0])
+            p2 = scene_map.to_map_points(scene_pts=occluder[1])
+            rot_occluders.append((p1, p2))
+        all_ids = np.stack([agent.id for agent in extracted_data['agents']])
+
+
+        # compute visibility polygon
+        scene_boundary = poly_gen.default_rectangle(corner_coords=(extracted_data['scene_image'].shape[:2]))
+        ego_visipoly = visibility.compute_visibility_polygon(
+            ego_point=extracted_data["ego_point"],
+            occluders=extracted_data["occluders"],
+            boundary=scene_boundary
+        )
+
+        rot_scene_boundary = poly_gen.default_rectangle(corner_coords=scene_map.get_map_dimensions())
+        rot_ego_visipoly = visibility.compute_visibility_polygon(
+            ego_point=rot_ego,
+            occluders=rot_occluders,
+            boundary=rot_scene_boundary
+        )
+
+        # obtain observation_mask
+        full_window_occlusion_masks = visibility.occlusion_masks(
+            agents=extracted_data["agents"],
+            time_window=extracted_data["full_window"],
+            ego_visipoly=ego_visipoly
+        )
+
+        # plotting for example:
+        fig, axes = plt.subplots(1, 2)
+        axes[0].imshow(img)
+        for traj in all_trajs:
+            axes[0].plot(traj[..., 0], traj[..., 1])
+        for occluder in occluders:
+            axes[0].plot([occluder[0][0], occluder[1][0]], [occluder[0][1], occluder[1][1]], c='black')
+        axes[0].scatter(ego[0], ego[1], marker='D', c='yellow', s=30)
+        occluded_regions = sg.PolygonSet(scene_boundary).difference(ego_visipoly)
+        [plot_sg_polygon(ax=axes[0], poly=poly, edgecolor="red", facecolor="red", alpha=0.2)
+         for poly in occluded_regions.polygons]
+
+        axes[1].imshow(scene_map.as_image())
+        for traj in rot_trajs:
+            axes[1].plot(traj[..., 0], traj[..., 1])
+        for occluder in rot_occluders:
+            axes[1].plot([occluder[0][0], occluder[1][0]], [occluder[0][1], occluder[1][1]], c='black')
+        axes[1].scatter(rot_ego[0], rot_ego[1], marker='D', c='yellow', s=30)
+        occluded_regions = sg.PolygonSet(rot_scene_boundary).difference(rot_ego_visipoly)
+        [plot_sg_polygon(ax=axes[1], poly=poly, edgecolor="red", facecolor="red", alpha=0.2)
+         for poly in occluded_regions.polygons]
+
+        plt.show()
+        print(zbu)
+
 
         data['timesteps'] = torch.from_numpy(
             np.arange(len(extracted_data["full_window"])) - len(extracted_data["past_window"]) + 1
@@ -207,7 +282,7 @@ class AgentFormerDataGeneratorForSDD:
 if __name__ == '__main__':
     print(sdd_extract.REPO_ROOT)
 
-    n_calls = 10
+    n_calls = 1
     # config_str = "sdd_agentformer_pre"
     config_str = "sdd_occlusion_agentformer_pre"
 
@@ -221,7 +296,12 @@ if __name__ == '__main__':
     print_log("cudnn version : {}".format(torch.backends.cudnn.version()), log)
 
     generator = AgentFormerDataGeneratorForSDD(config, log, split="train")
+
+    print(f"{generator.rand_rot_scene=}")
+
     generator.shuffle()
     for i in range(n_calls):
         print("\nCALLING")
-        [print(f"{k}: {v}") for k, v in generator().items()]
+        data_dict = generator()
+        print(f"{data_dict['scene_map']=}")
+        # [print(f"{k}: {type(v)}") for k, v in generator().items()]
