@@ -60,12 +60,12 @@ class GeometricMap(Map):
 
     def rotate_around_center(self, theta: float):
         """
+        theta is in radians.
         performs rotation of the map along the center. automatically expands map boundaries and applies reflect padding.
         this process does not remove any croppings of the map.
         """
         (W, H) = self.get_map_dimensions()
         (cX, cY) = (W//2, H//2)
-        theta = np.radians(theta)
         cos = np.cos(theta)
         sin = np.sin(theta)
 
