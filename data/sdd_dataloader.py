@@ -33,6 +33,7 @@ class AgentFormerDataGeneratorForSDD:
         self.min_past_frames = parser.min_past_frames
         self.frame_skip = parser.get('frame_skip', 1)
         self.rand_rot_scene = parser.get('rand_rot_scene', False)
+        self.max_train_agent = parser.get('max_train_agent', 100)
         self.phase = phase
         self.split = split
         assert phase in ['training', 'testing'], 'error'
@@ -187,31 +188,38 @@ class AgentFormerDataGeneratorForSDD:
             scene_map=scene_map
         )
 
-        # plotting for example:
-        fig, axes = plt.subplots(1, 3)
-        visualize.visualize_training_instance(
-            draw_ax=axes[0], instance_dict=extracted_data
-        )
+        # subsample identities if too many:
+        if ids.shape[0] > self.max_train_agent:     # TODO: add 'self.training' to if statement
+            keep_indices = np.sort(np.random.choice(ids.shape[0], self.max_train_agent, replace=False))
+            trajs = trajs[keep_indices]
+            ids = ids[keep_indices]
+            obs_mask = obs_mask[keep_indices]
 
-        axes[1].set_xlim(0., scene_map.get_map_dimensions()[0])
-        axes[1].set_ylim(scene_map.get_map_dimensions()[1], 0.)
-        axes[1].imshow(scene_map.as_image())
-
-        for traj, mask in zip(trajs, obs_mask):
-            occluded = traj[~mask]
-            axes[1].scatter(occluded[..., 0], occluded[..., 1], marker='x', s=30, c='black')
-            axes[1].plot(traj[..., 0], traj[..., 1])
-        if ego is not None and occluders is not None and ego_visipoly is not None:
-            for occluder in occluders:
-                axes[1].plot([occluder[0][0], occluder[1][0]], [occluder[0][1], occluder[1][1]], c='black')
-            axes[1].scatter(ego[0], ego[1], marker='D', c='yellow', s=30)
-            scene_boundary = poly_gen.default_rectangle(corner_coords=(reversed(scene_map.get_map_dimensions())))
-            occluded_regions = sg.PolygonSet(scene_boundary).difference(ego_visipoly)
-            [plot_sg_polygon(ax=axes[1], poly=poly, edgecolor='red', facecolor='red', alpha=0.2)
-             for poly in occluded_regions.polygons]
-        
-        axes[2].imshow(occlusion_map)
-        plt.show()
+        # # plotting for example:
+        # fig, axes = plt.subplots(1, 3)
+        # visualize.visualize_training_instance(
+        #     draw_ax=axes[0], instance_dict=extracted_data
+        # )
+        #
+        # axes[1].set_xlim(0., scene_map.get_map_dimensions()[0])
+        # axes[1].set_ylim(scene_map.get_map_dimensions()[1], 0.)
+        # axes[1].imshow(scene_map.as_image())
+        #
+        # for traj, mask in zip(trajs, obs_mask):
+        #     occluded = traj[~mask]
+        #     axes[1].scatter(occluded[..., 0], occluded[..., 1], marker='x', s=30, c='black')
+        #     axes[1].plot(traj[..., 0], traj[..., 1])
+        # if ego is not None and occluders is not None and ego_visipoly is not None:
+        #     for occluder in occluders:
+        #         axes[1].plot([occluder[0][0], occluder[1][0]], [occluder[0][1], occluder[1][1]], c='black')
+        #     axes[1].scatter(ego[0], ego[1], marker='D', c='yellow', s=30)
+        #     scene_boundary = poly_gen.default_rectangle(corner_coords=(reversed(scene_map.get_map_dimensions())))
+        #     occluded_regions = sg.PolygonSet(scene_boundary).difference(ego_visipoly)
+        #     [plot_sg_polygon(ax=axes[1], poly=poly, edgecolor='red', facecolor='red', alpha=0.2)
+        #      for poly in occluded_regions.polygons]
+        #
+        # axes[2].imshow(occlusion_map)
+        # plt.show()
 
         data['full_motion_3D'] = torch.from_numpy(trajs)
         data['valid_id'] = torch.from_numpy(ids)
