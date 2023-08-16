@@ -41,10 +41,10 @@ class AgentFormerDataGeneratorForSDD:
         self.sdd_config = sdd_extract.get_config(parser.sdd_config_file_name)
         if not parser.get("sdd_occlusion_data", False):
             full_dataset = StanfordDroneDataset(self.sdd_config)
-            self.motion_processing = self.generate_motion_threedee
+            self.traj_processing = self.traj_processing_without_occlusion
         else:
             full_dataset = StanfordDroneDatasetWithOcclusionSim(self.sdd_config)
-            self.motion_processing = self.generate_motion_threedee_with_occlusion
+            self.traj_processing = self.traj_processing_with_occlusion
         print(f"instantiating dataloader from {full_dataset.__class__} class")
 
         # TODO: investigate whether a split strategy such as the one used here won't possibly result in data leakage
@@ -169,6 +169,61 @@ class AgentFormerDataGeneratorForSDD:
         target_dict['obs_mask'] = obs_mask
         target_dict['valid_id'] = valid_id
 
+    @staticmethod
+    def compute_agent_trajs_and_extract_ids(extracted_data: dict, scene_map: GeometricMap):
+        # compute all agent trajectories (by transforming to map coords) and extract agent ids
+        trajs = scene_map.to_map_points(
+            scene_pts=np.stack(
+                [agent.get_traj_section(extracted_data['full_window'])
+                 for agent in extracted_data['agents']]
+            )
+        )       # [N, T, 2]
+        ids = np.stack([agent.id for agent in extracted_data['agents']])        # [N]
+        return trajs, ids
+
+    def traj_processing_without_occlusion(self, extracted_data: dict, scene_map: GeometricMap):
+        trajs, ids = self.compute_agent_trajs_and_extract_ids(extracted_data=extracted_data, scene_map=scene_map)
+
+        full_window_occlusion_masks = np.tile(
+            np.concatenate(
+                (np.full_like(extracted_data['past_window'], True),
+                 np.full_like(extracted_data['future_window'], False))
+            ), (len(ids), 1)
+        ).astype(bool)              # [N, T]
+
+        return trajs, ids, full_window_occlusion_masks, None, None, None
+
+    def traj_processing_with_occlusion(self, extracted_data: dict, scene_map: GeometricMap):
+        trajs, ids = self.compute_agent_trajs_and_extract_ids(extracted_data=extracted_data, scene_map=scene_map)
+
+        # compute ego and occluder positions (transforming to map coords)
+        ego = scene_map.to_map_points(scene_pts=extracted_data['ego_point'])
+        occluders = []
+        for occluder in extracted_data['occluders']:
+            p1 = scene_map.to_map_points(scene_pts=occluder[0])
+            p2 = scene_map.to_map_points(scene_pts=occluder[1])
+            occluders.append((p1, p2))
+
+        # compute visibility polygon
+        scene_boundary = poly_gen.default_rectangle(corner_coords=(reversed(scene_map.get_map_dimensions())))
+        ego_visipoly = visibility.compute_visibility_polygon(
+            ego_point=ego,
+            occluders=occluders,
+            boundary=scene_boundary
+        )
+
+        # obtain observation_mask
+        full_window_occlusion_masks = visibility.occlusion_mask(
+            points=trajs.reshape(-1, trajs.shape[-1]),
+            ego_visipoly=ego_visipoly
+        ).reshape(trajs.shape[:-1])     # [N, T]
+        full_window_occlusion_masks[..., len(extracted_data['past_window']):] = False
+
+        # check for all agents that they have at least 2 observations available for the model to process
+        keep = (np.sum(full_window_occlusion_masks, axis=1) >= 2)        # [N]
+
+        return trajs[keep], ids[keep], full_window_occlusion_masks[keep], ego, occluders, ego_visipoly
+
     def convert_to_preprocessor_data(self, extracted_data: dict) -> dict:
         # [print(f"{k}: {type(v)}") for k, v in extracted_data.items()]
 
@@ -199,66 +254,38 @@ class AgentFormerDataGeneratorForSDD:
             data['theta'] = 0.0
         scene_map.rotate_around_center(data['theta'])
 
-        # extract all agent trajectories
-        all_trajs = scene_map.to_map_points(
-            scene_pts=np.stack([agent.get_traj_section(extracted_data['full_window']) for agent in extracted_data['agents']])
-        )       # [N, T, 2]
-        ego = scene_map.to_map_points(scene_pts=extracted_data['ego_point'])
-        occluders = []
-        for occluder in extracted_data['occluders']:
-            p1 = scene_map.to_map_points(scene_pts=occluder[0])
-            p2 = scene_map.to_map_points(scene_pts=occluder[1])
-            occluders.append((p1, p2))
-        all_ids = np.stack([agent.id for agent in extracted_data['agents']])
-
-        # print(f"{ego=}")
-        # print(f"{occluders=}")
-
-        # compute visibility polygon
-        scene_boundary = poly_gen.default_rectangle(corner_coords=(reversed(scene_map.get_map_dimensions())))
-        ego_visipoly = visibility.compute_visibility_polygon(
-            ego_point=ego,
-            occluders=occluders,
-            boundary=scene_boundary
+        trajs, ids, obs_mask, ego, occluders, ego_visipoly = self.traj_processing(
+            extracted_data=extracted_data,
+            scene_map=scene_map
         )
 
-        # obtain observation_mask
-        full_window_occlusion_masks = visibility.occlusion_mask(
-            points=all_trajs.reshape(-1, all_trajs.shape[-1]),
-            ego_visipoly=ego_visipoly
-        ).reshape(all_trajs.shape[:-1])     # [N, T]
-        full_window_occlusion_masks[..., len(extracted_data['past_window']):] = False
-        sufficiently_observed = (np.sum(full_window_occlusion_masks, axis=1) >= 2)        # [N]
+        # plotting for example:
+        fig, axes = plt.subplots(1, 2)
+        visualize.visualize_training_instance(
+            draw_ax=axes[0], instance_dict=extracted_data
+        )
 
-        all_trajs = all_trajs[sufficiently_observed]
-        all_ids = all_ids[sufficiently_observed]
-        full_window_occlusion_masks = full_window_occlusion_masks[sufficiently_observed]
+        axes[1].set_xlim(0., scene_map.get_map_dimensions()[0])
+        axes[1].set_ylim(scene_map.get_map_dimensions()[1], 0.)
+        axes[1].imshow(scene_map.as_image())
 
-        # # plotting for example:
-        # fig, axes = plt.subplots(1, 2)
-        # visualize.visualize_training_instance(
-        #     draw_ax=axes[0], instance_dict=extracted_data
-        # )
-        #
-        # axes[1].set_xlim(0., scene_map.get_map_dimensions()[0])
-        # axes[1].set_ylim(scene_map.get_map_dimensions()[1], 0.)
-        # axes[1].imshow(scene_map.as_image())
-        #
-        # for traj, occl_mask in zip(all_trajs, full_window_occlusion_masks):
-        #     occluded = traj[~occl_mask]
-        #     axes[1].scatter(occluded[..., 0], occluded[..., 1], marker='x', s=30, c='black')
-        #     axes[1].plot(traj[..., 0], traj[..., 1])
-        # for occluder in occluders:
-        #     axes[1].plot([occluder[0][0], occluder[1][0]], [occluder[0][1], occluder[1][1]], c='black')
-        # axes[1].scatter(ego[0], ego[1], marker='D', c='yellow', s=30)
-        # occluded_regions = sg.PolygonSet(scene_boundary).difference(ego_visipoly)
-        # [plot_sg_polygon(ax=axes[1], poly=poly, edgecolor="red", facecolor="red", alpha=0.2)
-        #  for poly in occluded_regions.polygons]
-        # plt.show()
+        for traj, mask in zip(trajs, obs_mask):
+            occluded = traj[~mask]
+            axes[1].scatter(occluded[..., 0], occluded[..., 1], marker='x', s=30, c='black')
+            axes[1].plot(traj[..., 0], traj[..., 1])
+        if ego is not None and occluders is not None and ego_visipoly is not None:
+            for occluder in occluders:
+                axes[1].plot([occluder[0][0], occluder[1][0]], [occluder[0][1], occluder[1][1]], c='black')
+            axes[1].scatter(ego[0], ego[1], marker='D', c='yellow', s=30)
+            scene_boundary = poly_gen.default_rectangle(corner_coords=(reversed(scene_map.get_map_dimensions())))
+            occluded_regions = sg.PolygonSet(scene_boundary).difference(ego_visipoly)
+            [plot_sg_polygon(ax=axes[1], poly=poly, edgecolor="red", facecolor="red", alpha=0.2)
+             for poly in occluded_regions.polygons]
+        plt.show()
 
-        data['full_motion_3D'] = torch.from_numpy(all_trajs)
-        data['obs_mask'] = torch.from_numpy(full_window_occlusion_masks)
-        data['valid_id'] = torch.from_numpy(all_ids)
+        data['full_motion_3D'] = torch.from_numpy(trajs)
+        data['valid_id'] = torch.from_numpy(ids)
+        data['obs_mask'] = torch.from_numpy(obs_mask)
         data['timesteps'] = torch.from_numpy(
             np.arange(len(extracted_data["full_window"])) - len(extracted_data["past_window"]) + 1
         )
