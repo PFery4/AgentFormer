@@ -772,16 +772,16 @@ class AgentFormer(nn.Module):
             scene_orig = last_observed_pos.mean(dim=0).contiguous()               # [2]
         self.data['scene_orig'] = scene_orig.to(self.device)
 
-        # perform random rotation
-        if self.rand_rot_scene and self.training:
-            if self.discrete_rot:
-                raise NotImplementedError
-            else:
-                theta = torch.rand(1).to(self.device) * np.pi * 2
-                full_motion, full_motion_scene_norm = rotation_2d_torch(full_motion, theta, scene_orig)
-        else:
-            theta = torch.zeros(1).to(self.device)
-            full_motion_scene_norm = full_motion - scene_orig
+        # # perform random rotation
+        # if self.rand_rot_scene and self.training:
+        #     if self.discrete_rot:
+        #         raise NotImplementedError
+        #     else:
+        #         theta = torch.rand(1).to(self.device) * np.pi * 2
+        #         full_motion, full_motion_scene_norm = rotation_2d_torch(full_motion, theta, scene_orig)
+        # else:
+        theta = torch.zeros(1).to(self.device)
+        full_motion_scene_norm = full_motion - scene_orig
 
         # print(f"{torch.max(torch.linalg.norm(full_motion_scene_norm, dim=-1))=}")
 
