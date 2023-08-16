@@ -3,6 +3,7 @@ import random
 from io import TextIOWrapper
 
 import matplotlib.pyplot as plt
+from matplotlib.path import Path
 import torch
 import sys
 import numpy as np
@@ -109,7 +110,7 @@ class AgentFormerDataGeneratorForSDD:
             ), (len(ids), 1)
         ).astype(bool)              # [N, T]
 
-        return trajs, ids, full_window_occlusion_masks, None, None, None
+        return trajs, ids, full_window_occlusion_masks, None, None, None, None
 
     def traj_processing_with_occlusion(self, extracted_data: dict, scene_map: GeometricMap):
         trajs, ids = self.compute_agent_trajs_and_extract_ids(extracted_data=extracted_data, scene_map=scene_map)
@@ -140,7 +141,16 @@ class AgentFormerDataGeneratorForSDD:
         # check for all agents that they have at least 2 observations available for the model to process
         keep = (np.sum(full_window_occlusion_masks, axis=1) >= 2)        # [N]
 
-        return trajs[keep], ids[keep], full_window_occlusion_masks[keep], ego, occluders, ego_visipoly
+        # compute occlusion map
+        map_dims = scene_map.get_map_dimensions()
+        occ_x = np.arange(map_dims[0])
+        occ_y = np.arange(map_dims[1])
+        xy = np.dstack((np.meshgrid(occ_x, occ_y))).reshape((-1, 2))
+        mpath = Path(ego_visipoly.coords)
+        occlusion_map = mpath.contains_points(xy).reshape(*reversed(map_dims))
+        occlusion_map[0, ...] = occlusion_map[1, ...]       # lazy fix: some bug makes the first row all False
+
+        return trajs[keep], ids[keep], full_window_occlusion_masks[keep], ego, occluders, ego_visipoly, occlusion_map
 
     def convert_to_preprocessor_data(self, extracted_data: dict) -> dict:
         # [print(f"{k}: {type(v)}") for k, v in extracted_data.items()]
@@ -172,13 +182,13 @@ class AgentFormerDataGeneratorForSDD:
             data['theta'] = 0.0
         scene_map.rotate_around_center(data['theta'])
 
-        trajs, ids, obs_mask, ego, occluders, ego_visipoly = self.traj_processing(
+        trajs, ids, obs_mask, ego, occluders, ego_visipoly, occlusion_map = self.traj_processing(
             extracted_data=extracted_data,
             scene_map=scene_map
         )
 
         # plotting for example:
-        fig, axes = plt.subplots(1, 2)
+        fig, axes = plt.subplots(1, 3)
         visualize.visualize_training_instance(
             draw_ax=axes[0], instance_dict=extracted_data
         )
@@ -199,11 +209,17 @@ class AgentFormerDataGeneratorForSDD:
             occluded_regions = sg.PolygonSet(scene_boundary).difference(ego_visipoly)
             [plot_sg_polygon(ax=axes[1], poly=poly, edgecolor='red', facecolor='red', alpha=0.2)
              for poly in occluded_regions.polygons]
+        
+        axes[2].imshow(occlusion_map)
         plt.show()
 
         data['full_motion_3D'] = torch.from_numpy(trajs)
         data['valid_id'] = torch.from_numpy(ids)
         data['obs_mask'] = torch.from_numpy(obs_mask)
+        data['ego'] = torch.from_numpy(ego)
+        data['occluders'] = torch.from_numpy(np.stack(occluders))       # [n_occluders, 2, 2]
+        data['ego_visipoly'] = ego_visipoly                             # sg.Polygon
+        data['occlusion_map'] = torch.from_numpy(occlusion_map)         # [H, W]
         data['timesteps'] = torch.from_numpy(
             np.arange(len(extracted_data['full_window'])) - len(extracted_data['past_window']) + 1
         )
