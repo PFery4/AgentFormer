@@ -736,24 +736,19 @@ class AgentFormer(nn.Module):
             in_data = data
 
         self.data = defaultdict(lambda: None)
-        self.data['valid_id'] = torch.tensor(in_data['valid_id']).to(self.device).to(int)               # [N]
-        self.data['T_total'] = len(in_data['timesteps'])                                                # int: T_total
-        self.data['batch_size'] = len(self.data['valid_id'])                                            # int: N
-        self.data['agent_num'] = len(self.data['valid_id'])                                             # int: N
-        self.data['timesteps'] = in_data['timesteps'].detach().clone().to(self.device)                  # [T_total]
-        full_motion = torch.stack(
-            in_data['full_motion_3D'], dim=0
-        ).to(self.device).transpose(0, 1).contiguous()                              # [T_total, N, 2]
+        self.data['valid_id'] = in_data['valid_id'].detach().clone().to(self.device).to(int)    # [N]
+        self.data['T_total'] = len(in_data['timesteps'])                                        # int: T_total
+        self.data['batch_size'] = len(self.data['valid_id'])                                    # int: N
+        self.data['agent_num'] = len(self.data['valid_id'])                                     # int: N
+        self.data['timesteps'] = in_data['timesteps'].detach().clone().to(self.device)          # [T_total]
+        full_motion = in_data['full_motion_3D'].\
+            to(self.device).to(dtype=torch.float32).transpose(0, 1).contiguous()                # [T_total, N, 2]
 
-        # scaling the coordinate positions by some factor
-        full_motion = full_motion * 0.01
-
-        obs_mask = torch.stack(
-            in_data['obs_mask'], dim=0
-        ).to(self.device).to(dtype=torch.bool).transpose(0, 1).contiguous()         # [T_total, N]
+        obs_mask = in_data['obs_mask'].\
+            to(self.device).to(dtype=torch.bool).transpose(0, 1).contiguous()                   # [T_total, N]
         last_observed_timestep_indices = torch.stack(
             [mask.nonzero().flatten()[-1] for mask in in_data['obs_mask']]
-        ).to(self.device)                                                           # [N]
+        ).to(self.device)                                                                       # [N]
         last_observed_pos = full_motion[last_observed_timestep_indices, torch.arange(full_motion.size(1))]  # [N, 2]
         timesteps_to_predict = torch.stack(
             [torch.cat(
