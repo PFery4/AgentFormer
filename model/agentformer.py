@@ -726,6 +726,7 @@ class AgentFormer(nn.Module):
         self.to(device)
 
     def set_data(self, data: dict) -> None:
+        # todo: remove in_data alltogether
         if self.training and len(data['full_motion_3D']) > self.max_train_agent:
             in_data = {}
             ind = np.random.choice(len(data['full_motion_3D']), self.max_train_agent, replace=False).tolist()
