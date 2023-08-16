@@ -36,10 +36,10 @@ class AgentFormerDataGeneratorForSDD:
         self.split = split
         assert phase in ['training', 'testing'], 'error'
         assert split in ['train', 'val', 'test'], 'error'
-        assert parser.dataset == "sdd", f"error: wrong dataset name: {parser.dataset} (should be \"sdd\")"
+        assert parser.dataset == 'sdd', f"error: wrong dataset name: {parser.dataset} (should be \"sdd\")"
 
         self.sdd_config = sdd_extract.get_config(parser.sdd_config_file_name)
-        if not parser.get("sdd_occlusion_data", False):
+        if not parser.get('sdd_occlusion_data', False):
             full_dataset = StanfordDroneDataset(self.sdd_config)
             self.traj_processing = self.traj_processing_without_occlusion
         else:
@@ -197,7 +197,7 @@ class AgentFormerDataGeneratorForSDD:
             axes[1].scatter(ego[0], ego[1], marker='D', c='yellow', s=30)
             scene_boundary = poly_gen.default_rectangle(corner_coords=(reversed(scene_map.get_map_dimensions())))
             occluded_regions = sg.PolygonSet(scene_boundary).difference(ego_visipoly)
-            [plot_sg_polygon(ax=axes[1], poly=poly, edgecolor="red", facecolor="red", alpha=0.2)
+            [plot_sg_polygon(ax=axes[1], poly=poly, edgecolor='red', facecolor='red', alpha=0.2)
              for poly in occluded_regions.polygons]
         plt.show()
 
@@ -205,14 +205,14 @@ class AgentFormerDataGeneratorForSDD:
         data['valid_id'] = torch.from_numpy(ids)
         data['obs_mask'] = torch.from_numpy(obs_mask)
         data['timesteps'] = torch.from_numpy(
-            np.arange(len(extracted_data["full_window"])) - len(extracted_data["past_window"]) + 1
+            np.arange(len(extracted_data['full_window'])) - len(extracted_data['past_window']) + 1
         )
         data['heading'] = heading
         data['traj_scale'] = self.traj_scale
         data['pred_mask'] = pred_mask
         data['scene_map'] = scene_map
-        data['seq'] = extracted_data["scene"] + "_" + extracted_data["video"]
-        data['frame'] = extracted_data["timestep"]
+        data['seq'] = extracted_data['scene'] + '_' + extracted_data['video']
+        data['frame'] = extracted_data['timestep']
 
         return data
 
@@ -231,19 +231,19 @@ if __name__ == '__main__':
     print(sdd_extract.REPO_ROOT)
 
     n_calls = 1
-    # config_str = "sdd_agentformer_pre"
-    config_str = "sdd_occlusion_agentformer_pre"
+    # config_str = 'sdd_agentformer_pre'
+    config_str = 'sdd_occlusion_agentformer_pre'
 
     ####################################################################################################################
     config = Config(config_str)
-    log = open(os.path.join(config.log_dir, "log.txt"), "a+")
+    log = open(os.path.join(config.log_dir, 'log.txt'), "a+")
     time_str = get_timestring()
     print_log("time str: {}".format(time_str), log)
     print_log("python version : {}".format(sys.version.replace('\n', ' ')), log)
     print_log("torch version : {}".format(torch.__version__), log)
     print_log("cudnn version : {}".format(torch.backends.cudnn.version()), log)
 
-    generator = AgentFormerDataGeneratorForSDD(config, log, split="train")
+    generator = AgentFormerDataGeneratorForSDD(config, log, split='train')
 
     print(f"{generator.rand_rot_scene=}")
 
