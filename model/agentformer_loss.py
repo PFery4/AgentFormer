@@ -37,7 +37,7 @@ def compute_motion_mse(
 
     loss_unweighted = diff.pow(2).sum()
     if cfg.get('normalize', True):
-        loss_unweighted /= data['agent_num']    # Should we not normalize by number of predicted timesteps instead?
+        loss_unweighted /= data['fut_sequence'].shape[0]        # normalize wrt prediction sequence length
     loss = loss_unweighted * cfg['weight']
     return loss, loss_unweighted
 
