@@ -36,11 +36,11 @@ def train(epoch):
     train_loss_meter['total_loss'] = AverageMeter()
     last_generator_index = 0
 
-    # WIP CODE FOR EXPLORATION
-    cnt = 0
-    cnt_stop = 1000
-    loss_vals = []
-    # WIP CODE FOR EXPLORATION
+    # # WIP CODE FOR EXPLORATION
+    # cnt = 0
+    # cnt_stop = 1000
+    # loss_vals = []
+    # # WIP CODE FOR EXPLORATION
     while not generator.is_epoch_end():
         data = generator()
         # # WIP CODE
@@ -80,7 +80,10 @@ def train(epoch):
 
             model_data = model()
             total_loss, loss_dict, loss_unweighted_dict = model.compute_loss()
-            loss_vals.append(float(total_loss))
+
+            # WIPCODE
+            # loss_vals.append(float(total_loss))
+            # WIPCODE
 
             # print("AFTER:")
             # print(f"{model.data['batch_size']=}")
@@ -97,7 +100,7 @@ def train(epoch):
             for key in loss_unweighted_dict.keys():
                 train_loss_meter[key].update(loss_unweighted_dict[key])
 
-        if generator.index - last_generator_index > cfg.print_freq:
+        if generator.index - last_generator_index >= cfg.print_freq:
             ep = time.time() - since_train
             losses_str = ' '.join([f'{x}: {y.avg:.3f} ({y.val:.3f})' for x, y in train_loss_meter.items()])
             logging(args.cfg, epoch, cfg.num_epochs, generator.index, generator.num_total_samples, ep, seq, frame, losses_str, log)
@@ -106,18 +109,18 @@ def train(epoch):
             tb_ind += 1
             last_generator_index = generator.index
 
-        # WIP CODE FOR EXPLORATION
-        if cnt == cnt_stop:
-            total_time = time.time()
-            print(f"time since beginning: {total_time - since_train} s")
-            print(f"# instances trained on: {cnt}")
-            print(f"{loss_vals=}")
-            fig, ax = plt.subplots()
-            ax.plot(range(len(loss_vals)), loss_vals)
-            plt.show()
-            print(zblu)
-        cnt += 1
-        # WIP CODE FOR EXPLORATION
+        # # WIP CODE FOR EXPLORATION
+        # if cnt == cnt_stop:
+        #     total_time = time.time()
+        #     print(f"time since beginning: {total_time - since_train} s")
+        #     print(f"# instances trained on: {cnt}")
+        #     print(f"{loss_vals=}")
+        #     fig, ax = plt.subplots()
+        #     ax.plot(range(len(loss_vals)), loss_vals)
+        #     plt.show()
+        #     print(zblu)
+        # cnt += 1
+        # # WIP CODE FOR EXPLORATION
 
     scheduler.step()
     model.step_annealer()
@@ -159,6 +162,7 @@ if __name__ == '__main__':
     print_log("torch version : {}".format(torch.__version__), log)
     print_log("cudnn version : {}".format(torch.backends.cudnn.version()), log)
     tb_logger = SummaryWriter(cfg.tb_dir)
+    print(f"{cfg.tb_dir=}")
     tb_ind = 0
 
     """ data """
