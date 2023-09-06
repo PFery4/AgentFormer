@@ -10,3 +10,6 @@ results
 
 # ignoring the preprocessed nuscenes dataset
 datasets/nuscenes_pred
+
+# ignoring the compressed zip file of agentformer_models
+agentformer_models.zip
