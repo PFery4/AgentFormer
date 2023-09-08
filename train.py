@@ -3,7 +3,6 @@ import sys
 import argparse
 import time
 
-import matplotlib.pyplot as plt
 import torch
 from torch import optim
 from torch.utils.tensorboard import SummaryWriter
@@ -36,60 +35,15 @@ def train(epoch):
     train_loss_meter['total_loss'] = AverageMeter()
     last_generator_index = 0
 
-    # # WIP CODE FOR EXPLORATION
-    # cnt = 0
-    # cnt_stop = 1000
-    # loss_vals = []
-    # # WIP CODE FOR EXPLORATION
     while not generator.is_epoch_end():
         data = generator()
-        # # WIP CODE
-        # if cnt != cnt_stop:
-        #     cnt += 1
-        #     continue
-        # # WIP CODE
         if data is not None:
-            # print()
-            # [print(f"{k}: {type(v)}") for k, v in data.items()]
-            # print(f"{len(data['pre_motion_3D'])=}")
-            # print(f"{data['pre_motion_3D'][0]=}")
-            # print(f"{data['fut_motion_3D'][0]=}")
-            # print(f"{data['pre_motion_mask'][0]=}")
-            # print(f"{data['fut_motion_mask'][0]=}")
-            # print(f"{data['heading']=}")
-            # print(f"{data['valid_id'][0]=}")
-            # print(f"{data['traj_scale']=}")
-            # print(f"{data['pred_mask']=}")
-            # print(f"{data['scene_map'].data.shape=}")
-            # print(f"{data['scene_map'].data=}")
-            # print(f"{data['seq']=}")
-            # print(f"{data['frame']=}")
-            # print()
 
             seq, frame = data['seq'], data['frame']
             model.set_data(data)
 
-            # print("#" * 120)
-            # print("BEFORE:")
-            # print(f"{model.data['batch_size']=}")
-            # print(f"{model.data['agent_num']=}")
-            # [print(f"{k}: {type(v)}" + (f": {v.shape}" if isinstance(v, torch.Tensor) else "")) for k, v in model.data.items()]
-            # print()
-
-            # model.visualize_data_dict()
-
             model_data = model()
             total_loss, loss_dict, loss_unweighted_dict = model.compute_loss()
-
-            # WIPCODE
-            # loss_vals.append(float(total_loss))
-            # WIPCODE
-
-            # print("AFTER:")
-            # print(f"{model.data['batch_size']=}")
-            # print(f"{model.data['agent_num']=}")
-            # [print(f"{k}: {type(v)}" + (f": {v.shape}" if isinstance(v, torch.Tensor) else "")) for k, v in model.data.items()]
-            # print()
 
             """ optimize """
             optimizer.zero_grad()
@@ -108,19 +62,6 @@ def train(epoch):
                 tb_logger.add_scalar('model_' + name, meter.avg, tb_ind)
             tb_ind += 1
             last_generator_index = generator.index
-
-        # # WIP CODE FOR EXPLORATION
-        # if cnt == cnt_stop:
-        #     total_time = time.time()
-        #     print(f"time since beginning: {total_time - since_train} s")
-        #     print(f"# instances trained on: {cnt}")
-        #     print(f"{loss_vals=}")
-        #     fig, ax = plt.subplots()
-        #     ax.plot(range(len(loss_vals)), loss_vals)
-        #     plt.show()
-        #     print(zblu)
-        # cnt += 1
-        # # WIP CODE FOR EXPLORATION
 
     scheduler.step()
     model.step_annealer()
