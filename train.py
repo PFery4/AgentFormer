@@ -53,6 +53,8 @@ def train(epoch):
             train_loss_meter['total_loss'].update(total_loss.item())
             for key in loss_unweighted_dict.keys():
                 train_loss_meter[key].update(loss_unweighted_dict[key])
+        # else:     # I believe it makes more sense to continue here
+        #     continue
 
         if generator.index - last_generator_index >= cfg.print_freq:
             ep = time.time() - since_train
