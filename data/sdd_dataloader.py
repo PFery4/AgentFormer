@@ -15,11 +15,11 @@ from utils.utils import print_log, get_timestring
 
 # imports from https://github.com/PFery4/occlusion-prediction
 from src.data.sdd_dataloader import StanfordDroneDataset, StanfordDroneDatasetWithOcclusionSim
-from src.visualization.plot_utils import plot_sg_polygon
-import src.visualization.sdd_visualize as visualize
+# from src.visualization.plot_utils import plot_sg_polygon
+# import src.visualization.sdd_visualize as visualize
 import src.occlusion_simulation.visibility as visibility
 import src.occlusion_simulation.polygon_generation as poly_gen
-import src.data.sdd_extract as sdd_extract
+import src.data.config as sdd_conf
 
 
 class AgentFormerDataGeneratorForSDD:
@@ -40,7 +40,7 @@ class AgentFormerDataGeneratorForSDD:
         assert split in ['train', 'val', 'test'], 'error'
         assert parser.dataset == 'sdd', f"error: wrong dataset name: {parser.dataset} (should be \"sdd\")"
 
-        self.sdd_config = sdd_extract.get_config(parser.sdd_config_file_name)
+        self.sdd_config = sdd_conf.get_config(parser.sdd_config_file_name)
         if not parser.get('sdd_occlusion_data', False):
             full_dataset = StanfordDroneDataset(self.sdd_config)
             self.traj_processing = self.traj_processing_without_occlusion
@@ -252,7 +252,7 @@ class AgentFormerDataGeneratorForSDD:
 
 
 if __name__ == '__main__':
-    print(sdd_extract.REPO_ROOT)
+    print(sdd_conf.REPO_ROOT)
 
     n_calls = 1
     # config_str = 'sdd_agentformer_pre'
