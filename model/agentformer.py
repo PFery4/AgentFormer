@@ -858,10 +858,109 @@ class AgentFormer(nn.Module):
             mask = torch.zeros([cur_motion.shape[0], cur_motion.shape[0]]).to(self.device)
         self.data['agent_mask'] = mask          # [N, N]
 
+        self.visualize_data_dict()
+        print(zblu)
+
     def visualize_data_dict(self):
         [print(f"{k}: {type(v)}") for k, v in self.data.items()]
-        fig, ax = plt.subplots()
-        print(zbluo)
+        print()
+
+        # High level metadata
+        print(f"{self.data['T_total']=}")
+        print(f"{self.data['batch_size']=}")
+        print(f"{self.data['agent_num']=}")
+        print()
+
+        # Multi-Agent sequence relevant data
+        print(f"{self.data['timesteps']=}")
+        print(f"{self.data['valid_id']=}")
+        print()
+
+        # Geometric data
+        print(f"{self.data['scene_orig']=}")
+
+        # Trajectory data
+        # print(f"{self.data['pre_sequence']=}")
+        # print(f"{self.data['pre_sequence_scene_norm']=}")
+        # print(f"{self.data['pre_agents']=}")
+        # print(f"{self.data['pre_timesteps']=}")
+        # print(f"{self.data['pre_vel_seq']=}")
+        # print()
+        # print(f"{self.data['fut_sequence']=}")
+        # print(f"{self.data['fut_sequence_scene_norm']=}")
+        # print(f"{self.data['fut_agents']=}")
+        # print(f"{self.data['fut_timesteps']=}")
+        # print(f"{self.data['fut_vel_seq']=}")
+        # print()
+
+        # extra Traj relevant data
+        print(f"{self.data['last_observed_timesteps']=}")
+        print(f"{self.data['cur_motion']=}")
+        print(f"{self.data['cur_motion_scene_norm']=}")
+        print(f"{self.data['agent_mask']=}")
+
+        fig, axes = plt.subplots(1, 2, subplot_kw=dict(projection='3d'))
+
+        scene_orig = self.data['scene_orig'].detach().cpu().numpy()
+        axes[0].scatter(scene_orig[0], scene_orig[1], 0.0, marker='D', s=30, c='red', label='scene_orig')
+
+        valid_ids = self.data['valid_id'].detach().cpu().numpy()
+
+        pre_timesteps = self.data['pre_timesteps'].detach().cpu().numpy()
+        pre_agents = self.data['pre_agents'].detach().cpu().numpy()
+        pre_seq = self.data['pre_sequence'].detach().cpu().numpy()
+        pre_seq_scene_norm = self.data['pre_sequence_scene_norm'].detach().cpu().numpy()
+
+        fut_timesteps = self.data['fut_timesteps'].detach().cpu().numpy()
+        fut_agents = self.data['fut_agents'].detach().cpu().numpy()
+        fut_seq = self.data['fut_sequence'].detach().cpu().numpy()
+        fut_seq_scene_norm = self.data['fut_sequence_scene_norm'].detach().cpu().numpy()
+
+        cmap = plt.cm.get_cmap('hsv', len(valid_ids))
+
+        for i, agent in enumerate(valid_ids):
+            pre_mask = (pre_agents == agent)
+            ag_pre_seq = pre_seq[pre_mask]
+            ag_pre_seq_scene_norm = pre_seq_scene_norm[pre_mask]
+            ag_pre_timesteps = pre_timesteps[pre_mask]
+            fut_mask = (fut_agents == agent)
+            ag_fut_seq = fut_seq[fut_mask]
+            ag_fut_seq_scene_norm = fut_seq_scene_norm[fut_mask]
+            ag_fut_timesteps = fut_timesteps[fut_mask]
+
+            marker_line, stem_lines, base_line = axes[0].stem(
+                ag_pre_seq[..., 0], ag_pre_seq[..., 1], ag_pre_timesteps,
+                linefmt='grey'
+            )
+            marker_line.set(markeredgecolor=cmap(i), markerfacecolor=cmap(i), alpha=0.7, markersize=5, marker='X')
+            stem_lines.set(alpha=0.0)
+            base_line.set(alpha=0.6, c=cmap(i))
+
+            marker_line, stem_lines, base_line = axes[0].stem(
+                ag_fut_seq[..., 0], ag_fut_seq[..., 1], ag_fut_timesteps,
+                linefmt='grey'
+            )
+            marker_line.set(markeredgecolor=cmap(i), markerfacecolor=cmap(i), alpha=0.7, markersize=5)
+            stem_lines.set(alpha=0.0)
+            base_line.set(alpha=0.5, c=cmap(i))
+
+            marker_line, stem_lines, base_line = axes[1].stem(
+                ag_pre_seq_scene_norm[..., 0], ag_pre_seq_scene_norm[..., 1], ag_pre_timesteps,
+                linefmt='grey'
+            )
+            marker_line.set(markeredgecolor=cmap(i), markerfacecolor=cmap(i), alpha=0.7, markersize=5, marker='X')
+            stem_lines.set(alpha=0.0)
+            base_line.set(alpha=0.6, c=cmap(i))
+
+            marker_line, stem_lines, base_line = axes[1].stem(
+                ag_fut_seq_scene_norm[..., 0], ag_fut_seq_scene_norm[..., 1], ag_fut_timesteps,
+                linefmt='grey'
+            )
+            marker_line.set(markeredgecolor=cmap(i), markerfacecolor=cmap(i), alpha=0.7, markersize=5)
+            stem_lines.set(alpha=0.0)
+            base_line.set(alpha=0.5, c=cmap(i))
+
+        plt.show()
 
     def step_annealer(self):
         for anl in self.param_annealers:
