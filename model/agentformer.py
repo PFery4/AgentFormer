@@ -843,6 +843,9 @@ class AgentFormer(nn.Module):
         #         rot = -np.array(in_data['heading']) * (180 / np.pi)
         #     self.data['agent_maps'] = scene_map.get_cropped_maps(scene_points, patch_size, rot).to(self.device)      # [N, 3, 100, 100]
 
+        # global scene map
+        self.data['scene_map'] = data['scene_map']
+
         conn_dist = self.cfg.get('conn_dist', 100000.0)
         cur_motion = self.data['cur_motion'][0]
         if conn_dist < 1000.0:
@@ -858,8 +861,7 @@ class AgentFormer(nn.Module):
             mask = torch.zeros([cur_motion.shape[0], cur_motion.shape[0]]).to(self.device)
         self.data['agent_mask'] = mask          # [N, N]
 
-        self.visualize_data_dict()
-        print(zblu)
+        # self.visualize_data_dict()
 
     def visualize_data_dict(self):
         [print(f"{k}: {type(v)}") for k, v in self.data.items()]
@@ -878,6 +880,7 @@ class AgentFormer(nn.Module):
 
         # Geometric data
         print(f"{self.data['scene_orig']=}")
+        print(f"{self.data['scene_map']=}")
 
         # Trajectory data
         # print(f"{self.data['pre_sequence']=}")
@@ -899,10 +902,34 @@ class AgentFormer(nn.Module):
         print(f"{self.data['cur_motion_scene_norm']=}")
         print(f"{self.data['agent_mask']=}")
 
-        fig, axes = plt.subplots(1, 2, subplot_kw=dict(projection='3d'))
+        fig = plt.figure()
+        ax0 = fig.add_subplot(131, projection='3d')
+        ax1 = fig.add_subplot(132, projection='3d')
+        ax2 = fig.add_subplot(133)
+
+        # import matplotlib.pyplot as plt
+        # import cartopy.crs as ccrs
+        #
+        # ax1 = plt.subplot(311)
+        # ax2 = plt.subplot(312, projection='polar')
+        # ax3 = plt.subplot(313, projection=ccrs.PlateCarree())
+        #
+        # print(type(ax1))
+        # print(type(ax2))
+        # print(type(ax3))
+
+        scene_map = self.data['scene_map']
+
+        ax0.set_xlim(0., scene_map.get_map_dimensions()[0])
+        ax0.set_ylim(scene_map.get_map_dimensions()[1], 0.)
+        ax0.view_init(90, -90)
 
         scene_orig = self.data['scene_orig'].detach().cpu().numpy()
-        axes[0].scatter(scene_orig[0], scene_orig[1], 0.0, marker='D', s=30, c='red', label='scene_orig')
+        ax0.scatter(scene_orig[0], scene_orig[1], 0.0, marker='D', s=30, c='red', label='scene_orig')
+
+        ax1.set_xlim(0. - scene_orig[0], scene_map.get_map_dimensions()[0] - scene_orig[0])
+        ax1.set_ylim(scene_map.get_map_dimensions()[1] - scene_orig[1], 0. - scene_orig[1])
+        ax1.view_init(90, -90)
 
         valid_ids = self.data['valid_id'].detach().cpu().numpy()
 
@@ -928,7 +955,7 @@ class AgentFormer(nn.Module):
             ag_fut_seq_scene_norm = fut_seq_scene_norm[fut_mask]
             ag_fut_timesteps = fut_timesteps[fut_mask]
 
-            marker_line, stem_lines, base_line = axes[0].stem(
+            marker_line, stem_lines, base_line = ax0.stem(
                 ag_pre_seq[..., 0], ag_pre_seq[..., 1], ag_pre_timesteps,
                 linefmt='grey'
             )
@@ -936,7 +963,7 @@ class AgentFormer(nn.Module):
             stem_lines.set(alpha=0.0)
             base_line.set(alpha=0.6, c=cmap(i))
 
-            marker_line, stem_lines, base_line = axes[0].stem(
+            marker_line, stem_lines, base_line = ax0.stem(
                 ag_fut_seq[..., 0], ag_fut_seq[..., 1], ag_fut_timesteps,
                 linefmt='grey'
             )
@@ -944,7 +971,7 @@ class AgentFormer(nn.Module):
             stem_lines.set(alpha=0.0)
             base_line.set(alpha=0.5, c=cmap(i))
 
-            marker_line, stem_lines, base_line = axes[1].stem(
+            marker_line, stem_lines, base_line = ax1.stem(
                 ag_pre_seq_scene_norm[..., 0], ag_pre_seq_scene_norm[..., 1], ag_pre_timesteps,
                 linefmt='grey'
             )
@@ -952,13 +979,17 @@ class AgentFormer(nn.Module):
             stem_lines.set(alpha=0.0)
             base_line.set(alpha=0.6, c=cmap(i))
 
-            marker_line, stem_lines, base_line = axes[1].stem(
+            marker_line, stem_lines, base_line = ax1.stem(
                 ag_fut_seq_scene_norm[..., 0], ag_fut_seq_scene_norm[..., 1], ag_fut_timesteps,
                 linefmt='grey'
             )
             marker_line.set(markeredgecolor=cmap(i), markerfacecolor=cmap(i), alpha=0.7, markersize=5)
             stem_lines.set(alpha=0.0)
             base_line.set(alpha=0.5, c=cmap(i))
+
+        ax2.set_xlim(0., scene_map.get_map_dimensions()[0])
+        ax2.set_ylim(scene_map.get_map_dimensions()[1], 0.)
+        ax2.imshow(scene_map.as_image())
 
         plt.show()
 
