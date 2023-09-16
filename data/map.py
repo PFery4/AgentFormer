@@ -90,7 +90,7 @@ class GeometricMap(Map):
     def square_crop(self, crop_coords: np.array, h_scaling: float, resolution: int = 600):
 
         assert np.all(crop_coords >= 0)
-        assert np.all(crop_coords >= self.get_map_dimensions())
+        assert np.all(crop_coords[1] <= self.get_map_dimensions())
 
         min_x, min_y = np.round(crop_coords[0, ...].astype(int))
         side = np.round(np.mean(crop_coords[1] - crop_coords[0])).astype(int)
