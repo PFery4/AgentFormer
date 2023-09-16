@@ -13,6 +13,8 @@ from data.map import GeometricMap
 from utils.config import Config
 from utils.utils import print_log, get_timestring
 
+from typing import Tuple, List
+
 # imports from https://github.com/PFery4/occlusion-prediction
 from src.data.sdd_dataloader import StanfordDroneDataset, StanfordDroneDatasetWithOcclusionSim
 from src.visualization.plot_utils import plot_sg_polygon
@@ -101,8 +103,12 @@ class AgentFormerDataGeneratorForSDD:
         ids = np.stack([agent.id for agent in extracted_data['agents']])        # [N]
         return trajs, ids
 
-    def traj_processing_without_occlusion(self, extracted_data: dict, scene_map: GeometricMap):
-        trajs, ids = self.compute_agent_trajs_and_extract_ids(extracted_data=extracted_data, scene_map=scene_map)
+    def traj_processing_without_occlusion(
+            self, extracted_data: dict, scene_map: GeometricMap
+    ) -> Tuple[np.array, np.array, np.array, None, None, None, None]:
+        trajs, ids = self.compute_agent_trajs_and_extract_ids(
+            extracted_data=extracted_data, scene_map=scene_map
+        )                           # [N, T, 2] , [N]
 
         full_window_occlusion_masks = np.tile(
             np.concatenate(
@@ -113,9 +119,150 @@ class AgentFormerDataGeneratorForSDD:
 
         return trajs, ids, full_window_occlusion_masks, None, None, None, None
 
-    def traj_processing_with_occlusion(self, extracted_data: dict, scene_map: GeometricMap):
-        trajs, ids = self.compute_agent_trajs_and_extract_ids(extracted_data=extracted_data, scene_map=scene_map)
+    def traj_processing_with_occlusion(
+            self, extracted_data: dict, scene_map: GeometricMap
+    ) -> Tuple[np.array, np.array, np.array, np.array, List[np.array], sg.Polygon, np.array]:
+        pass
+    #
+    #     trajs, ids = self.compute_agent_trajs_and_extract_ids(extracted_data=extracted_data, scene_map=scene_map)
+    #
+    #     # compute ego and occluder positions (transforming to map coords)
+    #     ego = scene_map.to_map_points(scene_pts=extracted_data['ego_point'])
+    #     occluders = []
+    #     for occluder in extracted_data['occluders']:
+    #         p1 = scene_map.to_map_points(scene_pts=occluder[0])
+    #         p2 = scene_map.to_map_points(scene_pts=occluder[1])
+    #         occluders.append((p1, p2))
+    #     # ego = extracted_data['ego_point']
+    #     # occluders = extracted_data['occluders']
+    #
+    #     # compute visibility polygon
+    #     scene_boundary = poly_gen.default_rectangle(corner_coords=reversed(scene_map.get_map_dimensions()))
+    #     ego_visipoly = visibility.compute_visibility_polygon(
+    #         ego_point=ego,
+    #         occluders=occluders,
+    #         boundary=scene_boundary
+    #     )
+    #
+    #     # obtain observation_mask
+    #     full_window_occlusion_masks = visibility.occlusion_mask(
+    #         points=trajs.reshape(-1, trajs.shape[-1]),
+    #         ego_visipoly=ego_visipoly
+    #     ).reshape(trajs.shape[:-1])     # [N, T]
+    #     full_window_occlusion_masks[..., len(extracted_data['past_window']):] = False
+    #
+    #     # check for all agents that they have at least 2 observations available for the model to process
+    #     # other agents (those who are insufficiently observed) are discarded
+    #     keep = (np.sum(full_window_occlusion_masks, axis=1) >= 2)        # [N]
+    #     trajs, ids, full_window_occlusion_masks = trajs[keep], ids[keep], full_window_occlusion_masks[keep]
+    #
+    #     if ids.shape[0] > self.max_train_agent:     # todo: add 'self.training'
+    #         keep_indices = np.sort(np.random.choice(ids.shape[0], self.max_train_agent, replace=False))
+    #         trajs, ids, full_window_occlusion_masks = trajs[keep_indices], ids[keep_indices], full_window_occlusion_masks[keep_indices]
+    #
+    #     # performing all shifting / normalization only based on points we have observed
+    #     # (using all past points, even unobserved ones, would constitute data leakage)
+    #     points = trajs[full_window_occlusion_masks, :]      # [P, 2]
+    #
+    #     print(f"{points, points.shape=}")
+    #
+    #     # normalize
+    #     min = np.min(points, axis=0)
+    #     max = np.max(points, axis=0)
+    #
+    #     shift = (max + min)/2
+    #     scale = np.max((max - min)/2)
+    #
+    #     print(f"{shift, scale, 1/scale=}")
+    #     print(f"{scene_map.homography=}")
+    #
+    #     print(f"{points[0]=}")
+    #
+    #     trajs -= shift
+    #     points -= shift
+    #     scene_map.set_homography(np.eye(3))
+    #     scene_map.translation(shift)
+    #
+    #     # trajs /= scale
+    #     # points /= scale
+    #     #
+    #     # k = 2.0
+    #     #
+    #     # scene_map.get_square_crop(center=shift, extent=k*scale)
+    #
+    #     # box = np.array([[-1, -1],
+    #     #                 [-1, 1],
+    #     #                 [1, 1],
+    #     #                 [1, -1],
+    #     #                 [-1, -1]])
+    #
+    #     # compute occlusion map
+    #     map_dims = scene_map.get_map_dimensions()
+    #     occ_x = np.arange(map_dims[0])
+    #     occ_y = np.arange(map_dims[1])
+    #     xy = np.dstack((np.meshgrid(occ_x, occ_y))).reshape((-1, 2))
+    #     mpath = Path(ego_visipoly.coords)
+    #     occlusion_map = mpath.contains_points(xy).reshape(*reversed(map_dims))
+    #     occlusion_map[0, ...] = occlusion_map[1, ...]       # quick fix: some bug makes the first row all False (might need revision)
+    #
+    #     return trajs[keep], ids[keep], full_window_occlusion_masks[keep], ego, occluders, ego_visipoly, occlusion_map
 
+    def convert_to_preprocessor_data(self, extracted_data: dict) -> dict:
+
+        data = dict()
+
+        heading = None
+        # from the nuscenes implementation:
+        # pred mask is a numpy array, of shape (n_agents,), with values either 1 or 0
+        pred_mask = None
+
+        # PLOTTING FOR EXAMPLE #######################################################################################
+        fig, axes = plt.subplots(1, 7)
+        visualize.visualize_training_instance(
+            draw_ax=axes[0], instance_dict=extracted_data
+        )
+        # PLOTTING FOR EXAMPLE #######################################################################################
+
+        # perform the loading of the map
+        scene_map = GeometricMap(
+            data=np.transpose(extracted_data['scene_image'], (2, 1, 0)),
+            homography=np.eye(3)
+        )
+
+        # expand the map
+        scene_map.mirror_expand()
+
+        # rotate_the_map
+        if self.rand_rot_scene:
+            data['theta'] = float(np.random.rand() * 2 * np.pi)
+            data['theta'] = np.pi/4
+        else:
+            data['theta'] = 0.0
+        print(f"{data['theta'], data['theta']*180/np.pi=}")
+        scene_map.rotate_around_center(data['theta'])
+
+        ##############################################################################################################
+        # trajs, ids, obs_mask, ego, occluders, ego_visipoly, occlusion_map = self.traj_processing(
+        #     extracted_data=extracted_data,
+        #     scene_map=scene_map
+        # )
+        ##############################################################################################################
+
+        trajs = np.stack(
+            [agent.get_traj_section(extracted_data['full_window'])
+             for agent in extracted_data['agents']]
+        )       # [N, T, 2]
+        ids = np.stack([agent.id for agent in extracted_data['agents']])        # [N]
+
+        # PLOTTING FOR EXAMPLE #######################################################################################
+        axes[1].set_xlim(0., scene_map.get_map_dimensions()[0])
+        axes[1].set_ylim(scene_map.get_map_dimensions()[1], 0.)
+        axes[1].imshow(scene_map.as_image())
+        plot_trajs = scene_map.to_map_points(trajs)
+        axes[1].scatter(plot_trajs[..., 0], plot_trajs[..., 1], marker='x', s=20)
+        # PLOTTING FOR EXAMPLE #######################################################################################
+
+        trajs = scene_map.to_map_points(trajs)
         # compute ego and occluder positions (transforming to map coords)
         ego = scene_map.to_map_points(scene_pts=extracted_data['ego_point'])
         occluders = []
@@ -123,9 +270,10 @@ class AgentFormerDataGeneratorForSDD:
             p1 = scene_map.to_map_points(scene_pts=occluder[0])
             p2 = scene_map.to_map_points(scene_pts=occluder[1])
             occluders.append((p1, p2))
+        scene_map.set_homography(np.eye(3))
 
         # compute visibility polygon
-        scene_boundary = poly_gen.default_rectangle(corner_coords=(reversed(scene_map.get_map_dimensions())))
+        scene_boundary = poly_gen.default_rectangle(corner_coords=reversed(scene_map.get_map_dimensions()))
         ego_visipoly = visibility.compute_visibility_polygon(
             ego_point=ego,
             occluders=occluders,
@@ -136,94 +284,186 @@ class AgentFormerDataGeneratorForSDD:
         full_window_occlusion_masks = visibility.occlusion_mask(
             points=trajs.reshape(-1, trajs.shape[-1]),
             ego_visipoly=ego_visipoly
-        ).reshape(trajs.shape[:-1])     # [N, T]
+        ).reshape(trajs.shape[:-1])  # [N, T]
         full_window_occlusion_masks[..., len(extracted_data['past_window']):] = False
 
         # check for all agents that they have at least 2 observations available for the model to process
-        keep = (np.sum(full_window_occlusion_masks, axis=1) >= 2)        # [N]
+        # other agents (those who are insufficiently observed) are discarded
+        keep = (np.sum(full_window_occlusion_masks, axis=1) >= 2)  # [N]
+        trajs, ids, full_window_occlusion_masks = trajs[keep], ids[keep], full_window_occlusion_masks[keep]
+
+        if ids.shape[0] > self.max_train_agent:  # todo: add 'self.training'
+            keep_indices = np.sort(np.random.choice(ids.shape[0], self.max_train_agent, replace=False))
+            trajs, ids, full_window_occlusion_masks = trajs[keep_indices], ids[keep_indices], \
+                                                      full_window_occlusion_masks[keep_indices]
+
+        # PLOTTING FOR EXAMPLE #######################################################################################
+        ax_idx = 2
+        axes[ax_idx].set_xlim(0., scene_map.get_map_dimensions()[0])
+        axes[ax_idx].set_ylim(scene_map.get_map_dimensions()[1], 0.)
+        axes[ax_idx].imshow(scene_map.as_image())
+        plot_trajs = scene_map.to_map_points(trajs)
+        axes[ax_idx].scatter(plot_trajs[..., 0], plot_trajs[..., 1], marker='x', s=20)
+        plot_occl = []
+        for occluder in occluders:
+            p1 = scene_map.to_map_points(scene_pts=occluder[0])
+            p2 = scene_map.to_map_points(scene_pts=occluder[1])
+            plot_occl.append((p1, p2))
+            axes[ax_idx].plot([occluder[0][0], occluder[1][0]], [occluder[0][1], occluder[1][1]], c='black')
+        plot_ego = scene_map.to_map_points(ego)
+        axes[ax_idx].scatter(plot_ego[0], plot_ego[1], marker='D', c='yellow', s=30)
+        plot_ego_visipoly = ego_visipoly
+        plot_scene_boundary = poly_gen.default_rectangle(corner_coords=(reversed(scene_map.get_map_dimensions())))
+        plot_regions = sg.PolygonSet(plot_scene_boundary).difference(plot_ego_visipoly)
+        [plot_sg_polygon(ax=axes[ax_idx], poly=poly, edgecolor='red', facecolor='red', alpha=0.2)
+         for poly in plot_regions.polygons]
+        # PLOTTING FOR EXAMPLE #######################################################################################
+
+        # performing all shifting / normalization only based on points we have observed
+        # (using all past points, even unobserved ones, would constitute data leakage)
+        points = trajs[full_window_occlusion_masks, :]  # [P, 2]
+
+        # normalize
+        min = np.min(points, axis=0)
+        max = np.max(points, axis=0)
+
+        shift = (max + min) / 2
+
+        ego -= shift
+        trajs -= shift
+        points -= shift
+        ego_visipoly = sg.Polygon(ego_visipoly.coords - shift)
+        scene_map.translation(shift)
+
+        # PLOTTING FOR EXAMPLE #######################################################################################
+        ax_idx = 3
+        axes[ax_idx].set_xlim(0., scene_map.get_map_dimensions()[0])
+        axes[ax_idx].set_ylim(scene_map.get_map_dimensions()[1], 0.)
+        axes[ax_idx].imshow(scene_map.as_image())
+        plot_trajs = scene_map.to_map_points(trajs)
+        axes[ax_idx].scatter(plot_trajs[..., 0], plot_trajs[..., 1], marker='x', s=20)
+        plot_occl = []
+        for occluder in occluders:
+            p1 = scene_map.to_map_points(scene_pts=occluder[0])
+            p2 = scene_map.to_map_points(scene_pts=occluder[1])
+            plot_occl.append((p1, p2))
+            axes[ax_idx].plot([occluder[0][0], occluder[1][0]], [occluder[0][1], occluder[1][1]], c='black')
+        plot_ego = scene_map.to_map_points(ego)
+        axes[ax_idx].scatter(plot_ego[0], plot_ego[1], marker='D', c='yellow', s=30)
+        plot_ego_visipoly = sg.Polygon(scene_map.to_map_points(ego_visipoly.coords))
+        plot_scene_boundary = poly_gen.default_rectangle(corner_coords=(reversed(scene_map.get_map_dimensions())))
+        plot_regions = sg.PolygonSet(plot_scene_boundary).difference(plot_ego_visipoly)
+        [plot_sg_polygon(ax=axes[ax_idx], poly=poly, edgecolor='red', facecolor='red', alpha=0.2)
+         for poly in plot_regions.polygons]
+        # PLOTTING FOR EXAMPLE #######################################################################################
+
+        scale = np.max((max - min) / 2)
+        ego /= scale
+        trajs /= scale
+        points /= scale
+        ego_visipoly = sg.Polygon(ego_visipoly.coords / scale)
+        scene_map.scale(scaling=scale)
+        box_coords = np.array([[-1, -1], [1, 1]])
+        k = 2.0
+        crop_coords = scene_map.to_map_points(box_coords * k)
+
+        # PLOTTING FOR EXAMPLE #######################################################################################
+        ax_idx = 4
+        axes[ax_idx].set_xlim(0., scene_map.get_map_dimensions()[0])
+        axes[ax_idx].set_ylim(scene_map.get_map_dimensions()[1], 0.)
+        axes[ax_idx].imshow(scene_map.as_image())
+        plot_trajs = scene_map.to_map_points(trajs)
+        axes[ax_idx].scatter(plot_trajs[..., 0], plot_trajs[..., 1], marker='x', s=20)
+        plot_occl = []
+        for occluder in occluders:
+            p1 = scene_map.to_map_points(scene_pts=occluder[0])
+            p2 = scene_map.to_map_points(scene_pts=occluder[1])
+            plot_occl.append((p1, p2))
+            axes[ax_idx].plot([occluder[0][0], occluder[1][0]], [occluder[0][1], occluder[1][1]], c='black')
+        plot_ego = scene_map.to_map_points(ego)
+        axes[ax_idx].scatter(plot_ego[0], plot_ego[1], marker='D', c='yellow', s=30)
+        plot_ego_visipoly = sg.Polygon(scene_map.to_map_points(ego_visipoly.coords))
+        plot_scene_boundary = poly_gen.default_rectangle(corner_coords=(reversed(scene_map.get_map_dimensions())))
+        plot_regions = sg.PolygonSet(plot_scene_boundary).difference(plot_ego_visipoly)
+        [plot_sg_polygon(ax=axes[ax_idx], poly=poly, edgecolor='red', facecolor='red', alpha=0.2)
+         for poly in plot_regions.polygons]
+        plot_box = np.array([[box_coords[0, 0], box_coords[0, 1]],
+                             [box_coords[0, 0], box_coords[1, 1]],
+                             [box_coords[1, 0], box_coords[1, 1]],
+                             [box_coords[1, 0], box_coords[0, 1]],
+                             [box_coords[0, 0], box_coords[0, 1]]])
+        plot_box = scene_map.to_map_points(plot_box)
+        axes[ax_idx].plot(plot_box[..., 0], plot_box[..., 1], c='r')
+        crop_box = np.array([[crop_coords[0, 0], crop_coords[0, 1]],
+                             [crop_coords[0, 0], crop_coords[1, 1]],
+                             [crop_coords[1, 0], crop_coords[1, 1]],
+                             [crop_coords[1, 0], crop_coords[0, 1]],
+                             [crop_coords[0, 0], crop_coords[0, 1]]])
+        axes[ax_idx].plot(crop_box[..., 0], crop_box[..., 1], c='k')
+        # PLOTTING FOR EXAMPLE #######################################################################################
+
+        # cropping the scene_map
+
+        scene_map.square_crop(crop_coords=crop_coords, h_scaling=k)
+        crop_coords = scene_map.to_map_points(box_coords * k)
+
+        print(f"{ego_visipoly.coords=}")
+        print(f"{scene_map.to_map_points(ego_visipoly.coords)=}")
 
         # compute occlusion map
         map_dims = scene_map.get_map_dimensions()
         occ_x = np.arange(map_dims[0])
         occ_y = np.arange(map_dims[1])
         xy = np.dstack((np.meshgrid(occ_x, occ_y))).reshape((-1, 2))
-        mpath = Path(ego_visipoly.coords)
+        mpath = Path(scene_map.to_map_points(ego_visipoly.coords))
         occlusion_map = mpath.contains_points(xy).reshape(*reversed(map_dims))
-        occlusion_map[0, ...] = occlusion_map[1, ...]       # lazy fix: some bug makes the first row all False
 
-        return trajs[keep], ids[keep], full_window_occlusion_masks[keep], ego, occluders, ego_visipoly, occlusion_map
+        # PLOTTING FOR EXAMPLE #######################################################################################
+        ax_idx = 5
+        axes[ax_idx].set_xlim(0., scene_map.get_map_dimensions()[0])
+        axes[ax_idx].set_ylim(scene_map.get_map_dimensions()[1], 0.)
+        axes[ax_idx].imshow(scene_map.as_image())
+        plot_trajs = scene_map.to_map_points(trajs)
+        axes[ax_idx].scatter(plot_trajs[..., 0], plot_trajs[..., 1], marker='x', s=20)
+        plot_occl = []
+        for occluder in occluders:
+            p1 = scene_map.to_map_points(scene_pts=occluder[0])
+            p2 = scene_map.to_map_points(scene_pts=occluder[1])
+            plot_occl.append((p1, p2))
+            axes[ax_idx].plot([occluder[0][0], occluder[1][0]], [occluder[0][1], occluder[1][1]], c='black')
+        plot_ego = scene_map.to_map_points(ego)
+        axes[ax_idx].scatter(plot_ego[0], plot_ego[1], marker='D', c='yellow', s=30)
+        plot_ego_visipoly = sg.Polygon(scene_map.to_map_points(ego_visipoly.coords))
+        plot_scene_boundary = poly_gen.default_rectangle(corner_coords=(reversed(scene_map.get_map_dimensions())))
+        plot_regions = sg.PolygonSet(plot_scene_boundary).difference(plot_ego_visipoly)
+        [plot_sg_polygon(ax=axes[ax_idx], poly=poly, edgecolor='red', facecolor='red', alpha=0.2)
+         for poly in plot_regions.polygons]
+        plot_box = np.array([[box_coords[0, 0], box_coords[0, 1]],
+                             [box_coords[0, 0], box_coords[1, 1]],
+                             [box_coords[1, 0], box_coords[1, 1]],
+                             [box_coords[1, 0], box_coords[0, 1]],
+                             [box_coords[0, 0], box_coords[0, 1]]])
+        plot_box = scene_map.to_map_points(plot_box)
+        axes[ax_idx].plot(plot_box[..., 0], plot_box[..., 1], c='r')
+        crop_box = np.array([[crop_coords[0, 0], crop_coords[0, 1]],
+                             [crop_coords[0, 0], crop_coords[1, 1]],
+                             [crop_coords[1, 0], crop_coords[1, 1]],
+                             [crop_coords[1, 0], crop_coords[0, 1]],
+                             [crop_coords[0, 0], crop_coords[0, 1]]])
+        axes[ax_idx].plot(crop_box[..., 0], crop_box[..., 1], c='k')
 
-    def convert_to_preprocessor_data(self, extracted_data: dict) -> dict:
-        # [print(f"{k}: {type(v)}") for k, v in extracted_data.items()]
+        axes[6].imshow(occlusion_map)
+        # PLOTTING FOR EXAMPLE #######################################################################################
 
-        # fig, ax = plt.subplots(1)
-        # visualize.visualize_training_instance(
-        #     draw_ax=ax, instance_dict=extracted_data
-        # )
-        # print(f"{extracted_data['scene_image'].shape=}")
-        # print(f"{extracted_data['ego_point']=}")
-        # print(f"{extracted_data['occluders']=}")
-        # plt.show()
+        plt.show()
 
-        data = dict()
+        #############################################################################################################
 
-        heading = None
-        # from the nuscenes implementation:
-        # pred mask is a numpy array, of shape (n_agents,), with values either 1 or 0
-        pred_mask = None
-
-        # perform the loading of the map
-        scene_map = GeometricMap(
-            data=np.transpose(extracted_data['scene_image'], (2, 1, 0)),
-            homography=np.eye(3)
-        )
-        if self.rand_rot_scene:
-            data['theta'] = float(np.random.rand() * 2 * np.pi)
-        else:
-            data['theta'] = 0.0
-        scene_map.rotate_around_center(data['theta'])
-
-        trajs, ids, obs_mask, ego, occluders, ego_visipoly, occlusion_map = self.traj_processing(
-            extracted_data=extracted_data,
-            scene_map=scene_map
-        )
-
-        # subsample identities if too many:
-        if ids.shape[0] > self.max_train_agent:     # TODO: add 'self.training' to if statement
-            keep_indices = np.sort(np.random.choice(ids.shape[0], self.max_train_agent, replace=False))
-            trajs = trajs[keep_indices]
-            ids = ids[keep_indices]
-            obs_mask = obs_mask[keep_indices]
-
-        # # plotting for example:
-        # fig, axes = plt.subplots(1, 3)
-        # visualize.visualize_training_instance(
-        #     draw_ax=axes[0], instance_dict=extracted_data
-        # )
-        #
-        # axes[1].set_xlim(0., scene_map.get_map_dimensions()[0])
-        # axes[1].set_ylim(scene_map.get_map_dimensions()[1], 0.)
-        # axes[1].imshow(scene_map.as_image())
-        #
-        # for traj, mask in zip(trajs, obs_mask):
-        #     occluded = traj[~mask]
-        #     axes[1].scatter(occluded[..., 0], occluded[..., 1], marker='x', s=30, c='black')
-        #     axes[1].plot(traj[..., 0], traj[..., 1])
-        # if ego is not None and occluders is not None and ego_visipoly is not None:
-        #     for occluder in occluders:
-        #         axes[1].plot([occluder[0][0], occluder[1][0]], [occluder[0][1], occluder[1][1]], c='black')
-        #     axes[1].scatter(ego[0], ego[1], marker='D', c='yellow', s=30)
-        #     scene_boundary = poly_gen.default_rectangle(corner_coords=(reversed(scene_map.get_map_dimensions())))
-        #     occluded_regions = sg.PolygonSet(scene_boundary).difference(ego_visipoly)
-        #     [plot_sg_polygon(ax=axes[1], poly=poly, edgecolor='red', facecolor='red', alpha=0.2)
-        #      for poly in occluded_regions.polygons]
-        #
-        # axes[2].imshow(occlusion_map)
-        # plt.show()
-
+        print(zblu)
+        # TODO: MAKE SURE THE ASSIGNMENT IS PERFORMED CORRECTLY BELOW:
         data['full_motion_3D'] = torch.from_numpy(trajs)
         data['valid_id'] = torch.from_numpy(ids)
-        data['obs_mask'] = torch.from_numpy(obs_mask)
+        data['obs_mask'] = torch.from_numpy(full_window_occlusion_masks)
         data['ego'] = torch.from_numpy(ego)
         data['occluders'] = torch.from_numpy(np.stack(occluders))       # [n_occluders, 2, 2]
         data['ego_visipoly'] = ego_visipoly                             # sg.Polygon
