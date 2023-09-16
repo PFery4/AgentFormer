@@ -58,6 +58,54 @@ class GeometricMap(Map):
     def get_map_dimensions(self):
         return self.data.shape[1:]      # [W, H]
 
+    def set_homography(self, Matrix):
+        self.homography = Matrix
+
+    def translation(self, point: np.array):
+        """
+        shifts the origin of self.homography by some vector of coordinates
+        """
+        self.homography[:2, 2] += point
+
+    def scale(self, scaling: float):
+        """
+        warps self.homography by rescaling wrt a provided factor
+        """
+        self.homography[0, 0] *= scaling
+        self.homography[1, 1] *= scaling
+
+    def mirror_expand(self, factor: float = 0.5):
+        """
+        Mirror padding of the map by some given factor. if factor = 1, then the side of the image will be tripled
+        (this corresponds to padding the image with 1 complete mirror copy of itself on all sides)
+        """
+        (W, H) = self.get_map_dimensions()
+        W = int(W * factor)
+        H = int(H * factor)
+        self.translation(np.array([W, H]))
+        img = self.as_image()
+        img = cv2.copyMakeBorder(img, H, H, W, W, borderType=cv2.BORDER_REFLECT_101)
+        self.data = np.transpose(img, (2, 1, 0))
+
+    def square_crop(self, crop_coords: np.array, h_scaling: float, resolution: int = 600):
+
+        assert np.all(crop_coords >= 0)
+
+        min_x, min_y = np.round(crop_coords[0, ...].astype(int))
+        side = np.round(np.mean(crop_coords[1] - crop_coords[0])).astype(int)
+
+        self.data = cv2.resize(
+            src=self.data[..., min_x:min_x+side, min_y:min_y+side].transpose(2, 1, 0),
+            dsize=(resolution, resolution),
+            interpolation=cv2.INTER_LINEAR
+        ).transpose(2, 1, 0)
+
+        k = resolution / (2 * h_scaling)
+        Matrix = np.array([[k, 0, 2*k],
+                           [0, k, 2*k],
+                           [0, 0, 1]])
+        self.homography = Matrix
+
     def rotate_around_center(self, theta: float):
         """
         theta is in radians.
@@ -72,13 +120,13 @@ class GeometricMap(Map):
         nW = int((H * np.abs(sin)) + (W * np.abs(cos)))
         nH = int((H * np.abs(cos)) + (W * np.abs(sin)))
 
-        Matrix = np.array([[cos, sin, nW/2 - cos*cX - sin*cY],
-                           [-sin, cos, nH/2 + sin*cX - cos*cY],
+        Matrix = np.array([[cos, -sin, -cos*cX + sin*cY + nW/2],
+                           [sin, cos, -sin*cX - cos*cY + nH/2],
                            [0, 0, 1]])
-        self.homography = Matrix        # perhaps needs to be matrix multiplied instead of assigned to
+        self.homography = Matrix @ self.homography      # perhaps needs to be matrix multiplied instead of assigned to
 
         img = self.as_image()
-        img = cv2.warpAffine(img, self.homography[:-1, ...], (nW, nH), borderMode=cv2.BORDER_REFLECT_101)
+        img = cv2.warpAffine(img, Matrix[:-1, ...], (nW, nH), borderMode=cv2.BORDER_REFLECT_101)
 
         self.data = np.transpose(img, (2, 1, 0))
 
@@ -202,7 +250,7 @@ class GeometricMap(Map):
         return self.get_cropped_maps_from_scene_map_batch([self]*scene_pts.shape[0], scene_pts,
                                                           patch_size, rotation=rotation, device=device)
 
-    def to_map_points(self, scene_pts):
+    def to_map_points(self, scene_pts: np.array) -> np.array:
         org_shape = None
         if len(scene_pts.shape) != 2:
             org_shape = scene_pts.shape
