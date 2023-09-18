@@ -726,29 +726,20 @@ class AgentFormer(nn.Module):
         self.to(device)
 
     def set_data(self, data: dict) -> None:
-        # todo: remove in_data alltogether
-        if self.training and len(data['full_motion_3D']) > self.max_train_agent:
-            in_data = {}
-            ind = np.random.choice(len(data['full_motion_3D']), self.max_train_agent, replace=False).tolist()
-            for key in ['heading', 'full_motion_3D', 'obs_mask', 'valid_id']:
-                in_data[key] = [data[key][i] for i in ind if data[key] is not None]
-            in_data['timesteps'] = data['timesteps']
-        else:
-            in_data = data
 
         self.data = defaultdict(lambda: None)
-        self.data['valid_id'] = in_data['valid_id'].detach().clone().to(self.device).to(int)    # [N]
-        self.data['T_total'] = len(in_data['timesteps'])                                        # int: T_total
+        self.data['valid_id'] = data['valid_id'].detach().clone().to(self.device).to(int)       # [N]
+        self.data['T_total'] = len(data['timesteps'])                                           # int: T_total
         self.data['batch_size'] = len(self.data['valid_id'])                                    # int: N
         self.data['agent_num'] = len(self.data['valid_id'])                                     # int: N
-        self.data['timesteps'] = in_data['timesteps'].detach().clone().to(self.device)          # [T_total]
-        full_motion = in_data['full_motion_3D'].\
+        self.data['timesteps'] = data['timesteps'].detach().clone().to(self.device)             # [T_total]
+        full_motion = data['full_motion_3D'].\
             to(self.device).to(dtype=torch.float32).transpose(0, 1).contiguous()                # [T_total, N, 2]
 
-        obs_mask = in_data['obs_mask'].\
+        obs_mask = data['obs_mask'].\
             to(self.device).to(dtype=torch.bool).transpose(0, 1).contiguous()                   # [T_total, N]
         last_observed_timestep_indices = torch.stack(
-            [mask.nonzero().flatten()[-1] for mask in in_data['obs_mask']]
+            [mask.nonzero().flatten()[-1] for mask in data['obs_mask']]
         ).to(self.device)                                                                       # [N]
         last_observed_pos = full_motion[last_observed_timestep_indices, torch.arange(full_motion.size(1))]  # [N, 2]
         timesteps_to_predict = torch.stack(
@@ -861,7 +852,7 @@ class AgentFormer(nn.Module):
             mask = torch.zeros([cur_motion.shape[0], cur_motion.shape[0]]).to(self.device)
         self.data['agent_mask'] = mask          # [N, N]
 
-        # self.visualize_data_dict()
+        self.visualize_data_dict()
 
     def visualize_data_dict(self):
         [print(f"{k}: {type(v)}") for k, v in self.data.items()]
@@ -920,15 +911,17 @@ class AgentFormer(nn.Module):
 
         scene_map = self.data['scene_map']
 
-        ax0.set_xlim(0., scene_map.get_map_dimensions()[0])
-        ax0.set_ylim(scene_map.get_map_dimensions()[1], 0.)
+        if scene_map is not None:
+            ax0.set_xlim(0., scene_map.get_map_dimensions()[0])
+            ax0.set_ylim(scene_map.get_map_dimensions()[1], 0.)
         ax0.view_init(90, -90)
 
         scene_orig = self.data['scene_orig'].detach().cpu().numpy()
         ax0.scatter(scene_orig[0], scene_orig[1], 0.0, marker='D', s=30, c='red', label='scene_orig')
 
-        ax1.set_xlim(0. - scene_orig[0], scene_map.get_map_dimensions()[0] - scene_orig[0])
-        ax1.set_ylim(scene_map.get_map_dimensions()[1] - scene_orig[1], 0. - scene_orig[1])
+        if scene_map is not None:
+            ax1.set_xlim(0. - scene_orig[0], scene_map.get_map_dimensions()[0] - scene_orig[0])
+            ax1.set_ylim(scene_map.get_map_dimensions()[1] - scene_orig[1], 0. - scene_orig[1])
         ax1.view_init(90, -90)
 
         valid_ids = self.data['valid_id'].detach().cpu().numpy()
@@ -987,9 +980,10 @@ class AgentFormer(nn.Module):
             stem_lines.set(alpha=0.0)
             base_line.set(alpha=0.5, c=cmap(i))
 
-        ax2.set_xlim(0., scene_map.get_map_dimensions()[0])
-        ax2.set_ylim(scene_map.get_map_dimensions()[1], 0.)
-        ax2.imshow(scene_map.as_image())
+        if scene_map is not None:
+            ax2.set_xlim(0., scene_map.get_map_dimensions()[0])
+            ax2.set_ylim(scene_map.get_map_dimensions()[1], 0.)
+            ax2.imshow(scene_map.as_image())
 
         plt.show()
 

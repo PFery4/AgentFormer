@@ -26,6 +26,7 @@ class preprocess(object):
         self.min_future_frames = parser.get('min_future_frames', self.future_frames)        # int
         self.traj_scale = parser.traj_scale     # int
         self.past_traj_scale = parser.traj_scale        # int
+        self.max_train_agent = parser.get('max_train_agent', 100)
         self.load_map = parser.get('load_map', False)       # bool
         self.map_version = parser.get('map_version', '0.1')     # str
         self.seq_name = seq_name        # str
@@ -203,12 +204,20 @@ class preprocess(object):
 
         timesteps = torch.from_numpy(np.arange(self.past_frames + self.future_frames) - self.past_frames + 1)
 
+        if len(valid_id) > self.max_train_agent:        # todo: add self.training
+            keep_indices = np.random.choice(len(valid_id), self.max_train_agent, replace=False)
+            valid_id = [valid_id[idx] for idx in keep_indices]
+            full_motion_3D = [full_motion_3D[idx] for idx in keep_indices]
+            obs_mask = [obs_mask[idx] for idx in keep_indices]
+            # CAREFUL WHEN USING nuScenes: nothing done with heading
+            # CAREFUL WHEN USING nuScenes: nothing done with pred_mask
+
         data = {
-            'full_motion_3D': full_motion_3D,
-            'obs_mask': obs_mask,
+            'full_motion_3D': torch.stack(full_motion_3D, dim=0),
+            'obs_mask': torch.stack(obs_mask, dim=0),
             'timesteps': timesteps,
             'heading': heading,
-            'valid_id': valid_id,
+            'valid_id': torch.tensor(valid_id),
             'traj_scale': self.traj_scale,
             'pred_mask': pred_mask,
             'scene_map': self.geom_scene_map,
