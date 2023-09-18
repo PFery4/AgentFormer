@@ -2,6 +2,7 @@ import os.path
 import random
 from io import TextIOWrapper
 
+import matplotlib.axes
 import matplotlib.pyplot as plt
 from matplotlib.path import Path
 import torch
@@ -13,7 +14,7 @@ from data.map import GeometricMap
 from utils.config import Config
 from utils.utils import print_log, get_timestring
 
-from typing import Tuple, List
+from typing import Tuple, List, Optional
 
 # imports from https://github.com/PFery4/occlusion-prediction
 from src.data.sdd_dataloader import StanfordDroneDataset, StanfordDroneDatasetWithOcclusionSim
@@ -241,13 +242,6 @@ class AgentFormerDataGeneratorForSDD:
         print(f"{data['theta'], data['theta']*180/np.pi=}")
         scene_map.rotate_around_center(data['theta'])
 
-        ##############################################################################################################
-        # trajs, ids, obs_mask, ego, occluders, ego_visipoly, occlusion_map = self.traj_processing(
-        #     extracted_data=extracted_data,
-        #     scene_map=scene_map
-        # )
-        ##############################################################################################################
-
         trajs = np.stack(
             [agent.get_traj_section(extracted_data['full_window'])
              for agent in extracted_data['agents']]
@@ -255,11 +249,11 @@ class AgentFormerDataGeneratorForSDD:
         ids = np.stack([agent.id for agent in extracted_data['agents']])        # [N]
 
         # PLOTTING FOR EXAMPLE #######################################################################################
-        axes[1].set_xlim(0., scene_map.get_map_dimensions()[0])
-        axes[1].set_ylim(scene_map.get_map_dimensions()[1], 0.)
-        axes[1].imshow(scene_map.as_image())
-        plot_trajs = scene_map.to_map_points(trajs)
-        axes[1].scatter(plot_trajs[..., 0], plot_trajs[..., 1], marker='x', s=20)
+        self.visualize(
+            draw_ax=axes[1],
+            scene_map=scene_map,
+            trajs=trajs
+        )
         # PLOTTING FOR EXAMPLE #######################################################################################
 
         trajs = scene_map.to_map_points(trajs)
@@ -298,25 +292,14 @@ class AgentFormerDataGeneratorForSDD:
                                                       full_window_occlusion_masks[keep_indices]
 
         # PLOTTING FOR EXAMPLE #######################################################################################
-        ax_idx = 2
-        axes[ax_idx].set_xlim(0., scene_map.get_map_dimensions()[0])
-        axes[ax_idx].set_ylim(scene_map.get_map_dimensions()[1], 0.)
-        axes[ax_idx].imshow(scene_map.as_image())
-        plot_trajs = scene_map.to_map_points(trajs)
-        axes[ax_idx].scatter(plot_trajs[..., 0], plot_trajs[..., 1], marker='x', s=20)
-        plot_occl = []
-        for occluder in occluders:
-            p1 = scene_map.to_map_points(scene_pts=occluder[0])
-            p2 = scene_map.to_map_points(scene_pts=occluder[1])
-            plot_occl.append((p1, p2))
-            axes[ax_idx].plot([occluder[0][0], occluder[1][0]], [occluder[0][1], occluder[1][1]], c='black')
-        plot_ego = scene_map.to_map_points(ego)
-        axes[ax_idx].scatter(plot_ego[0], plot_ego[1], marker='D', c='yellow', s=30)
-        plot_ego_visipoly = ego_visipoly
-        plot_scene_boundary = poly_gen.default_rectangle(corner_coords=(reversed(scene_map.get_map_dimensions())))
-        plot_regions = sg.PolygonSet(plot_scene_boundary).difference(plot_ego_visipoly)
-        [plot_sg_polygon(ax=axes[ax_idx], poly=poly, edgecolor='red', facecolor='red', alpha=0.2)
-         for poly in plot_regions.polygons]
+        self.visualize(
+            draw_ax=axes[2],
+            scene_map=scene_map,
+            trajs=trajs,
+            occluders=occluders,
+            ego=ego,
+            ego_visipoly=ego_visipoly
+        )
         # PLOTTING FOR EXAMPLE #######################################################################################
 
         # performing all shifting / normalization only based on points we have observed
@@ -336,25 +319,14 @@ class AgentFormerDataGeneratorForSDD:
         scene_map.translation(shift)
 
         # PLOTTING FOR EXAMPLE #######################################################################################
-        ax_idx = 3
-        axes[ax_idx].set_xlim(0., scene_map.get_map_dimensions()[0])
-        axes[ax_idx].set_ylim(scene_map.get_map_dimensions()[1], 0.)
-        axes[ax_idx].imshow(scene_map.as_image())
-        plot_trajs = scene_map.to_map_points(trajs)
-        axes[ax_idx].scatter(plot_trajs[..., 0], plot_trajs[..., 1], marker='x', s=20)
-        plot_occl = []
-        for occluder in occluders:
-            p1 = scene_map.to_map_points(scene_pts=occluder[0])
-            p2 = scene_map.to_map_points(scene_pts=occluder[1])
-            plot_occl.append((p1, p2))
-            axes[ax_idx].plot([occluder[0][0], occluder[1][0]], [occluder[0][1], occluder[1][1]], c='black')
-        plot_ego = scene_map.to_map_points(ego)
-        axes[ax_idx].scatter(plot_ego[0], plot_ego[1], marker='D', c='yellow', s=30)
-        plot_ego_visipoly = sg.Polygon(scene_map.to_map_points(ego_visipoly.coords))
-        plot_scene_boundary = poly_gen.default_rectangle(corner_coords=(reversed(scene_map.get_map_dimensions())))
-        plot_regions = sg.PolygonSet(plot_scene_boundary).difference(plot_ego_visipoly)
-        [plot_sg_polygon(ax=axes[ax_idx], poly=poly, edgecolor='red', facecolor='red', alpha=0.2)
-         for poly in plot_regions.polygons]
+        self.visualize(
+            draw_ax=axes[3],
+            scene_map=scene_map,
+            trajs=trajs,
+            occluders=occluders,
+            ego=ego,
+            ego_visipoly=ego_visipoly
+        )
         # PLOTTING FOR EXAMPLE #######################################################################################
 
         scale = np.max((max - min) / 2)
@@ -368,38 +340,16 @@ class AgentFormerDataGeneratorForSDD:
         crop_coords = scene_map.to_map_points(box_coords * k)
 
         # PLOTTING FOR EXAMPLE #######################################################################################
-        ax_idx = 4
-        axes[ax_idx].set_xlim(0., scene_map.get_map_dimensions()[0])
-        axes[ax_idx].set_ylim(scene_map.get_map_dimensions()[1], 0.)
-        axes[ax_idx].imshow(scene_map.as_image())
-        plot_trajs = scene_map.to_map_points(trajs)
-        axes[ax_idx].scatter(plot_trajs[..., 0], plot_trajs[..., 1], marker='x', s=20)
-        plot_occl = []
-        for occluder in occluders:
-            p1 = scene_map.to_map_points(scene_pts=occluder[0])
-            p2 = scene_map.to_map_points(scene_pts=occluder[1])
-            plot_occl.append((p1, p2))
-            axes[ax_idx].plot([occluder[0][0], occluder[1][0]], [occluder[0][1], occluder[1][1]], c='black')
-        plot_ego = scene_map.to_map_points(ego)
-        axes[ax_idx].scatter(plot_ego[0], plot_ego[1], marker='D', c='yellow', s=30)
-        plot_ego_visipoly = sg.Polygon(scene_map.to_map_points(ego_visipoly.coords))
-        plot_scene_boundary = poly_gen.default_rectangle(corner_coords=(reversed(scene_map.get_map_dimensions())))
-        plot_regions = sg.PolygonSet(plot_scene_boundary).difference(plot_ego_visipoly)
-        [plot_sg_polygon(ax=axes[ax_idx], poly=poly, edgecolor='red', facecolor='red', alpha=0.2)
-         for poly in plot_regions.polygons]
-        plot_box = np.array([[box_coords[0, 0], box_coords[0, 1]],
-                             [box_coords[0, 0], box_coords[1, 1]],
-                             [box_coords[1, 0], box_coords[1, 1]],
-                             [box_coords[1, 0], box_coords[0, 1]],
-                             [box_coords[0, 0], box_coords[0, 1]]])
-        plot_box = scene_map.to_map_points(plot_box)
-        axes[ax_idx].plot(plot_box[..., 0], plot_box[..., 1], c='r')
-        crop_box = np.array([[crop_coords[0, 0], crop_coords[0, 1]],
-                             [crop_coords[0, 0], crop_coords[1, 1]],
-                             [crop_coords[1, 0], crop_coords[1, 1]],
-                             [crop_coords[1, 0], crop_coords[0, 1]],
-                             [crop_coords[0, 0], crop_coords[0, 1]]])
-        axes[ax_idx].plot(crop_box[..., 0], crop_box[..., 1], c='k')
+        self.visualize(
+            draw_ax=axes[4],
+            scene_map=scene_map,
+            trajs=trajs,
+            occluders=occluders,
+            ego=ego,
+            ego_visipoly=ego_visipoly,
+            plot_norm_box=True,
+            plot_crop_box=True
+        )
         # PLOTTING FOR EXAMPLE #######################################################################################
 
         # cropping the scene_map
@@ -419,39 +369,15 @@ class AgentFormerDataGeneratorForSDD:
         occlusion_map = mpath.contains_points(xy).reshape(*reversed(map_dims))
 
         # PLOTTING FOR EXAMPLE #######################################################################################
-        ax_idx = 5
-        axes[ax_idx].set_xlim(0., scene_map.get_map_dimensions()[0])
-        axes[ax_idx].set_ylim(scene_map.get_map_dimensions()[1], 0.)
-        axes[ax_idx].imshow(scene_map.as_image())
-        plot_trajs = scene_map.to_map_points(trajs)
-        axes[ax_idx].scatter(plot_trajs[..., 0], plot_trajs[..., 1], marker='x', s=20)
-        plot_occl = []
-        for occluder in occluders:
-            p1 = scene_map.to_map_points(scene_pts=occluder[0])
-            p2 = scene_map.to_map_points(scene_pts=occluder[1])
-            plot_occl.append((p1, p2))
-            axes[ax_idx].plot([occluder[0][0], occluder[1][0]], [occluder[0][1], occluder[1][1]], c='black')
-        plot_ego = scene_map.to_map_points(ego)
-        axes[ax_idx].scatter(plot_ego[0], plot_ego[1], marker='D', c='yellow', s=30)
-        plot_ego_visipoly = sg.Polygon(scene_map.to_map_points(ego_visipoly.coords))
-        plot_scene_boundary = poly_gen.default_rectangle(corner_coords=(reversed(scene_map.get_map_dimensions())))
-        plot_regions = sg.PolygonSet(plot_scene_boundary).difference(plot_ego_visipoly)
-        [plot_sg_polygon(ax=axes[ax_idx], poly=poly, edgecolor='red', facecolor='red', alpha=0.2)
-         for poly in plot_regions.polygons]
-        plot_box = np.array([[box_coords[0, 0], box_coords[0, 1]],
-                             [box_coords[0, 0], box_coords[1, 1]],
-                             [box_coords[1, 0], box_coords[1, 1]],
-                             [box_coords[1, 0], box_coords[0, 1]],
-                             [box_coords[0, 0], box_coords[0, 1]]])
-        plot_box = scene_map.to_map_points(plot_box)
-        axes[ax_idx].plot(plot_box[..., 0], plot_box[..., 1], c='r')
-        crop_box = np.array([[crop_coords[0, 0], crop_coords[0, 1]],
-                             [crop_coords[0, 0], crop_coords[1, 1]],
-                             [crop_coords[1, 0], crop_coords[1, 1]],
-                             [crop_coords[1, 0], crop_coords[0, 1]],
-                             [crop_coords[0, 0], crop_coords[0, 1]]])
-        axes[ax_idx].plot(crop_box[..., 0], crop_box[..., 1], c='k')
-
+        self.visualize(
+            draw_ax=axes[5],
+            scene_map=scene_map,
+            trajs=trajs,
+            occluders=occluders,
+            ego=ego,
+            ego_visipoly=ego_visipoly,
+            plot_norm_box=True
+        )
         axes[6].imshow(occlusion_map)
         # PLOTTING FOR EXAMPLE #######################################################################################
 
@@ -459,7 +385,7 @@ class AgentFormerDataGeneratorForSDD:
 
         #############################################################################################################
 
-        print(zblu)
+
         # TODO: MAKE SURE THE ASSIGNMENT IS PERFORMED CORRECTLY BELOW:
         data['full_motion_3D'] = torch.from_numpy(trajs)
         data['valid_id'] = torch.from_numpy(ids)
@@ -489,6 +415,56 @@ class AgentFormerDataGeneratorForSDD:
 
     def __call__(self) -> dict:
         return self.next_sample()
+
+    def visualize(
+            self,
+            draw_ax: matplotlib.axes.Axes,
+            scene_map: GeometricMap,
+            trajs: np.array,
+            occluders: Optional[List[np.array]] = None,
+            ego: Optional[np.array] = None,
+            ego_visipoly: Optional[sg.Polygon] = None,
+            plot_norm_box: bool = False,
+            plot_crop_box: bool = False
+    ) -> None:
+        draw_ax.set_xlim(0., scene_map.get_map_dimensions()[0])
+        draw_ax.set_ylim(scene_map.get_map_dimensions()[1], 0.)
+        draw_ax.imshow(scene_map.as_image())
+        plot_trajs = scene_map.to_map_points(trajs)
+        draw_ax.scatter(plot_trajs[..., 0], plot_trajs[..., 1], marker='x', s=20)
+        plot_occl = []
+        if occluders is not None:
+            for occluder in occluders:
+                p1 = scene_map.to_map_points(scene_pts=occluder[0])
+                p2 = scene_map.to_map_points(scene_pts=occluder[1])
+                plot_occl.append((p1, p2))
+                draw_ax.plot([occluder[0][0], occluder[1][0]], [occluder[0][1], occluder[1][1]], c='black')
+        if ego is not None:
+            plot_ego = scene_map.to_map_points(ego)
+            draw_ax.scatter(plot_ego[0], plot_ego[1], marker='D', c='yellow', s=30)
+        if ego_visipoly is not None:
+            plot_ego_visipoly = sg.Polygon(scene_map.to_map_points(ego_visipoly.coords))
+            plot_scene_boundary = poly_gen.default_rectangle(corner_coords=(reversed(scene_map.get_map_dimensions())))
+            plot_regions = sg.PolygonSet(plot_scene_boundary).difference(plot_ego_visipoly)
+            [plot_sg_polygon(ax=draw_ax, poly=poly, edgecolor='red', facecolor='red', alpha=0.2)
+             for poly in plot_regions.polygons]
+        if plot_norm_box:
+            plot_box = np.array([[-1, -1],
+                                 [-1, 1],
+                                 [1, 1],
+                                 [1, -1],
+                                 [-1, -1]])
+            plot_box = scene_map.to_map_points(plot_box)
+            draw_ax.plot(plot_box[..., 0], plot_box[..., 1], c='r')
+        if plot_crop_box:
+            k = 2.0         # todo: move constant to a member variable
+            crop_coords = scene_map.to_map_points(np.array([[-1, -1], [1, 1]]) * k)
+            crop_box = np.array([[crop_coords[0, 0], crop_coords[0, 1]],
+                                 [crop_coords[0, 0], crop_coords[1, 1]],
+                                 [crop_coords[1, 0], crop_coords[1, 1]],
+                                 [crop_coords[1, 0], crop_coords[0, 1]],
+                                 [crop_coords[0, 0], crop_coords[0, 1]]])
+            draw_ax.plot(crop_box[..., 0], crop_box[..., 1], c='k')
 
 
 if __name__ == '__main__':
