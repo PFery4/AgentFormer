@@ -35,6 +35,11 @@ def train(epoch):
     train_loss_meter['total_loss'] = AverageMeter()
     last_generator_index = 0
 
+    # RESOURCE TEST ##################################################################################################
+    stop_counter = 500
+    cnt = 0
+    # RESOURCE TEST ##################################################################################################
+
     while not generator.is_epoch_end():
         data = generator()
         if data is not None:
@@ -56,7 +61,17 @@ def train(epoch):
         # else:     # I believe it makes more sense to continue here
         #     continue
 
-        if generator.index - last_generator_index >= cfg.print_freq:
+        # RESOURCE TEST ##############################################################################################
+            if cnt >= stop_counter:
+                print(
+                    f"DONE: process lasted a total of {time.time() - since_train} seconds for {stop_counter} training instances")
+                print(f"Exitting process, goodbye world!")
+                sys.exit()
+
+            cnt += 1
+        # RESOURCE TEST ##############################################################################################
+
+    if generator.index - last_generator_index >= cfg.print_freq:
             ep = time.time() - since_train
             losses_str = ' '.join([f'{x}: {y.avg:.3f} ({y.val:.3f})' for x, y in train_loss_meter.items()])
             logging(args.cfg, epoch, cfg.num_epochs, generator.index, generator.num_total_samples, ep, seq, frame, losses_str, log)
@@ -81,21 +96,49 @@ if __name__ == '__main__':
     cfg = Config(args.cfg, args.tmp, create_dirs=True)
     prepare_seed(cfg.seed)
     torch.set_default_dtype(torch.float32)
+    # DELFTBLUE GPU ##################################################################################################
     # device = torch.device('cuda', index=args.gpu) if torch.cuda.is_available() else torch.device('cpu')
-    if torch.cuda.is_available():
-        device = torch.device('cuda', index=args.gpu)
-        torch.cuda.set_device(args.gpu)
+    # if torch.cuda.is_available():
+    #     device = torch.device('cuda', index=args.gpu)
+    #     torch.cuda.set_device(args.gpu)
+    # else:
+    #     device = torch.device('cpu')
+    #
+    # print("-" * 120)
+    # print(f"{torch.cuda.is_available()=}")
+    # print(f"{torch.cuda.device_count()=}")
+    # print(f"{torch.cuda.current_device()=}")
+    # print(f"{torch.cuda.device(torch.cuda.current_device())=}")
+    # print(f"{torch.cuda.get_device_name(torch.cuda.current_device())=}")
+    # print(f"{device=}")
+    # print("-" * 120)
+    #
+    # device = torch.device('cuda', index=args.gpu) if torch.cuda.is_available() else torch.device('cpu')
+    # if torch.cuda.is_available(): torch.cuda.set_device(args.gpu)
+    cuda_avail = torch.cuda.is_available()
+    if cuda_avail:
+        print("Torch CUDA is available")
+        num_of_devices = torch.cuda.device_count()
+        if num_of_devices:
+            print(f"Number of CUDA devices: {num_of_devices}")
+            current_device = torch.cuda.current_device()
+            current_device_id = torch.cuda.device(current_device)
+            current_device_name = torch.cuda.get_device_name(current_device)
+            print(f"Current device: {current_device}")
+            print(f"Current device id: {current_device_id}")
+            print(f"Current device name: {current_device_name}")
+            print()
+            device = torch.device('cuda', index=current_device)
+            torch.cuda.set_device(current_device)
+        else:
+            print("No CUDA devices!")
+            sys.exit()
     else:
-        device = torch.device('cpu')
+        print("Torch CUDA is not available!")
+        sys.exit()
+    # DELFTBLUE GPU ##################################################################################################
 
-    print("-" * 120)
-    print(f"{torch.cuda.is_available()=}")
-    print(f"{torch.cuda.device_count()=}")
-    print(f"{torch.cuda.current_device()=}")
-    print(f"{torch.cuda.device(torch.cuda.current_device())=}")
-    print(f"{torch.cuda.get_device_name(torch.cuda.current_device())=}")
-    print(f"{device=}")
-    print("-" * 120)
+
 
     time_str = get_timestring()
     log = open(os.path.join(cfg.log_dir, 'log.txt'), 'a+')
