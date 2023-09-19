@@ -93,18 +93,6 @@ class AgentFormerDataGeneratorForSDD:
         else:
             return False
 
-    # @staticmethod
-    # def compute_agent_trajs_and_extract_ids(extracted_data: dict, scene_map: GeometricMap):
-    #     # compute all agent trajectories (by transforming to map coords) and extract agent ids
-    #     trajs = scene_map.to_map_points(
-    #         scene_pts=np.stack(
-    #             [agent.get_traj_section(extracted_data['full_window'])
-    #              for agent in extracted_data['agents']]
-    #         )
-    #     )       # [N, T, 2]
-    #     ids = np.stack([agent.id for agent in extracted_data['agents']])        # [N]
-    #     return trajs, ids
-
     def check_n_agents_and_subsample(self, ids: NDArray, trajs:NDArray, obs_mask: NDArray):
         if ids.shape[0] > self.max_train_agent:     # todo: add 'self.training'
             keep_indices = np.sort(np.random.choice(ids.shape[0], self.max_train_agent, replace=False))
@@ -137,7 +125,9 @@ class AgentFormerDataGeneratorForSDD:
         points -= shift
         scene_map.translation(shift)
 
-        scale = np.max((max - min) / 2)
+        # instoring a tolerance factor, to prevent cases where scale == 0.0
+        # todo: find a good value for the tolerance value (maybe work it into self.traj_scale)
+        scale = np.max([*(max - min) / 2, 100])
         trajs /= scale
         points /= scale
         scene_map.scale(scaling=scale)
@@ -290,14 +280,7 @@ class AgentFormerDataGeneratorForSDD:
 
         trajs = scene_map.to_map_points(trajs)
 
-        fig, ax = plt.subplots()
-        visualize.visualize_training_instance(
-            draw_ax=ax, instance_dict=extracted_data
-        )
-        plt.show()
-        print("OK")
-
-        processed_data = self.traj_processing_with_occlusion(
+        processed_data = self.traj_processing(
             trajs=trajs,
             scene_map=scene_map,
             ego=extracted_data['ego_point'],
@@ -321,19 +304,15 @@ class AgentFormerDataGeneratorForSDD:
         )
         ax[2].imshow(processed_data['occlusion_map'])
         plt.show()
-        print(zblu)
-
         #############################################################################################################
 
-
-        # TODO: MAKE SURE THE ASSIGNMENT IS PERFORMED CORRECTLY BELOW:
-        data['full_motion_3D'] = torch.from_numpy(trajs)
-        data['valid_id'] = torch.from_numpy(ids)
-        data['obs_mask'] = torch.from_numpy(obs_mask)
-        data['ego'] = torch.from_numpy(ego)
-        data['occluders'] = torch.from_numpy(np.stack(occluders))       # [n_occluders, 2, 2]
-        data['ego_visipoly'] = ego_visipoly                             # sg.Polygon
-        data['occlusion_map'] = torch.from_numpy(occlusion_map)         # [H, W]
+        data['full_motion_3D'] = torch.from_numpy(processed_data['trajs'])
+        data['valid_id'] = torch.from_numpy(processed_data['ids'])
+        data['obs_mask'] = torch.from_numpy(processed_data['obs_mask'])
+        # data['ego'] = torch.from_numpy(processed_data['ego'])
+        # data['occluders'] = torch.from_numpy(np.stack(processed_data['occluders']))         # [n_occluders, 2, 2]
+        # data['ego_visipoly'] = processed_data['ego_visipoly']                               # sg.Polygon
+        data['occlusion_map'] = torch.from_numpy(processed_data['occlusion_map'])         # [H, W]
         data['timesteps'] = torch.from_numpy(
             np.arange(len(extracted_data['full_window'])) - len(extracted_data['past_window']) + 1
         )

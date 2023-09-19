@@ -761,17 +761,9 @@ class AgentFormer(nn.Module):
             scene_orig = full_motion[obs_mask].mean(dim=0).contiguous()           # [2]
         else:
             scene_orig = last_observed_pos.mean(dim=0).contiguous()               # [2]
+
         self.data['scene_orig'] = scene_orig.to(self.device)
 
-        # # perform random rotation
-        # if self.rand_rot_scene and self.training:
-        #     if self.discrete_rot:
-        #         raise NotImplementedError
-        #     else:
-        #         theta = torch.rand(1).to(self.device) * np.pi * 2
-        #         full_motion, full_motion_scene_norm = rotation_2d_torch(full_motion, theta, scene_orig)
-        # else:
-        theta = torch.zeros(1).to(self.device)
         full_motion_scene_norm = full_motion - scene_orig
 
         # print(f"{torch.max(torch.linalg.norm(full_motion_scene_norm, dim=-1))=}")
@@ -852,7 +844,7 @@ class AgentFormer(nn.Module):
             mask = torch.zeros([cur_motion.shape[0], cur_motion.shape[0]]).to(self.device)
         self.data['agent_mask'] = mask          # [N, N]
 
-        self.visualize_data_dict()
+        # self.visualize_data_dict()
 
     def visualize_data_dict(self):
         [print(f"{k}: {type(v)}") for k, v in self.data.items()]
@@ -916,7 +908,7 @@ class AgentFormer(nn.Module):
             ax0.set_ylim(scene_map.get_map_dimensions()[1], 0.)
         ax0.view_init(90, -90)
 
-        scene_orig = self.data['scene_orig'].detach().cpu().numpy()
+        scene_orig = scene_map.to_map_points(self.data['scene_orig'].detach().cpu().numpy())
         ax0.scatter(scene_orig[0], scene_orig[1], 0.0, marker='D', s=30, c='red', label='scene_orig')
 
         if scene_map is not None:
@@ -928,13 +920,13 @@ class AgentFormer(nn.Module):
 
         pre_timesteps = self.data['pre_timesteps'].detach().cpu().numpy()
         pre_agents = self.data['pre_agents'].detach().cpu().numpy()
-        pre_seq = self.data['pre_sequence'].detach().cpu().numpy()
-        pre_seq_scene_norm = self.data['pre_sequence_scene_norm'].detach().cpu().numpy()
+        pre_seq = scene_map.to_map_points(self.data['pre_sequence'].detach().cpu().numpy())
+        pre_seq_scene_norm = scene_map.to_map_points(self.data['pre_sequence_scene_norm'].detach().cpu().numpy())
 
         fut_timesteps = self.data['fut_timesteps'].detach().cpu().numpy()
         fut_agents = self.data['fut_agents'].detach().cpu().numpy()
-        fut_seq = self.data['fut_sequence'].detach().cpu().numpy()
-        fut_seq_scene_norm = self.data['fut_sequence_scene_norm'].detach().cpu().numpy()
+        fut_seq = scene_map.to_map_points(self.data['fut_sequence'].detach().cpu().numpy())
+        fut_seq_scene_norm = scene_map.to_map_points(self.data['fut_sequence_scene_norm'].detach().cpu().numpy())
 
         cmap = plt.cm.get_cmap('hsv', len(valid_ids))
 
