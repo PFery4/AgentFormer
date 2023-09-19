@@ -289,21 +289,22 @@ class AgentFormerDataGeneratorForSDD:
             ids=ids
         )
 
-        fig, ax = plt.subplots(1, 3)
-        visualize.visualize_training_instance(
-            draw_ax=ax[0], instance_dict=extracted_data
-        )
-        self.visualize(
-            draw_ax=ax[1],
-            scene_map=processed_data['scene_map'],
-            trajs=processed_data['trajs'],
-            occluders=processed_data['occluders'],
-            ego=processed_data['ego'],
-            ego_visipoly=processed_data['ego_visipoly'],
-            plot_norm_box=True
-        )
-        ax[2].imshow(processed_data['occlusion_map'])
-        plt.show()
+        # Visualize ##################################################################################################
+        # fig, ax = plt.subplots(1, 3)
+        # visualize.visualize_training_instance(
+        #     draw_ax=ax[0], instance_dict=extracted_data
+        # )
+        # self.visualize(
+        #     draw_ax=ax[1],
+        #     scene_map=processed_data['scene_map'],
+        #     trajs=processed_data['trajs'],
+        #     occluders=processed_data['occluders'],
+        #     ego=processed_data['ego'],
+        #     ego_visipoly=processed_data['ego_visipoly'],
+        #     plot_norm_box=True
+        # )
+        # ax[2].imshow(processed_data['occlusion_map'])
+        # plt.show()
         #############################################################################################################
 
         data['full_motion_3D'] = torch.from_numpy(processed_data['trajs'])
