@@ -71,14 +71,14 @@ def train(epoch):
             cnt += 1
         # RESOURCE TEST ##############################################################################################
 
-    if generator.index - last_generator_index >= cfg.print_freq:
-            ep = time.time() - since_train
-            losses_str = ' '.join([f'{x}: {y.avg:.3f} ({y.val:.3f})' for x, y in train_loss_meter.items()])
-            logging(args.cfg, epoch, cfg.num_epochs, generator.index, generator.num_total_samples, ep, seq, frame, losses_str, log)
-            for name, meter in train_loss_meter.items():
-                tb_logger.add_scalar('model_' + name, meter.avg, tb_ind)
-            tb_ind += 1
-            last_generator_index = generator.index
+        if generator.index - last_generator_index >= cfg.print_freq:
+                ep = time.time() - since_train
+                losses_str = ' '.join([f'{x}: {y.avg:.3f} ({y.val:.3f})' for x, y in train_loss_meter.items()])
+                logging(args.cfg, epoch, cfg.num_epochs, generator.index, generator.num_total_samples, ep, seq, frame, losses_str, log)
+                for name, meter in train_loss_meter.items():
+                    tb_logger.add_scalar('model_' + name, meter.avg, tb_ind)
+                tb_ind += 1
+                last_generator_index = generator.index
 
     scheduler.step()
     model.step_annealer()
