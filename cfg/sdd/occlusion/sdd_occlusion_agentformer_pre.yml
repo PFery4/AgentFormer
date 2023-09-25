@@ -16,7 +16,7 @@ future_frames                : 12
 min_past_frames              : 8
 min_future_frames            : 12
 
-traj_scale                   : 100      # todo: check if this scaling factor is correct (or even matters at all)
+traj_scale                   : 1    # todo: figure out correct value
 motion_dim                   : 2
 forecast_dim                 : 2
 
