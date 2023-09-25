@@ -74,7 +74,7 @@ class GeometricMap(Map):
         self.homography[0, 0] *= scaling
         self.homography[1, 1] *= scaling
 
-    def mirror_expand(self, factor: float = 0.5):
+    def mirror_expand(self, factor: float = 1.0):
         """
         Mirror padding of the map by some given factor. if factor = 1, then the side of the image will be tripled
         (this corresponds to padding the image with 1 complete mirror copy of itself on all sides)
@@ -87,8 +87,8 @@ class GeometricMap(Map):
         img = cv2.copyMakeBorder(img, H, H, W, W, borderType=cv2.BORDER_REFLECT_101)
         self.data = np.transpose(img, (2, 1, 0))
 
-    def square_crop(self, crop_coords: np.array, h_scaling: float, resolution: int = 600):
-
+    def square_crop(self, crop_coords: np.array, k: float, resolution: int):
+        # TODO: FIX THIS SQUARE CROP FUNCTION (INCOHERENCE TRAJ DATA / MAP DATA)
         assert np.all(crop_coords >= 0)
         assert np.all(crop_coords[1] <= self.get_map_dimensions())
 
@@ -101,9 +101,8 @@ class GeometricMap(Map):
             interpolation=cv2.INTER_LINEAR
         ).transpose(2, 1, 0)
 
-        k = resolution / (2 * h_scaling)
-        Matrix = np.array([[k, 0, 2*k],
-                           [0, k, 2*k],
+        Matrix = np.array([[k, 0, resolution/2],
+                           [0, k, resolution/2],
                            [0, 0, 1]])
         self.homography = Matrix
 

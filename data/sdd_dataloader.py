@@ -81,7 +81,13 @@ class AgentFormerDataGeneratorForSDD:
         self.sample_list = list(range(self.num_total_samples))
         self.index = 0
 
+        self.px_per_m = full_dataset.px_per_m
         self.traj_scale = parser.traj_scale
+        self.map_side = 40      # [m]
+        self.map_res = 600      # [px]
+        self.map_crop_coords = np.array(
+            [[-self.map_side, -self.map_side], [self.map_side, self.map_side]]
+        ) * self.traj_scale / 2
 
     def shuffle(self) -> None:
         random.shuffle(self.sample_list)
@@ -99,9 +105,25 @@ class AgentFormerDataGeneratorForSDD:
             return ids[keep_indices], trajs[keep_indices], obs_mask[keep_indices]
         return ids, trajs, obs_mask
 
+    def cropped_scene_map(self, scene_map: GeometricMap):
+        # TODO: FIX THIS SQUARE CROP FUNCTION (INCOHERENCE TRAJ DATA / MAP DATA)
+        # cropping the scene_map
+        # box_coords = np.array([[-1, -1], [1, 1]])
+        # k = 3.0
+        # crop_coords = scene_map.to_map_points(box_coords * k)
+        crop_coords = scene_map.to_map_points(self.map_crop_coords)
+        scene_map.square_crop(
+            crop_coords=crop_coords,
+            k=(self.px_per_m / self.traj_scale),
+            resolution=self.map_res
+        )
+        return scene_map
+
     def traj_processing_without_occlusion(
             self, trajs: NDArray, **kwargs
     ):
+        # TODO: FIX INCOHERENCE TRAJ DATA / MAP DATA
+
         scene_map = kwargs['scene_map']             # GeometricMap
         past_window = kwargs['past_window']         # NDArray   [T_obs]
         ids = kwargs['ids']                         # NDArray   [N]
@@ -125,18 +147,18 @@ class AgentFormerDataGeneratorForSDD:
         points -= shift
         scene_map.translation(shift)
 
-        # instoring a tolerance factor, to prevent cases where scale == 0.0
-        # todo: find a good value for the tolerance value (maybe work it into self.traj_scale)
-        scale = np.max([*(max - min) / 2, 100])
-        trajs /= scale
-        points /= scale
-        scene_map.scale(scaling=scale)
+        trajs *= self.traj_scale / self.px_per_m
+        points *= self.traj_scale / self.px_per_m
+        scene_map.scale(scaling=(self.px_per_m / self.traj_scale))
 
-        # cropping the scene_map
-        box_coords = np.array([[-1, -1], [1, 1]])
-        k = 2.0
-        crop_coords = scene_map.to_map_points(box_coords * k)
-        scene_map.square_crop(crop_coords=crop_coords, h_scaling=k)
+        print(f"{scene_map.homography=}")
+
+        # # cropping the scene_map
+        # box_coords = np.array([[-1, -1], [1, 1]])
+        # k = 2.0
+        # crop_coords = scene_map.to_map_points(box_coords * k)
+        # scene_map.square_crop(crop_coords=crop_coords, h_scaling=k)
+        scene_map = self.cropped_scene_map(scene_map)
 
         out_dict = {
             "ids": ids,
@@ -154,6 +176,8 @@ class AgentFormerDataGeneratorForSDD:
     def traj_processing_with_occlusion(
             self, trajs: NDArray, **kwargs
     ):
+        # TODO: FIX INCOHERENCE TRAJ DATA / MAP DATA
+
         if np.any(np.isnan(kwargs['ego'])):
             print(f"NAN NAN {kwargs['ego']=}")
             return self.traj_processing_without_occlusion(trajs=trajs, **kwargs)
@@ -212,18 +236,18 @@ class AgentFormerDataGeneratorForSDD:
         ego_visipoly = sg.Polygon(ego_visipoly.coords - shift)
         scene_map.translation(shift)
 
-        scale = np.max((max - min) / 2)
-        ego /= scale
-        trajs /= scale
-        points /= scale
-        ego_visipoly = sg.Polygon(ego_visipoly.coords / scale)
-        scene_map.scale(scaling=scale)
+        ego *= self.traj_scale / self.px_per_m
+        trajs *= self.traj_scale / self.px_per_m
+        points *= self.traj_scale / self.px_per_m
+        ego_visipoly = sg.Polygon(ego_visipoly.coords * self.traj_scale / self.px_per_m)
+        scene_map.scale(scaling=(self.px_per_m / self.traj_scale))
 
-        # cropping the scene_map
-        box_coords = np.array([[-1, -1], [1, 1]])
-        k = 2.0
-        crop_coords = scene_map.to_map_points(box_coords * k)
-        scene_map.square_crop(crop_coords=crop_coords, h_scaling=k)
+        # # cropping the scene_map
+        # box_coords = np.array([[-1, -1], [1, 1]])
+        # k = 2.0
+        # crop_coords = scene_map.to_map_points(box_coords * k)
+        # scene_map.square_crop(crop_coords=crop_coords, h_scaling=k)
+        scene_map = self.cropped_scene_map(scene_map)
 
         # compute occlusion map
         map_dims = scene_map.get_map_dimensions()
@@ -278,6 +302,13 @@ class AgentFormerDataGeneratorForSDD:
             data['theta'] = 0.0
         scene_map.rotate_around_center(data['theta'])
 
+        # fig, ax = plt.subplots()
+        # print(f"{data['theta']=}")
+        # visualize.visualize_training_instance(
+        #     draw_ax=ax, instance_dict=extracted_data
+        # )
+        # plt.show()
+
         trajs = scene_map.to_map_points(trajs)
 
         processed_data = self.traj_processing(
@@ -290,21 +321,22 @@ class AgentFormerDataGeneratorForSDD:
         )
 
         # Visualize ##################################################################################################
-        # fig, ax = plt.subplots(1, 3)
-        # visualize.visualize_training_instance(
-        #     draw_ax=ax[0], instance_dict=extracted_data
-        # )
-        # self.visualize(
-        #     draw_ax=ax[1],
-        #     scene_map=processed_data['scene_map'],
-        #     trajs=processed_data['trajs'],
-        #     occluders=processed_data['occluders'],
-        #     ego=processed_data['ego'],
-        #     ego_visipoly=processed_data['ego_visipoly'],
-        #     plot_norm_box=True
-        # )
-        # ax[2].imshow(processed_data['occlusion_map'])
-        # plt.show()
+        fig, ax = plt.subplots(1, 3)
+        visualize.visualize_training_instance(
+            draw_ax=ax[0], instance_dict=extracted_data
+        )
+        self.visualize(
+            draw_ax=ax[1],
+            scene_map=processed_data['scene_map'],
+            trajs=processed_data['trajs'],
+            occluders=processed_data['occluders'],
+            ego=processed_data['ego'],
+            ego_visipoly=processed_data['ego_visipoly'],
+            plot_norm_box=True
+        )
+        ax[2].imshow(processed_data['occlusion_map'])
+        plt.show()
+        # print(zblu)
         #############################################################################################################
 
         data['full_motion_3D'] = torch.from_numpy(processed_data['trajs'])
