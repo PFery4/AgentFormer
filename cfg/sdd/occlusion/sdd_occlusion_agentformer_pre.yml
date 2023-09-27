@@ -36,6 +36,13 @@ pos_concat: true
 rand_rot_scene: true
 scene_orig_all_past: true
 
+# TODO: define parameters for the global map processing
+#use_global_map: true
+#map_encoder:
+#  model_id: global_map_cnn
+#  normalize: true
+#  output_dim: 256
+
 context_encoder:
   nlayer: 2
 
