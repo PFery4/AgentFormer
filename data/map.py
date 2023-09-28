@@ -63,7 +63,7 @@ class GeometricMap(Map):
 
     def translation(self, point: np.array):
         """
-        shifts the origin of self.homography by some vector of coordinates
+        shifts the origin of self.homography by some coordinate vector
         """
         self.homography[:2, 2] += point
 
@@ -87,8 +87,7 @@ class GeometricMap(Map):
         img = cv2.copyMakeBorder(img, H, H, W, W, borderType=cv2.BORDER_REFLECT_101)
         self.data = np.transpose(img, (2, 1, 0))
 
-    def square_crop(self, crop_coords: np.array, k: float, resolution: int):
-        # TODO: FIX THIS SQUARE CROP FUNCTION (INCOHERENCE TRAJ DATA / MAP DATA)
+    def square_crop(self, crop_coords: np.array, side_length: float, resolution: int):
         assert np.all(crop_coords >= 0)
         assert np.all(crop_coords[1] <= self.get_map_dimensions())
 
@@ -101,8 +100,8 @@ class GeometricMap(Map):
             interpolation=cv2.INTER_LINEAR
         ).transpose(2, 1, 0)
 
-        Matrix = np.array([[k, 0, resolution/2],
-                           [0, k, resolution/2],
+        Matrix = np.array([[resolution/side_length, 0, resolution/2],
+                           [0, resolution/side_length, resolution/2],
                            [0, 0, 1]])
         self.homography = Matrix
 

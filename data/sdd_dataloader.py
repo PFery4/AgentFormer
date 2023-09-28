@@ -4,6 +4,7 @@ from io import TextIOWrapper
 
 import matplotlib.axes
 import matplotlib.pyplot as plt
+import numpy
 from matplotlib.path import Path
 import torch
 import sys
@@ -83,7 +84,7 @@ class AgentFormerDataGeneratorForSDD:
 
         self.px_per_m = full_dataset.px_per_m
         self.traj_scale = parser.traj_scale
-        self.map_side = 40      # [m]
+        self.map_side = 50      # [m]
         self.map_res = 600      # [px]
         self.map_crop_coords = np.array(
             [[-self.map_side, -self.map_side], [self.map_side, self.map_side]]
@@ -99,22 +100,20 @@ class AgentFormerDataGeneratorForSDD:
         else:
             return False
 
-    def check_n_agents_and_subsample(self, ids: NDArray, trajs:NDArray, obs_mask: NDArray):
+    def check_n_agents_and_subsample(self, ids: NDArray):
+        # ids is an NDArray of shape [N]
+        # todo: check that we are never eliminating the target agent for occlusion
         if ids.shape[0] > self.max_train_agent:     # todo: add 'self.training'
             keep_indices = np.sort(np.random.choice(ids.shape[0], self.max_train_agent, replace=False))
-            return ids[keep_indices], trajs[keep_indices], obs_mask[keep_indices]
-        return ids, trajs, obs_mask
+            return keep_indices
+        return numpy.arange(ids.shape[0])
 
     def cropped_scene_map(self, scene_map: GeometricMap):
-        # TODO: FIX THIS SQUARE CROP FUNCTION (INCOHERENCE TRAJ DATA / MAP DATA)
         # cropping the scene_map
-        # box_coords = np.array([[-1, -1], [1, 1]])
-        # k = 3.0
-        # crop_coords = scene_map.to_map_points(box_coords * k)
         crop_coords = scene_map.to_map_points(self.map_crop_coords)
         scene_map.square_crop(
             crop_coords=crop_coords,
-            k=(self.px_per_m / self.traj_scale),
+            side_length=self.map_side,
             resolution=self.map_res
         )
         return scene_map
@@ -122,42 +121,33 @@ class AgentFormerDataGeneratorForSDD:
     def traj_processing_without_occlusion(
             self, trajs: NDArray, **kwargs
     ):
-        # TODO: FIX INCOHERENCE TRAJ DATA / MAP DATA
-
+        # trajs.shape [N, T, 2]
         scene_map = kwargs['scene_map']             # GeometricMap
         past_window = kwargs['past_window']         # NDArray   [T_obs]
         ids = kwargs['ids']                         # NDArray   [N]
 
+        trajs = scene_map.to_map_points(trajs)
         scene_map.set_homography(np.eye(3))
 
         obs_mask = np.full(trajs.shape[:2], True)
         obs_mask[..., len(past_window):] = False
 
-        self.check_n_agents_and_subsample(ids, trajs, obs_mask)
+        keep_indices = self.check_n_agents_and_subsample(ids)
+        ids = ids[keep_indices]
+        trajs = trajs[keep_indices]
+        obs_mask = obs_mask[keep_indices]
 
-        # performing normalization based on points we have observed
-        points = trajs[obs_mask, :]     # NDArray [P, 2]
+        # calculating the mean of all points at t_0
+        mean_point = np.mean(trajs[:, past_window.shape[0]-1, :], axis=0)
 
         # normalize
-        min = np.min(points, axis=0)
-        max = np.max(points, axis=0)
+        trajs -= mean_point
+        scene_map.translation(mean_point)
 
-        shift = (max + min) / 2
-        trajs -= shift
-        points -= shift
-        scene_map.translation(shift)
+        scaling = self.traj_scale / self.px_per_m
+        trajs *= scaling
+        scene_map.scale(scaling=1/scaling)
 
-        trajs *= self.traj_scale / self.px_per_m
-        points *= self.traj_scale / self.px_per_m
-        scene_map.scale(scaling=(self.px_per_m / self.traj_scale))
-
-        print(f"{scene_map.homography=}")
-
-        # # cropping the scene_map
-        # box_coords = np.array([[-1, -1], [1, 1]])
-        # k = 2.0
-        # crop_coords = scene_map.to_map_points(box_coords * k)
-        # scene_map.square_crop(crop_coords=crop_coords, h_scaling=k)
         scene_map = self.cropped_scene_map(scene_map)
 
         out_dict = {
@@ -176,13 +166,9 @@ class AgentFormerDataGeneratorForSDD:
     def traj_processing_with_occlusion(
             self, trajs: NDArray, **kwargs
     ):
-        # TODO: FIX INCOHERENCE TRAJ DATA / MAP DATA
-
+        # trajs.shape [N, T, 2]
         if np.any(np.isnan(kwargs['ego'])):
-            print(f"NAN NAN {kwargs['ego']=}")
             return self.traj_processing_without_occlusion(trajs=trajs, **kwargs)
-
-        print(f"YES EGO {kwargs['ego']=}")
 
         scene_map = kwargs['scene_map']             # GeometricMap
         orig_ego = kwargs['ego']                    # NDArray   [2]
@@ -190,7 +176,8 @@ class AgentFormerDataGeneratorForSDD:
         past_window = kwargs['past_window']         # NDArray   [T_obs]
         ids = kwargs['ids']                         # NDArray   [N]
 
-        # compute ego and occluder positions (transforming to map coords)
+        # compute trajs, ego and occluder positions (transforming to map coords)
+        trajs = scene_map.to_map_points(trajs)
         ego = scene_map.to_map_points(scene_pts=orig_ego)
         occluders = []
         for occluder in orig_occluders:
@@ -219,28 +206,29 @@ class AgentFormerDataGeneratorForSDD:
         keep = (np.sum(obs_mask, axis=1) >= 2)  # [N]
         trajs, ids, obs_mask = trajs[keep], ids[keep], obs_mask[keep]
 
-        self.check_n_agents_and_subsample(ids, trajs, obs_mask)
+        keep = self.check_n_agents_and_subsample(ids)
+        ids = ids[keep]
+        trajs = trajs[keep]
+        obs_mask = obs_mask[keep]
 
         # performing all shifting / normalization only based on points we have observed
         # (using all past points, even unobserved ones, would constitute data leakage)
-        points = trajs[obs_mask, :]  # NDArray [P, 2]
+        last_obs_indices = trajs.shape[1] - np.argmax(obs_mask[:, ::-1], axis=1) - 1
+        last_obs_points = trajs[np.arange(ids.shape[0]), last_obs_indices, :]
+        mean_point = np.mean(last_obs_points, axis=0)
 
         # normalize
-        min = np.min(points, axis=0)
-        max = np.max(points, axis=0)
+        ego -= mean_point
+        trajs -= mean_point
+        ego_visipoly = sg.Polygon(ego_visipoly.coords - mean_point)
+        scene_map.translation(mean_point)
 
-        shift = (max + min) / 2
-        ego -= shift
-        trajs -= shift
-        points -= shift
-        ego_visipoly = sg.Polygon(ego_visipoly.coords - shift)
-        scene_map.translation(shift)
+        scaling = self.traj_scale / self.px_per_m
 
-        ego *= self.traj_scale / self.px_per_m
-        trajs *= self.traj_scale / self.px_per_m
-        points *= self.traj_scale / self.px_per_m
-        ego_visipoly = sg.Polygon(ego_visipoly.coords * self.traj_scale / self.px_per_m)
-        scene_map.scale(scaling=(self.px_per_m / self.traj_scale))
+        ego *= scaling
+        trajs *= scaling
+        ego_visipoly = sg.Polygon(ego_visipoly.coords * scaling)
+        scene_map.scale(scaling=1/scaling)
 
         # # cropping the scene_map
         # box_coords = np.array([[-1, -1], [1, 1]])
@@ -288,13 +276,6 @@ class AgentFormerDataGeneratorForSDD:
         # expand the map
         scene_map.mirror_expand()
 
-        # load trajectories and agent identities
-        trajs = np.stack(
-            [agent.get_traj_section(extracted_data['full_window'])
-             for agent in extracted_data['agents']]
-        )       # [N, T, 2]
-        ids = np.stack([agent.id for agent in extracted_data['agents']])        # [N]
-
         # rotate_the_map
         if self.rand_rot_scene:
             data['theta'] = float(np.random.rand() * 2 * np.pi)
@@ -302,14 +283,19 @@ class AgentFormerDataGeneratorForSDD:
             data['theta'] = 0.0
         scene_map.rotate_around_center(data['theta'])
 
+        # load trajectories and agent identities
+        trajs = np.stack(
+            [agent.get_traj_section(extracted_data['full_window'])
+             for agent in extracted_data['agents']]
+        )       # [N, T, 2]
+        ids = np.stack([agent.id for agent in extracted_data['agents']])        # [N]
+
         # fig, ax = plt.subplots()
         # print(f"{data['theta']=}")
         # visualize.visualize_training_instance(
         #     draw_ax=ax, instance_dict=extracted_data
         # )
         # plt.show()
-
-        trajs = scene_map.to_map_points(trajs)
 
         processed_data = self.traj_processing(
             trajs=trajs,
