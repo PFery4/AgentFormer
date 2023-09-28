@@ -828,7 +828,7 @@ class AgentFormer(nn.Module):
 
         # global scene map
         # self.data['global_map'] = torch.from_numpy(data['scene_map'].data).to(self.device)
-        self.data['global_map'] = torch.from_numpy(data['scene_map'].as_image().transpose(2, 0, 1)).to(self.device)
+        self.data['global_map'] = torch.from_numpy(data['scene_map'].data.transpose(0, 2, 1)).to(self.device)
         # occlusion map
         self.data['occlusion_map'] = data['occlusion_map'].detach().clone().to(self.device)
 
