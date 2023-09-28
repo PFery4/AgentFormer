@@ -321,7 +321,7 @@ class AgentFormerDataGeneratorForSDD:
             plot_norm_box=True
         )
         ax[2].imshow(processed_data['occlusion_map'])
-        plt.show()
+        # plt.show()
         # print(zblu)
         #############################################################################################################
 

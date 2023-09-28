@@ -827,7 +827,24 @@ class AgentFormer(nn.Module):
         #     self.data['agent_maps'] = scene_map.get_cropped_maps(scene_points, patch_size, rot).to(self.device)      # [N, 3, 100, 100]
 
         # global scene map
-        self.data['scene_map'] = data['scene_map']
+        # self.data['global_map'] = torch.from_numpy(data['scene_map'].data).to(self.device)
+        self.data['global_map'] = torch.from_numpy(data['scene_map'].as_image().transpose(2, 0, 1)).to(self.device)
+        # occlusion map
+        self.data['occlusion_map'] = data['occlusion_map'].detach().clone().to(self.device)
+
+        print(f"{data['scene_map'].data.shape=}")
+        print(f"{self.data['global_map'], self.data['global_map'].shape=}")
+        print(f"{self.data['occlusion_map'], self.data['occlusion_map'].shape=}")
+
+        self.data['combined_map'] = torch.cat((self.data['global_map'], self.data['occlusion_map'].unsqueeze(0)))
+        print(f"{self.data['combined_map'], self.data['combined_map'].shape=}")
+
+        fig, ax = plt.subplots(1, 4)
+        for dim in range(self.data['combined_map'].shape[0]):
+            img = self.data['combined_map'][dim, ...].cpu().numpy()
+            ax[dim].imshow(img)
+
+        plt.show()
 
         conn_dist = self.cfg.get('conn_dist', 100000.0)
         cur_motion = self.data['cur_motion'][0]
