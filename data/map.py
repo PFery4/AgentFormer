@@ -3,6 +3,7 @@ Code borrowed from Trajectron++: https://github.com/StanfordASL/Trajectron-plus-
 """
 import torch
 import numpy as np
+from numpy.typing import NDArray
 import cv2
 import os
 from data.homography_warper import get_rotation_matrix2d, warp_affine_crop
@@ -50,7 +51,7 @@ class GeometricMap(Map):
         self._torch_map = torch.tensor(self.data, dtype=torch.uint8, device=device)
         return self._torch_map
 
-    def as_image(self):
+    def as_image(self) -> NDArray:
         # We have to transpose x and y to rows and columns. Assumes origin is lower left for image
         # Also we move the channels to the last dimension
         return (np.transpose(self.data, (2, 1, 0))).astype(np.uint8)
@@ -61,7 +62,7 @@ class GeometricMap(Map):
     def set_homography(self, Matrix):
         self.homography = Matrix
 
-    def translation(self, point: np.array):
+    def translation(self, point: NDArray):
         """
         shifts the origin of self.homography by some coordinate vector
         """
@@ -87,7 +88,7 @@ class GeometricMap(Map):
         img = cv2.copyMakeBorder(img, H, H, W, W, borderType=cv2.BORDER_REFLECT_101)
         self.data = np.transpose(img, (2, 1, 0))
 
-    def square_crop(self, crop_coords: np.array, side_length: float, resolution: int):
+    def square_crop(self, crop_coords: NDArray, side_length: float, resolution: int):
         assert np.all(crop_coords >= 0)
         assert np.all(crop_coords[1] <= self.get_map_dimensions())
 
@@ -249,7 +250,7 @@ class GeometricMap(Map):
         return self.get_cropped_maps_from_scene_map_batch([self]*scene_pts.shape[0], scene_pts,
                                                           patch_size, rotation=rotation, device=device)
 
-    def to_map_points(self, scene_pts: np.array) -> np.array:
+    def to_map_points(self, scene_pts: NDArray) -> NDArray:
         org_shape = None
         if len(scene_pts.shape) != 2:
             org_shape = scene_pts.shape
