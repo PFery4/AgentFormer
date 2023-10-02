@@ -204,7 +204,7 @@ class preprocess(object):
 
         timesteps = torch.from_numpy(np.arange(self.past_frames + self.future_frames) - self.past_frames + 1)
 
-        if len(valid_id) > self.max_train_agent:        # todo: add self.training
+        if len(valid_id) > self.max_train_agent:        # TODO: add self.training
             keep_indices = np.random.choice(len(valid_id), self.max_train_agent, replace=False)
             valid_id = [valid_id[idx] for idx in keep_indices]
             full_motion_3D = [full_motion_3D[idx] for idx in keep_indices]
