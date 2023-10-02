@@ -38,7 +38,7 @@ class GlobalMapCNN(nn.Module):
         'maxpool': torch.nn.MaxPool2d
     }
 
-    def __init__(self):
+    def __init__(self, cfg):
         super().__init__()
         self.layers = nn.ModuleList()
         cfg = {
@@ -105,7 +105,7 @@ class GlobalMapCNN(nn.Module):
         x_dummy = torch.randn(self.input_size).unsqueeze(0)
 
         layers = cfg.get('layers')
-        print(f"{layers=}")
+        # print(f"{layers=}")
         for layer_type, layer_params in layers:
             if layer_type == 'conv2d':
                 layer_params['in_channels'] = x_dummy.shape[1]
@@ -125,7 +125,7 @@ class GlobalMapCNN(nn.Module):
 
 if __name__ == "__main__":
 
-    map_cnn = GlobalMapCNN()
+    map_cnn = GlobalMapCNN(None)
     # print(f"{map_cnn.__dict__=}")
     # [print(f"{k}:\t\t{v}") for k, v in map_cnn.__dict__.items()]
 
