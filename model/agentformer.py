@@ -1,4 +1,5 @@
 import matplotlib.axes
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 import torch
 import numpy as np
 from torch import nn
@@ -828,23 +829,15 @@ class AgentFormer(nn.Module):
 
         # global scene map
         # self.data['global_map'] = torch.from_numpy(data['scene_map'].data).to(self.device)
+        self.data['scene_map'] = data['scene_map']
         self.data['global_map'] = torch.from_numpy(data['scene_map'].data.transpose(0, 2, 1)).to(self.device)
         # occlusion map
         self.data['occlusion_map'] = data['occlusion_map'].detach().clone().to(self.device)
 
-        print(f"{data['scene_map'].data.shape=}")
-        print(f"{self.data['global_map'], self.data['global_map'].shape=}")
-        print(f"{self.data['occlusion_map'], self.data['occlusion_map'].shape=}")
-
         self.data['combined_map'] = torch.cat((self.data['global_map'], self.data['occlusion_map'].unsqueeze(0)))
-        print(f"{self.data['combined_map'], self.data['combined_map'].shape=}")
-
-        fig, ax = plt.subplots(1, 4)
-        for dim in range(self.data['combined_map'].shape[0]):
-            img = self.data['combined_map'][dim, ...].cpu().numpy()
-            ax[dim].imshow(img)
-
-        plt.show()
+        # print(f"{self.data['combined_map'], self.data['combined_map'].shape=}")
+        self.data['dt_occlusion_map'] = data['dt_occlusion_map'].detach().clone().to(self.device)
+        self.data['p_occl_map'] = data['p_occl_map'].detach().clone().to(self.device)
 
         conn_dist = self.cfg.get('conn_dist', 100000.0)
         cur_motion = self.data['cur_motion'][0]
@@ -861,9 +854,11 @@ class AgentFormer(nn.Module):
             mask = torch.zeros([cur_motion.shape[0], cur_motion.shape[0]]).to(self.device)
         self.data['agent_mask'] = mask          # [N, N]
 
-        # self.visualize_data_dict()
+        self.visualize_data_dict()
 
-    def visualize_data_dict(self):
+    def visualize_data_dict(self, show: bool = True):
+        # TODO: there are a few things to fix in this data visualization function
+
         [print(f"{k}: {type(v)}") for k, v in self.data.items()]
         print()
 
@@ -906,17 +901,6 @@ class AgentFormer(nn.Module):
         ax0 = fig.add_subplot(131, projection='3d')
         ax1 = fig.add_subplot(132, projection='3d')
         ax2 = fig.add_subplot(133)
-
-        # import matplotlib.pyplot as plt
-        # import cartopy.crs as ccrs
-        #
-        # ax1 = plt.subplot(311)
-        # ax2 = plt.subplot(312, projection='polar')
-        # ax3 = plt.subplot(313, projection=ccrs.PlateCarree())
-        #
-        # print(type(ax1))
-        # print(type(ax2))
-        # print(type(ax3))
 
         scene_map = self.data['scene_map']
 
@@ -994,7 +978,26 @@ class AgentFormer(nn.Module):
             ax2.set_ylim(scene_map.get_map_dimensions()[1], 0.)
             ax2.imshow(scene_map.as_image())
 
-        plt.show()
+        fig_2, axes_2 = plt.subplots(1, 6)
+        divider_1 = make_axes_locatable(axes_2[4])
+        divider_2 = make_axes_locatable(axes_2[5])
+        cax_1 = divider_1.append_axes('right', size='5%', pad=0.05)
+        cax_2 = divider_2.append_axes('right', size='5%', pad=0.05)
+
+        for dim in range(self.data['combined_map'].shape[0]):
+            img = self.data['combined_map'][dim, ...].cpu().numpy()
+            axes_2[dim].imshow(img)
+
+        dist_t_occl_map = self.data['dt_occlusion_map'].cpu().numpy()
+        im = axes_2[4].imshow(dist_t_occl_map)
+        fig_2.colorbar(im, cax=cax_1, orientation='vertical')
+
+        p_occl_map = self.data['p_occl_map'].cpu().numpy()
+        im2 = axes_2[5].imshow(p_occl_map, cmap='Greys')
+        fig_2.colorbar(im2, cax=cax_2, orientation='vertical')
+
+        if show:
+            plt.show()
 
     def step_annealer(self):
         for anl in self.param_annealers:
