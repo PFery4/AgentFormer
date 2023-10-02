@@ -105,7 +105,7 @@ class AgentFormerDataGeneratorForSDD:
     def check_n_agents_and_subsample(self, ids: NDArray):
         # ids is an NDArray of shape [N]
         # TODO: check that we are never eliminating the target agent for occlusion
-        if ids.shape[0] > self.max_train_agent:     # todo: add 'self.training'
+        if ids.shape[0] > self.max_train_agent:     # TODO: add 'self.training'
             keep_indices = np.sort(np.random.choice(ids.shape[0], self.max_train_agent, replace=False))
             return keep_indices
         return numpy.arange(ids.shape[0])
@@ -417,7 +417,7 @@ class AgentFormerDataGeneratorForSDD:
             plot_box = scene_map.to_map_points(plot_box)
             draw_ax.plot(plot_box[..., 0], plot_box[..., 1], c='r')
         if plot_crop_box:
-            k = 2.0         # todo: move constant to a member variable
+            k = 2.0         # TODO: move constant to a member variable
             crop_coords = scene_map.to_map_points(np.array([[-1, -1], [1, 1]]) * k)
             crop_box = np.array([[crop_coords[0, 0], crop_coords[0, 1]],
                                  [crop_coords[0, 0], crop_coords[1, 1]],
