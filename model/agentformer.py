@@ -131,8 +131,8 @@ class ContextEncoder(nn.Module):
         self.vel_heading = ctx['vel_heading']
         ctx['context_dim'] = self.model_dim
         in_dim = self.motion_dim * len(self.input_type)
-        if 'map' in self.input_type:
-            in_dim += ctx['map_enc_dim'] - self.motion_dim
+        # if 'map' in self.input_type:
+        #     in_dim += ctx['map_enc_dim'] - self.motion_dim
         self.input_fc = nn.Linear(in_dim, self.model_dim)
 
         encoder_layers = AgentFormerEncoderLayer(ctx['tf_cfg'], self.model_dim, self.nhead, self.ff_dim, self.dropout)
@@ -834,7 +834,7 @@ class AgentFormer(nn.Module):
         # occlusion map
         self.data['occlusion_map'] = data['occlusion_map'].detach().clone().to(self.device)
 
-        self.data['combined_map'] = torch.cat((self.data['global_map'], self.data['occlusion_map'].unsqueeze(0)))
+        self.data['combined_map'] = torch.cat((self.data['global_map'], self.data['occlusion_map'].unsqueeze(0))).to(torch.float32)
         # print(f"{self.data['combined_map'], self.data['combined_map'].shape=}")
         self.data['dt_occlusion_map'] = data['dt_occlusion_map'].detach().clone().to(self.device)
         self.data['p_occl_map'] = data['p_occl_map'].detach().clone().to(self.device)
@@ -1005,7 +1005,10 @@ class AgentFormer(nn.Module):
 
     def forward(self):
         if self.use_map:
-            self.data['map_enc'] = self.map_encoder(self.data['agent_maps'])
+            # self.data['map_enc'] = self.map_encoder(self.data['agent_maps'])
+            print(f"{self.data['combined_map'], self.data['combined_map'].shape=}")
+            self.data['map_encoding'] = self.map_encoder(self.data['combined_map'].unsqueeze(0)).squeeze()
+            print(f"{self.data['map_encoding'], self.data['map_encoding'].shape=}")
         self.context_encoder(self.data)
         self.future_encoder(self.data)
         self.future_decoder(self.data, mode='train', autoregress=self.ar_train)
