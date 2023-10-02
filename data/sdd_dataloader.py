@@ -10,6 +10,8 @@ import torch
 import sys
 import numpy as np
 import skgeom as sg
+from scipy.ndimage.morphology import distance_transform_edt
+from scipy.special import softmax
 
 from data.map import GeometricMap
 from utils.config import Config
@@ -85,7 +87,7 @@ class AgentFormerDataGeneratorForSDD:
         self.px_per_m = full_dataset.px_per_m
         self.traj_scale = parser.traj_scale
         self.map_side = 50      # [m]
-        self.map_res = 600      # [px]
+        self.map_res = 300      # [px]
         self.map_crop_coords = np.array(
             [[-self.map_side, -self.map_side], [self.map_side, self.map_side]]
         ) * self.traj_scale / 2
@@ -102,7 +104,7 @@ class AgentFormerDataGeneratorForSDD:
 
     def check_n_agents_and_subsample(self, ids: NDArray):
         # ids is an NDArray of shape [N]
-        # todo: check that we are never eliminating the target agent for occlusion
+        # TODO: check that we are never eliminating the target agent for occlusion
         if ids.shape[0] > self.max_train_agent:     # todo: add 'self.training'
             keep_indices = np.sort(np.random.choice(ids.shape[0], self.max_train_agent, replace=False))
             return keep_indices
@@ -156,6 +158,8 @@ class AgentFormerDataGeneratorForSDD:
             "obs_mask": obs_mask,
             "scene_map": scene_map,
             "occlusion_map": np.ones(scene_map.get_map_dimensions()),
+            "dt_occlusion_map": np.zeros(scene_map.get_map_dimensions()),
+            "p_occl_map": np.zeros(scene_map.get_map_dimensions()),
             "ego": None,
             "ego_visipoly": None,
             "occluders": None,
@@ -237,13 +241,27 @@ class AgentFormerDataGeneratorForSDD:
         # scene_map.square_crop(crop_coords=crop_coords, h_scaling=k)
         scene_map = self.cropped_scene_map(scene_map)
 
-        # compute occlusion map
+        # compute occlusion map and distance transformed occlusion map
         map_dims = scene_map.get_map_dimensions()
         occ_x = np.arange(map_dims[0])
         occ_y = np.arange(map_dims[1])
         xy = np.dstack((np.meshgrid(occ_x, occ_y))).reshape((-1, 2))
         mpath = Path(scene_map.to_map_points(ego_visipoly.coords))
-        occlusion_map = mpath.contains_points(xy).reshape(*reversed(map_dims))          # NDArray [map_res, map_res]
+        occlusion_map = mpath.contains_points(xy).reshape(*reversed(map_dims)).astype(np.int32)          # NDArray [map_res, map_res]
+
+        invert_occl_map = 1 - occlusion_map
+        dt_occl_map = np.where(
+            invert_occl_map,
+            -distance_transform_edt(invert_occl_map),
+            distance_transform_edt(occlusion_map)
+        )
+
+        # TODO: maybe change the distance transformed map to metric space.
+        # TODO: consider normalizing dt map wrt ensemble of training data (as proposed by Park et al.)
+
+        p_occl_map = softmax(np.max(dt_occl_map) - np.clip(dt_occl_map, a_min=0, a_max=None))
+        # TODO: FIX THE PROBABILITY MAP (consult the source code of Park et al.)
+
 
         out_dict = {
             "ids": ids,
@@ -251,6 +269,8 @@ class AgentFormerDataGeneratorForSDD:
             "obs_mask": obs_mask,
             "scene_map": scene_map,
             "occlusion_map": occlusion_map,
+            "dt_occlusion_map": dt_occl_map,
+            "p_occl_map": p_occl_map,
             "ego": ego,
             "ego_visipoly": ego_visipoly,
             "occluders": occluders,
@@ -332,6 +352,8 @@ class AgentFormerDataGeneratorForSDD:
         # data['occluders'] = torch.from_numpy(np.stack(processed_data['occluders']))         # [n_occluders, 2, 2]
         # data['ego_visipoly'] = processed_data['ego_visipoly']                               # sg.Polygon
         data['occlusion_map'] = torch.from_numpy(processed_data['occlusion_map'])         # [H, W]
+        data['dt_occlusion_map'] = torch.from_numpy(processed_data['dt_occlusion_map'])   # [H, W]
+        data['p_occl_map'] = torch.from_numpy(processed_data['p_occl_map'])                       # [H, W]
         data['timesteps'] = torch.from_numpy(
             np.arange(len(extracted_data['full_window'])) - len(extracted_data['past_window']) + 1
         )
