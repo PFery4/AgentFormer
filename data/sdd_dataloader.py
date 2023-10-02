@@ -87,7 +87,7 @@ class AgentFormerDataGeneratorForSDD:
         self.px_per_m = full_dataset.px_per_m
         self.traj_scale = parser.traj_scale
         self.map_side = 50      # [m]
-        self.map_res = 300      # [px]
+        self.map_res = 400      # [px]
         self.map_crop_coords = np.array(
             [[-self.map_side, -self.map_side], [self.map_side, self.map_side]]
         ) * self.traj_scale / 2
