@@ -16,7 +16,7 @@ future_frames                : 12
 min_past_frames              : 8
 min_future_frames            : 12
 
-traj_scale                   : 1    # todo: figure out correct value
+traj_scale                   : 1    # TODO: figure out correct value
 motion_dim                   : 2
 forecast_dim                 : 2
 
@@ -28,7 +28,7 @@ tf_model_dim: 256
 tf_ff_dim: 512
 tf_nhead: 8
 tf_dropout: 0.1
-input_type: ['scene_norm', 'vel']
+input_type: ['scene_norm', 'vel', 'map']
 pred_type: 'scene_norm'
 sn_out_type: 'norm'
 max_train_agent: 32
@@ -36,12 +36,12 @@ pos_concat: true
 rand_rot_scene: true
 scene_orig_all_past: true
 
-# TODO: define parameters for the global map processing
-#use_global_map: true
-#map_encoder:
-#  model_id: global_map_cnn
-#  normalize: true
-#  output_dim: 256
+# TODO: extend the parameters of the global map processing unit
+use_map: true
+map_encoder:
+  model_id: global_map_cnn
+  normalize: true
+  output_dim: 256
 
 context_encoder:
   nlayer: 2
