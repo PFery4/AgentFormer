@@ -59,29 +59,6 @@ def visualize_mask(q_identities: Tensor, k_identities: Tensor) -> None:
     plt.show()
 
 
-def map_agent_aware_attention(
-        map_feature: Tensor,
-) -> None:
-    # tgt_len, batch_size, embed_dim = query.size()       # L, N, E
-    # print(f"{tgt_len, batch_size, embed_dim=}")
-    # assert embed_dim == embed_dim_to_check
-    # # allow MHA to have different sizes for the feature dimension
-    # assert key.size(0) == value.size(0) and key.size(1) == value.size(1)
-    #
-    # head_dim = embed_dim // num_heads
-    # assert head_dim * num_heads == embed_dim, f"embed_dim ({embed_dim}) must be divisible by num_heads ({num_heads})"
-    #
-    # scaling = float(head_dim) ** -0.5
-    #
-    # use_separate_proj_weight = False
-    # if torch.equal(query, key) and torch.equal(key, value):
-    #     # self.attention, each tensor is of shape []
-    #     k = 0
-
-    # TODO: IMPLEMENT WIP WIP WIP
-    pass
-
-
 def agent_aware_attention(query: Tensor,
                           key: Tensor,
                           value: Tensor,
@@ -167,12 +144,6 @@ def agent_aware_attention(query: Tensor,
         - attn_output_weights: :math:`(N, L, S)` where N is the batch size,
           L is the target sequence length, S is the source sequence length.
     """
-    # [print(f"{k}: {v}\n") for k, v in locals().items()]
-    # print(zblu)
-    # print(f"{torch.jit.is_scripting()=}")
-    # if not torch.jit.is_scripting():
-    #     raise NotImplementedError
-
     tgt_len, batch_size, embed_dim = query.size()
     assert embed_dim == embed_dim_to_check
     # allow MHA to have different sizes for the feature dimension
@@ -182,17 +153,20 @@ def agent_aware_attention(query: Tensor,
     assert head_dim * num_heads == embed_dim, f"embed_dim ({embed_dim}) must be divisible by num_heads ({num_heads})"
     scaling = float(head_dim) ** -0.5
 
+    # print(f"{head_dim, embed_dim, num_heads=}")
+
     if not use_separate_proj_weight:
         if torch.equal(query, key) and torch.equal(key, value):
             # self-attention. each tensor is of shape [tgt_len, embed_dim]
             q, k, v = linear(query, in_proj_weight, in_proj_bias).chunk(3, dim=-1)
             # WIP CODE
-            print(f"{query.shape, in_proj_weight.shape, in_proj_bias.shape=}")
-            print(f"{q.shape, k.shape, v.shape=}")
-            print(zblu)
+            # print(f"{query.shape, key.shape, value.shape, in_proj_weight.shape, in_proj_bias.shape=}")
+            # print(f"{q.shape, k.shape, v.shape=}")
             # WIP CODE
             if in_proj_weight_self is not None:
                 q_self, k_self = linear(query, in_proj_weight_self, in_proj_bias_self).chunk(2, dim=-1)
+            # print(f"1: {q.shape, k.shape, v.shape, q_self.shape, k_self.shape=}")
+
         elif torch.equal(key, value):
             # encoder-decoder attention
             # This is inline in_proj function with in_proj_weight and in_proj_bias
@@ -225,6 +199,7 @@ def agent_aware_attention(query: Tensor,
                 _w = in_proj_weight_self[embed_dim:, :]
                 _b = in_proj_bias_self[embed_dim:]
                 k_self = linear(key, _w, _b)
+            # print(f"2: {q.shape, k.shape, v.shape, q_self.shape, k_self.shape=}")
         else:
             raise NotImplementedError
     # q, k, v and q_self, k_self are of shape [tgt_len, embed_dim]
@@ -238,7 +213,7 @@ def agent_aware_attention(query: Tensor,
         if in_proj_weight_self is not None:
             q_self = q_self * scaling       # remove scaling
 
-    # print(f"{attn_mask, attn_mask.shape=}")
+    # print(f"3. {attn_mask, attn_mask.shape=}")
     if attn_mask is not None:
         assert attn_mask.dtype == torch.float32 or attn_mask.dtype == torch.float64 or \
                attn_mask.dtype == torch.float16 or attn_mask.dtype == torch.uint8 or attn_mask.dtype == torch.bool, \
@@ -256,6 +231,7 @@ def agent_aware_attention(query: Tensor,
         else:
             raise RuntimeError("attn_mask's dimension {} is not supported".format(attn_mask.dim()))
         # attn_mask's dim is 3 now.
+    # print(f"4. {attn_mask, attn_mask.shape=}")
 
     # convert ByteTensor key_padding_mask to bool
     if key_padding_mask is not None and key_padding_mask.dtype == torch.uint8:
@@ -279,6 +255,8 @@ def agent_aware_attention(query: Tensor,
         q_self = q_self.contiguous().view(tgt_len, batch_size * num_heads, head_dim).transpose(0, 1)
         k_self = k_self.contiguous().view(-1, batch_size * num_heads, head_dim).transpose(0, 1)
     # q, k, v and q_self, k_self are of shape [batch_size * num_heads, tgt_len, head_dim]
+    # print(f"5. {q.shape=}")
+    # print(f"6. {[*q.shape[:-1], 3]=}")
 
     # print(f"{static_k=}")
     if static_k is not None:
@@ -313,6 +291,7 @@ def agent_aware_attention(query: Tensor,
         ==================================
         """
         attn_output_weights_inter = attn_output_weights             # [batch_size * num_heads, tgt_len, src_len]
+        # print(f"7. {q_identities.shape, k_identities.shape=}")
         attn_weight_self_mask = agent_aware_mask(q_identities, k_identities)        # [tgt_len, src_len]
 
         attn_output_weights_self = torch.bmm(q_self, k_self.transpose(1, 2))    # [batch_size * num_heads, tgt_len, src_len]
@@ -341,6 +320,8 @@ def agent_aware_attention(query: Tensor,
 
     assert list(attn_output.size()) == [batch_size * num_heads, tgt_len, head_dim]
     attn_output = attn_output.transpose(0, 1).contiguous().view(tgt_len, batch_size, embed_dim)     # [tgt_len, batch_size, embed_dim]
+
+    # print(f"8. {out_proj_weight.shape, out_proj_bias.shape=}")
     attn_output = linear(attn_output, out_proj_weight, out_proj_bias)                               # [tgt_len, batch_size, embed_dim]
 
     # print(f"{need_weights=}")
@@ -528,6 +509,89 @@ class AgentAwareAttention(Module):
                 in_proj_weight_self=self.in_proj_weight_self,
                 in_proj_bias_self=self.in_proj_bias_self
                 )
+
+
+class AgentAwareAttention_V2(Module):
+
+    def __init__(self, cfg, embed_dim: int, num_heads: int, dropout: float = 0.1):
+        super().__init__()
+        self.cfg = cfg
+        self.embed_dim = embed_dim
+        self.kdim = embed_dim
+        self.vdim = embed_dim
+
+        self.num_heads = num_heads
+        self.dropout = torch.nn.Dropout(dropout)
+        self.head_dim = embed_dim // num_heads
+        assert self.head_dim * num_heads == self.embed_dim, "embed_dim must be divisible by num_heads"
+
+        self.scaling = float(self.head_dim) ** -0.5
+
+        # inprojweight and bias map from embed_dim to embed_dim
+        self.w_q_self = torch.nn.Linear(embed_dim, embed_dim, bias=False)
+        self.w_q_other = torch.nn.Linear(embed_dim, embed_dim, bias=False)
+        self.w_k_self = torch.nn.Linear(embed_dim, self.kdim, bias=False)
+        self.w_k_other = torch.nn.Linear(embed_dim, self.kdim, bias=False)
+        self.w_v = torch.nn.Linear(embed_dim, self.vdim, bias=False)
+
+        self.fc = torch.nn.Linear(embed_dim, embed_dim, bias=False)
+
+    @staticmethod
+    def agent_aware_mask(q_identities: Tensor, k_identities: Tensor):
+        # q_identities: [L]
+        # k_identities: [S]
+        return torch.cat([(k_identities == q_val).unsqueeze(0) for q_val in q_identities], dim=0).to(q_identities.dtype)
+
+    def forward(
+            self,
+            q: Tensor, k: Tensor, v: Tensor,
+            q_identities: Tensor, k_identities: Tensor,
+            mask: Tensor, need_weights: bool = True
+    ) -> Tuple[Tensor, Optional[Tensor]]:
+        # q: [L, N, E_q]
+        # k: [S, N, E_q]
+        # v: [S, N, E_v]
+        # q_identities: [L]
+        # k_identities: [S]
+        L, N, _ = q.size()
+        S, _, _ = k.size()
+
+        # NOTE: No residual connections used in AgentAwareAttention
+
+        # mapping inputs to keys, queries and values
+        q_self = self.w_q_self(q)       # [L, N, self.embed_dim]
+        q_other = self.w_q_other(q)     # [L, N, self.embed_dim]
+        k_self = self.w_k_self(k)       # [S, N, self.kdim]
+        k_other = self.w_k_other(k)     # [S, N, self.kdim]
+        v = self.w_v(v)                 # [S, N, self.vdim]
+
+        q_self *= self.scaling          # [L, N, self.embed_dim]
+        q_other *= self.scaling         # [L, N, self.embed_dim]
+
+        q_self = q_self.view(L, N, self.num_heads, self.head_dim).transpose(0, 2)        # [N, self.num_heads, L, self.head_dim]
+        q_other = q_other.view(L, N, self.num_heads, self.head_dim).transpose(0, 2)     # [N, self.num_heads, L, self.head_dim]
+        k_self = k_self.view(S, N, self.num_heads, self.head_dim).transpose(0, 2)             # [N, self.num_heads, S, self.head_dim]
+        k_other = k_other.view(S, N, self.num_heads, self.head_dim).transpose(0, 2)          # [N, self.num_heads, S, self.head_dim]
+        v = v.view(S, N, self.num_heads, self.head_dim).transpose(0, 2)                            # [N, self.num_heads, S, self.head_dim]
+
+        attention_self = q_self @ k_self.transpose(2, 3)            # [N, self.num_heads, L, S]
+        attention_other = q_other @ k_other.transpose(2, 3)         # [N, self.num_heads, L, S]
+
+        agent_aware_mask = self.agent_aware_mask(q_identities, k_identities)    # [L, S]
+
+        attention = attention_other * (1 - agent_aware_mask) + attention_self * (1 - agent_aware_mask)  # [N, self.num_heads, L, S]
+        attention += mask           # [N, self.num_heads, L, S]
+        attention = F.softmax(attention, dim=-1)        # [N, self.num_heads, L, S]
+        attention = self.dropout(attention)             # [N, self.num_heads, L, S]
+
+        attention_output = attention @ v                # [N, self.num_heads, L, self.head_dim]
+        attention_output = attention_output.permute(2, 0, 1, 3).contiguous().view(L, N, self.embed_dim)     # [L, N, self.embed_dim]
+        attention_output = self.fc(attention_output)        # [L, N, self.embed_dim]
+
+        if need_weights:
+            return attention_output, attention.sum(dim=1) / self.num_heads
+        else:
+            return attention_output, None
 
 
 class AgentFormerEncoderLayer(Module):
@@ -817,3 +881,46 @@ def _get_activation_fn(activation):
         return F.gelu
 
     raise RuntimeError("activation should be relu/gelu, not {}".format(activation))
+
+
+# TODO: WIP WIP WIP ON THIS PART
+# class MapAgentAwareAttention(Module):
+#     def __init__(self, cfg):
+#         super().__init__()
+#         self.cfg = cfg
+#
+#         self.traj_input_dim = 256
+#         self.traj_head_dim = 32
+#         self.traj_num_heads = 8
+#         self.traj_dim = self.traj_head_dim * self.traj_num_heads
+#
+#         self.map_input_dim = 256
+#         self.map_head_dim = 32
+#         self.map_num_heads = 8
+#         self.map_dim = self.map_head_dim * self.map_num_heads
+#
+#         self.value_dim = 256
+#
+#         self.w_qm = torch.nn.Linear(self.traj_input_dim, self.map_dim, bias=False)
+#         self.w_qs = torch.nn.Linear(self.traj_input_dim, self.traj_dim, bias=False)
+#         self.w_qo = torch.nn.Linear(self.traj_input_dim, self.traj_dim, bias=False)
+#         self.w_km = torch.nn.Linear(self.traj_input_dim, self.map_dim, bias=False)
+#         self.w_ks = torch.nn.Linear(self.traj_input_dim, self.traj_dim, bias=False)
+#         self.w_ko = torch.nn.Linear(self.traj_input_dim, self.traj_dim, bias=False)
+#
+#         self.w_qi = torch.nn.Linear(self.map_input_dim, self.map_dim, bias=False)
+#         self.w_ql = torch.nn.Linear(self.map_input_dim, self.traj_dim, bias=False)
+#         self.w_ki = torch.nn.Linear(self.map_input_dim, self.map_dim, bias=False)
+#         self.w_kl = torch.nn.Linear(self.map_input_dim, self.traj_dim, bias=False)
+#
+#         self.w_vt = torch.nn.Linear(self.traj_input_dim, self.value_dim, bias=False)
+#         self.w_vm = torch.nn.Linear(self.map_input_dim, self.value_dim, bias=False)
+#
+#         self.dropout = torch.nn.Dropout(0.1)
+#         self.layer_norm = torch.nn.LayerNorm(self.traj_input_dim, eps=1e-6)
+#
+#     def forward(self):
+#
+#         # map inputs to keys, queries and values.
+#
+#         pass
