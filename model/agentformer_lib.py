@@ -511,30 +511,33 @@ class AgentAwareAttention(Module):
                 )
 
 
-class AgentAwareAttention_V2(Module):
+class AgentAwareAttentionV2(Module):
 
-    def __init__(self, cfg, embed_dim: int, num_heads: int, dropout: float = 0.1):
+    def __init__(self, cfg, traj_dim: int, vdim: int, num_heads: int, dropout: float = 0.1):
         super().__init__()
         self.cfg = cfg
-        self.embed_dim = embed_dim
-        self.kdim = embed_dim
-        self.vdim = embed_dim
+        self.traj_dim = traj_dim            # T
+        self.vdim = vdim                    # V
+        self.num_heads = num_heads          # H
 
-        self.num_heads = num_heads
         self.dropout = torch.nn.Dropout(dropout)
-        self.head_dim = embed_dim // num_heads
-        assert self.head_dim * num_heads == self.embed_dim, "embed_dim must be divisible by num_heads"
 
-        self.scaling = float(self.head_dim) ** -0.5
+        self.traj_head_dim = traj_dim // num_heads      # t
+        assert self.traj_head_dim * self.num_heads == self.traj_input_dim, "traj_dim must be divisible by num_heads"
+
+        self.v_head_dim = vdim // num_heads             # v
+        assert self.v_head_dim * self.num_heads == self.vdim, "vdim must be divisible by num_heads"
+
+        self.traj_scaling = float(self.traj_head_dim) ** -0.5
 
         # inprojweight and bias map from embed_dim to embed_dim
-        self.w_q_self = torch.nn.Linear(embed_dim, embed_dim, bias=False)
-        self.w_q_other = torch.nn.Linear(embed_dim, embed_dim, bias=False)
-        self.w_k_self = torch.nn.Linear(embed_dim, self.kdim, bias=False)
-        self.w_k_other = torch.nn.Linear(embed_dim, self.kdim, bias=False)
-        self.w_v = torch.nn.Linear(embed_dim, self.vdim, bias=False)
+        self.w_q_traj_self = torch.nn.Linear(self.traj_dim, self.traj_dim, bias=False)
+        self.w_q_traj_other = torch.nn.Linear(self.traj_dim, self.traj_dim, bias=False)
+        self.w_k_traj_self = torch.nn.Linear(self.traj_dim, self.traj_dim, bias=False)
+        self.w_k_traj_other = torch.nn.Linear(self.traj_dim, self.traj_dim, bias=False)
+        self.w_v_traj = torch.nn.Linear(self.traj_dim, self.vdim, bias=False)
 
-        self.fc = torch.nn.Linear(embed_dim, embed_dim, bias=False)
+        self.fc = torch.nn.Linear(self.vdim, self.vdim, bias=False)
 
     @staticmethod
     def agent_aware_mask(q_identities: Tensor, k_identities: Tensor):
@@ -542,15 +545,44 @@ class AgentAwareAttention_V2(Module):
         # k_identities: [S]
         return torch.cat([(k_identities == q_val).unsqueeze(0) for q_val in q_identities], dim=0).to(q_identities.dtype)
 
+    def agent_scaled_dot_product(self, q: Tensor, k: Tensor, q_identities: Tensor, k_identities: Tensor, mask: Tensor):
+        # q: [L, N, T]
+        # k: [S, N, T]
+        # v: [S, N, T]
+        # q_identities: [L]
+        # k_identities: [S]
+        L, N, _ = q.size()
+        S, _, _ = k.size()
+
+        # NOTE: No residual connections used in AgentAwareAttention
+        q_self = self.w_q_traj_self(q) * self.traj_scaling          # [L, N, T]
+        q_other = self.w_q_traj_other(q) * self.traj_scaling        # [L, N, T]
+        k_self = self.w_k_traj_self(k)          # [S, N, T]
+        k_other = self.w_k_traj_other(k)        # [S, N, T]
+
+        q_self = q_self.view(L, N, self.num_heads, self.traj_head_dim).transpose(0, 2)          # [N, H, L, t]
+        q_other = q_other.view(L, N, self.num_heads, self.traj_head_dim).transpose(0, 2)        # [N, H, L, t]
+        k_self = k_self.view(S, N, self.num_heads, self.traj_head_dim).transpose(0, 2)          # [N, H, S, t]
+        k_other = k_other.view(S, N, self.num_heads, self.traj_head_dim).transpose(0, 2)        # [N, H, S, t]
+
+        attention_self = q_self @ k_self.transpose(2, 3)            # [N, H, L, S]
+        attention_other = q_other @ k_other.transpose(2, 3)         # [N, H, L, S]
+        agent_aware_mask = self.agent_aware_mask(q_identities, k_identities)    # [L, S]
+
+        attention = attention_other * (1 - agent_aware_mask) + attention_self * agent_aware_mask        # [N, H, L, S]
+        attention += mask                                                                               # [N, H, L, S]
+
+        return attention
+
     def forward(
             self,
             q: Tensor, k: Tensor, v: Tensor,
             q_identities: Tensor, k_identities: Tensor,
             mask: Tensor, need_weights: bool = True
     ) -> Tuple[Tensor, Optional[Tensor]]:
-        # q: [L, N, E_q]
-        # k: [S, N, E_q]
-        # v: [S, N, E_v]
+        # q: [L, N, T]
+        # k: [S, N, T]
+        # v: [S, N, T]
         # q_identities: [L]
         # k_identities: [S]
         L, N, _ = q.size()
@@ -559,39 +591,84 @@ class AgentAwareAttention_V2(Module):
         # NOTE: No residual connections used in AgentAwareAttention
 
         # mapping inputs to keys, queries and values
-        q_self = self.w_q_self(q)       # [L, N, self.embed_dim]
-        q_other = self.w_q_other(q)     # [L, N, self.embed_dim]
-        k_self = self.w_k_self(k)       # [S, N, self.kdim]
-        k_other = self.w_k_other(k)     # [S, N, self.kdim]
-        v = self.w_v(v)                 # [S, N, self.vdim]
+        v = self.w_v(v)                                 # [S, N, V]
+        v = v.view(S, N, self.num_heads, self.v_head_dim).transpose(0, 2)                       # [N, H, S, v]
 
-        q_self *= self.scaling          # [L, N, self.embed_dim]
-        q_other *= self.scaling         # [L, N, self.embed_dim]
+        attention = self.agent_scaled_dot_product(
+            q=q, k=k, q_identities=q_identities, k_identities=k_identities, mask=mask
+        )       # [N, H, L, S]
 
-        q_self = q_self.view(L, N, self.num_heads, self.head_dim).transpose(0, 2)        # [N, self.num_heads, L, self.head_dim]
-        q_other = q_other.view(L, N, self.num_heads, self.head_dim).transpose(0, 2)     # [N, self.num_heads, L, self.head_dim]
-        k_self = k_self.view(S, N, self.num_heads, self.head_dim).transpose(0, 2)             # [N, self.num_heads, S, self.head_dim]
-        k_other = k_other.view(S, N, self.num_heads, self.head_dim).transpose(0, 2)          # [N, self.num_heads, S, self.head_dim]
-        v = v.view(S, N, self.num_heads, self.head_dim).transpose(0, 2)                            # [N, self.num_heads, S, self.head_dim]
+        attention = F.softmax(attention, dim=-1)                                                        # [N, H, L, S]
+        attention = self.dropout(attention)                                                             # [N, H, L, S]
 
-        attention_self = q_self @ k_self.transpose(2, 3)            # [N, self.num_heads, L, S]
-        attention_other = q_other @ k_other.transpose(2, 3)         # [N, self.num_heads, L, S]
-
-        agent_aware_mask = self.agent_aware_mask(q_identities, k_identities)    # [L, S]
-
-        attention = attention_other * (1 - agent_aware_mask) + attention_self * (1 - agent_aware_mask)  # [N, self.num_heads, L, S]
-        attention += mask           # [N, self.num_heads, L, S]
-        attention = F.softmax(attention, dim=-1)        # [N, self.num_heads, L, S]
-        attention = self.dropout(attention)             # [N, self.num_heads, L, S]
-
-        attention_output = attention @ v                # [N, self.num_heads, L, self.head_dim]
-        attention_output = attention_output.permute(2, 0, 1, 3).contiguous().view(L, N, self.embed_dim)     # [L, N, self.embed_dim]
-        attention_output = self.fc(attention_output)        # [L, N, self.embed_dim]
+        attention_output = attention @ v                                                                # [N, H, L, v]
+        attention_output = attention_output.permute(2, 0, 1, 3).contiguous().view(L, N, self.vdim)      # [L, N, V]
+        attention_output = self.fc(attention_output)                                                    # [L, N, V]
 
         if need_weights:
             return attention_output, attention.sum(dim=1) / self.num_heads
         else:
             return attention_output, None
+
+
+class MapAgentAwareAttention(AgentAwareAttentionV2):
+
+    def __init__(self, cfg, traj_dim: int, map_dim: int, vdim: int, num_heads: int, dropout: float = 0.1):
+        super().__init__(cfg=cfg, traj_dim=traj_dim, vdim=vdim, num_heads=num_heads, dropout=dropout)
+        self.map_dim = map_dim              # M
+
+        self.map_head_dim = map_dim // num_heads        # m
+        assert self.map_head_dim * self.num_heads == self.map_input_dim, "map_dim must be divisible by num_heads"
+
+        self.map_scaling = float(self.map_head_dim) ** -0.5
+
+        self.w_q_traj_map = torch.nn.Linear(self.traj_dim, self.map_dim, bias=False)
+        self.w_k_traj_map = torch.nn.Linear(self.traj_dim, self.map_dim, bias=False)
+
+        self.w_q_map_self = torch.nn.Linear(self.map_dim, self.map_dim, bias=False)
+        self.w_q_map_agents = torch.nn.Linear(self.map_dim, self.traj_dim, bias=False)
+        self.w_k_map_self = torch.nn.Linear(self.map_dim, self.map_dim, bias=False)
+        self.w_k_map_agents = torch.nn.Linear(self.map_dim, self.traj_dim, bias=False)
+        self.w_v_map = torch.nn.Linear(self.map_dim, self.vdim, bias=False)
+
+    def forward(
+            self,
+            q: Tensor, k: Tensor, v: Tensor, map_feature: Tensor,
+            q_identities: Tensor, k_identities: Tensor,
+            mask: Tensor, need_weights: bool = True
+    ) -> Tuple[Tensor, Optional[Tensor]]:
+        # q: [L, N, T]
+        # k: [S, N, T]
+        # v: [S, N, T]
+        # map_feature: [M]
+        # q_identities: [L]
+        # k_identities: [S]
+        L, N, _ = q.size()
+        S, _, _ = k.size()
+
+        # NOTE: No residual connections used in AgentAwareAttention
+
+        # trajectory related keys, queries and values
+        q_traj_map = self.w_q_traj_map(q) * self.map_scaling        # [L, N, M]
+        k_traj_map = self.w_k_traj_map(k)                           # [S, N, M]
+        v_traj = self.w_v_traj(v)                                   # [S, N, V]
+
+        # map related keys, queries and values
+        q_map_self = self.w_q_map_self(map_feature) * self.map_scaling          # [M]
+        q_map_agents = self.w_q_map_agents(map_feature) * self.traj_scaling     # [T]
+        k_map_self = self.w_k_map_self(map_feature)         # [M]
+        k_map_agents = self.w_k_map_agents(map_feature)     # [T]
+        v_map = self.w_v_map(map_feature)                   # [V]
+
+        # TODO: Tensor reshaping
+        # TODO: cross agent attention
+        # TODO: cross map attention
+        # TODO: agent map attention
+        # TODO: map agent attention
+        # TODO: Combine attention scores
+        # TODO: dropout
+        # TODO: score multiply values
+        # TODO: return output
 
 
 class AgentFormerEncoderLayer(Module):
@@ -881,46 +958,3 @@ def _get_activation_fn(activation):
         return F.gelu
 
     raise RuntimeError("activation should be relu/gelu, not {}".format(activation))
-
-
-# TODO: WIP WIP WIP ON THIS PART
-# class MapAgentAwareAttention(Module):
-#     def __init__(self, cfg):
-#         super().__init__()
-#         self.cfg = cfg
-#
-#         self.traj_input_dim = 256
-#         self.traj_head_dim = 32
-#         self.traj_num_heads = 8
-#         self.traj_dim = self.traj_head_dim * self.traj_num_heads
-#
-#         self.map_input_dim = 256
-#         self.map_head_dim = 32
-#         self.map_num_heads = 8
-#         self.map_dim = self.map_head_dim * self.map_num_heads
-#
-#         self.value_dim = 256
-#
-#         self.w_qm = torch.nn.Linear(self.traj_input_dim, self.map_dim, bias=False)
-#         self.w_qs = torch.nn.Linear(self.traj_input_dim, self.traj_dim, bias=False)
-#         self.w_qo = torch.nn.Linear(self.traj_input_dim, self.traj_dim, bias=False)
-#         self.w_km = torch.nn.Linear(self.traj_input_dim, self.map_dim, bias=False)
-#         self.w_ks = torch.nn.Linear(self.traj_input_dim, self.traj_dim, bias=False)
-#         self.w_ko = torch.nn.Linear(self.traj_input_dim, self.traj_dim, bias=False)
-#
-#         self.w_qi = torch.nn.Linear(self.map_input_dim, self.map_dim, bias=False)
-#         self.w_ql = torch.nn.Linear(self.map_input_dim, self.traj_dim, bias=False)
-#         self.w_ki = torch.nn.Linear(self.map_input_dim, self.map_dim, bias=False)
-#         self.w_kl = torch.nn.Linear(self.map_input_dim, self.traj_dim, bias=False)
-#
-#         self.w_vt = torch.nn.Linear(self.traj_input_dim, self.value_dim, bias=False)
-#         self.w_vm = torch.nn.Linear(self.map_input_dim, self.value_dim, bias=False)
-#
-#         self.dropout = torch.nn.Dropout(0.1)
-#         self.layer_norm = torch.nn.LayerNorm(self.traj_input_dim, eps=1e-6)
-#
-#     def forward(self):
-#
-#         # map inputs to keys, queries and values.
-#
-#         pass
