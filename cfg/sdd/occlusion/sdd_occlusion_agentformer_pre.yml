@@ -37,7 +37,7 @@ rand_rot_scene: true
 scene_orig_all_past: true
 
 # TODO: extend the parameters of the global map processing unit
-use_map: true
+use_map: false
 map_encoder:
   model_id: global_map_cnn
   normalize: true
