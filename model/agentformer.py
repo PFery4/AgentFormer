@@ -1009,10 +1009,14 @@ class AgentFormer(nn.Module):
             print(f"{self.data['combined_map'], self.data['combined_map'].shape=}")
             self.data['map_encoding'] = self.map_encoder(self.data['combined_map'].unsqueeze(0)).squeeze()
             print(f"{self.data['map_encoding'], self.data['map_encoding'].shape=}")
+        # print(f"\nCALLING:  CONTEXT ENCODER\n")
         self.context_encoder(self.data)
+        # print(f"\nCALLING:  FUTURE ENCODER\n")
         self.future_encoder(self.data)
+        # print(f"\nCALLING:  FUTURE DECODER\n")
         self.future_decoder(self.data, mode='train', autoregress=self.ar_train)
         if self.compute_sample:
+            # print(f"\nCALLING:  INFERENCE\n")
             self.inference(sample_num=self.loss_cfg['sample']['k'])
         return self.data
 
