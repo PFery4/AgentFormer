@@ -144,6 +144,11 @@ def agent_aware_attention(query: Tensor,
         - attn_output_weights: :math:`(N, L, S)` where N is the batch size,
           L is the target sequence length, S is the source sequence length.
     """
+    # print(f"{query.shape=}")
+    # print(f"{key.shape=}")
+    # print(f"{value.shape=}")
+    # print(f"{q_identities.shape, k_identities.shape=}")
+    # print(f"{in_proj_bias[0]=}")
     tgt_len, batch_size, embed_dim = query.size()
     assert embed_dim == embed_dim_to_check
     # allow MHA to have different sizes for the feature dimension
@@ -202,7 +207,8 @@ def agent_aware_attention(query: Tensor,
             # print(f"2: {q.shape, k.shape, v.shape, q_self.shape, k_self.shape=}")
         else:
             raise NotImplementedError
-    # q, k, v and q_self, k_self are of shape [tgt_len, embed_dim]
+    # k, v and k_self are of shape [src_len, 1, embed_dim]
+    # q and q_self are of shape [tgt_len, 1, embed_dim]
 
     else:
         raise NotImplementedError
@@ -214,6 +220,7 @@ def agent_aware_attention(query: Tensor,
             q_self = q_self * scaling       # remove scaling
 
     # print(f"3. {attn_mask, attn_mask.shape=}")
+    # attn_mask is shape: [src_len, src_len]
     if attn_mask is not None:
         assert attn_mask.dtype == torch.float32 or attn_mask.dtype == torch.float64 or \
                attn_mask.dtype == torch.float16 or attn_mask.dtype == torch.uint8 or attn_mask.dtype == torch.bool, \
@@ -230,7 +237,7 @@ def agent_aware_attention(query: Tensor,
             raise RuntimeError('The size of the 3D attn_mask is not correct.')
         else:
             raise RuntimeError("attn_mask's dimension {} is not supported".format(attn_mask.dim()))
-        # attn_mask's dim is 3 now.
+        # attn_mask's dim is 3 now. [1, src_len, src_len]
     # print(f"4. {attn_mask, attn_mask.shape=}")
 
     # convert ByteTensor key_padding_mask to bool
@@ -254,9 +261,9 @@ def agent_aware_attention(query: Tensor,
     if in_proj_weight_self is not None:
         q_self = q_self.contiguous().view(tgt_len, batch_size * num_heads, head_dim).transpose(0, 1)
         k_self = k_self.contiguous().view(-1, batch_size * num_heads, head_dim).transpose(0, 1)
-    # q, k, v and q_self, k_self are of shape [batch_size * num_heads, tgt_len, head_dim]
+    # k, v and k_self are of shape [batch_size * num_heads, src_len, head_dim]
+    # q, q_self are of shape [batch_size * num_heads, tgt_len, head_dim]
     # print(f"5. {q.shape=}")
-    # print(f"6. {[*q.shape[:-1], 3]=}")
 
     # print(f"{static_k=}")
     if static_k is not None:
@@ -281,6 +288,7 @@ def agent_aware_attention(query: Tensor,
         raise NotImplementedError
     else:
         attn_output_weights = torch.bmm(q, k.transpose(1, 2))       # [batch_size * num_heads, tgt_len, src_len]
+    # print(f"{attn_output_weights.shape=}")
 
     assert list(attn_output_weights.size()) == [batch_size * num_heads, tgt_len, src_len]
 
@@ -291,14 +299,18 @@ def agent_aware_attention(query: Tensor,
         ==================================
         """
         attn_output_weights_inter = attn_output_weights             # [batch_size * num_heads, tgt_len, src_len]
-        # print(f"7. {q_identities.shape, k_identities.shape=}")
+        print(f"7. {q_identities.shape, k_identities.shape=}")
         attn_weight_self_mask = agent_aware_mask(q_identities, k_identities)        # [tgt_len, src_len]
+
+        # print(f"{attn_weight_self_mask.shape=}")
 
         attn_output_weights_self = torch.bmm(q_self, k_self.transpose(1, 2))    # [batch_size * num_heads, tgt_len, src_len]
 
         assert attn_weight_self_mask.shape == attn_output_weights.shape[-2:] == attn_output_weights_self.shape[-2:]
 
         attn_output_weights = attn_output_weights_inter * (1 - attn_weight_self_mask) + attn_output_weights_self * attn_weight_self_mask
+
+        # print(f"{attn_output_weights.shape=}")
 
         # print(f"{attn_mask=}")
         if attn_mask is not None:
@@ -322,12 +334,15 @@ def agent_aware_attention(query: Tensor,
     attn_output = attn_output.transpose(0, 1).contiguous().view(tgt_len, batch_size, embed_dim)     # [tgt_len, batch_size, embed_dim]
 
     # print(f"8. {out_proj_weight.shape, out_proj_bias.shape=}")
+    # print(f"{out_proj_bias[0]=}")
     attn_output = linear(attn_output, out_proj_weight, out_proj_bias)                               # [tgt_len, batch_size, embed_dim]
+    # print(f"{attn_output.shape, attn_output_weights.shape=}")
 
     # print(f"{need_weights=}")
     if need_weights:
         # average attention weights over heads
         attn_output_weights = attn_output_weights.view(batch_size, num_heads, tgt_len, src_len)
+        # print(f"Need_Weights: {attn_output_weights.shape, (attn_output_weights.sum(dim=1) / num_heads).shape=}")
         return attn_output, attn_output_weights.sum(dim=1) / num_heads
     else:
         return attn_output, None
@@ -412,6 +427,16 @@ class AgentAwareAttention(Module):
 
         self._reset_parameters()
 
+        # print(f"Hey, here are my params:\n")
+        # for k, v in self.__dict__.items():
+        #     prnt_str = f"\n{k}: {v}"
+        #     try:
+        #         prnt_str += f"\t\t(shape: {v.shape})"
+        #     except:
+        #         prnt_str += ""
+        #     print(prnt_str)
+        # print(f"\n\n\n\n")
+
     def _reset_parameters(self):
         if self._qkv_same_embed_dim:
             xavier_uniform_(self.in_proj_weight)
@@ -480,7 +505,6 @@ class AgentAwareAttention(Module):
         - attn_output_weights: :math:`(N, L, S)` where N is the batch size,
           L is the target sequence length, S is the source sequence length.
         """
-        # TODO: Fix this with dictionary unpacking by defining the dictionary in the __init__ method
         if not self._qkv_same_embed_dim:
             return agent_aware_attention(
                 query=query, key=key, value=value, embed_dim_to_check=self.embed_dim, num_heads=self.num_heads,
@@ -523,7 +547,7 @@ class AgentAwareAttentionV2(Module):
         self.dropout = torch.nn.Dropout(dropout)
 
         self.traj_head_dim = traj_dim // num_heads      # t
-        assert self.traj_head_dim * self.num_heads == self.traj_input_dim, "traj_dim must be divisible by num_heads"
+        assert self.traj_head_dim * self.num_heads == self.traj_dim, "traj_dim must be divisible by num_heads"
 
         self.v_head_dim = vdim // num_heads             # v
         assert self.v_head_dim * self.num_heads == self.vdim, "vdim must be divisible by num_heads"
@@ -538,6 +562,31 @@ class AgentAwareAttentionV2(Module):
         self.w_v_traj = torch.nn.Linear(self.traj_dim, self.vdim, bias=False)
 
         self.fc = torch.nn.Linear(self.vdim, self.vdim, bias=False)
+
+        self._reset_parameters()
+
+        # print(f"Hey, here are my params:\n")
+        # for k, v in self.__dict__.items():
+        #     prnt_str = f"\n{k}: {v}"
+        #     try:
+        #         prnt_str += f"\t\t(shape: {v.shape})"
+        #     except:
+        #         prnt_str += ""
+        #     print(prnt_str)
+        # print(f"\n\n\n\n")
+
+    def _reset_parameters(self):
+        xavier_uniform_(self.w_q_traj_self.weight)
+        xavier_uniform_(self.w_k_traj_self.weight)
+        xavier_uniform_(self.w_q_traj_other.weight)
+        xavier_uniform_(self.w_k_traj_other.weight)
+        xavier_uniform_(self.w_v_traj.weight)
+        constant_(self.w_q_traj_self.bias, 0.)
+        constant_(self.w_k_traj_self.bias, 0.)
+        constant_(self.w_q_traj_other.bias, 0.)
+        constant_(self.w_k_traj_other.bias, 0.)
+        constant_(self.w_v_traj.bias, 0.)
+        constant_(self.fc.bias, 0.)
 
     @staticmethod
     def agent_aware_mask(q_identities: Tensor, k_identities: Tensor):
@@ -560,17 +609,28 @@ class AgentAwareAttentionV2(Module):
         k_self = self.w_k_traj_self(k)          # [S, N, T]
         k_other = self.w_k_traj_other(k)        # [S, N, T]
 
-        q_self = q_self.view(L, N, self.num_heads, self.traj_head_dim).transpose(0, 2)          # [N, H, L, t]
-        q_other = q_other.view(L, N, self.num_heads, self.traj_head_dim).transpose(0, 2)        # [N, H, L, t]
-        k_self = k_self.view(S, N, self.num_heads, self.traj_head_dim).transpose(0, 2)          # [N, H, S, t]
-        k_other = k_other.view(S, N, self.num_heads, self.traj_head_dim).transpose(0, 2)        # [N, H, S, t]
+        # print(f"2. {q_self.shape, q_other.shape, k_self.shape, k_other.shape=}")
 
-        attention_self = q_self @ k_self.transpose(2, 3)            # [N, H, L, S]
-        attention_other = q_other @ k_other.transpose(2, 3)         # [N, H, L, S]
+        q_self = q_self.view(L, N, self.num_heads, self.traj_head_dim).transpose(0, 2)          # [H, N, L, t]
+        q_other = q_other.view(L, N, self.num_heads, self.traj_head_dim).transpose(0, 2)        # [H, N, L, t]
+        k_self = k_self.view(S, N, self.num_heads, self.traj_head_dim).transpose(0, 2)          # [H, N, S, t]
+        k_other = k_other.view(S, N, self.num_heads, self.traj_head_dim).transpose(0, 2)        # [H, N, S, t]
+
+        # print(f"3. {q_self.shape, q_other.shape, k_self.shape, k_other.shape=}")
+
+        attention_self = q_self @ k_self.transpose(2, 3)            # [H, N, L, S]
+        attention_other = q_other @ k_other.transpose(2, 3)         # [H, N, L, S]
+
+        # print(f"4. {attention_self.shape, attention_other.shape=}")
+
         agent_aware_mask = self.agent_aware_mask(q_identities, k_identities)    # [L, S]
+        # print(f"5. {agent_aware_mask.shape=}")
 
-        attention = attention_other * (1 - agent_aware_mask) + attention_self * agent_aware_mask        # [N, H, L, S]
-        attention += mask                                                                               # [N, H, L, S]
+        attention = attention_other * (1 - agent_aware_mask) + attention_self * agent_aware_mask        # [H, N, L, S]
+
+        # print(f"6. {attention.shape=}")
+        attention += mask                                                                               # [H, N, L, S]
+        # print(f"7. {attention.shape=}")
 
         return attention
 
@@ -585,25 +645,41 @@ class AgentAwareAttentionV2(Module):
         # v: [S, N, T]
         # q_identities: [L]
         # k_identities: [S]
+
+        # print(f"{q.shape, k.shape, v.shape=}")
+        # print(f"{q_identities.shape, k_identities.shape=}")
+        # print(f"{mask, mask.shape=}")
+
         L, N, _ = q.size()
         S, _, _ = k.size()
 
         # NOTE: No residual connections used in AgentAwareAttention
 
         # mapping inputs to keys, queries and values
-        v = self.w_v(v)                                 # [S, N, V]
-        v = v.view(S, N, self.num_heads, self.v_head_dim).transpose(0, 2)                       # [N, H, S, v]
+        v = self.w_v_traj(v)                                 # [S, N, V]
+        v = v.view(S, N, self.num_heads, self.v_head_dim).transpose(0, 2)                       # [H, N, S, v]
+
+        # print(f"1. {v.shape=}")
 
         attention = self.agent_scaled_dot_product(
             q=q, k=k, q_identities=q_identities, k_identities=k_identities, mask=mask
         )       # [N, H, L, S]
 
-        attention = F.softmax(attention, dim=-1)                                                        # [N, H, L, S]
-        attention = self.dropout(attention)                                                             # [N, H, L, S]
+        # print(f"8. {attention.shape=}")
 
-        attention_output = attention @ v                                                                # [N, H, L, v]
+        attention = F.softmax(attention, dim=-1)                                                        # [H, N, L, S]
+        # print(f"9. {attention.shape=}")
+        attention = self.dropout(attention)                                                             # [H, N, L, S]
+        # print(f"10. {attention.shape=}")
+
+        attention_output = attention @ v                                                                # [H, N, L, v]
+        # print(f"11. {attention_output.shape=}")
+
         attention_output = attention_output.permute(2, 0, 1, 3).contiguous().view(L, N, self.vdim)      # [L, N, V]
+        # print(f"12. {attention_output.shape=}")
+
         attention_output = self.fc(attention_output)                                                    # [L, N, V]
+        # print(f"13. {attention_output.shape=}")
 
         if need_weights:
             return attention_output, attention.sum(dim=1) / self.num_heads
@@ -695,7 +771,9 @@ class AgentFormerEncoderLayer(Module):
     def __init__(self, cfg, d_model, nhead, dim_feedforward=2048, dropout=0.1, activation="relu"):
         super().__init__()
         self.cfg = cfg
-        self.self_attn = AgentAwareAttention(cfg, d_model, nhead, dropout=dropout)
+        # print(f"ENCODER_LAYER")
+        # self.self_attn = AgentAwareAttention(cfg, d_model, nhead, dropout=dropout)
+        self.self_attn = AgentAwareAttentionV2(cfg=cfg, traj_dim=d_model, vdim=d_model, num_heads=nhead, dropout=dropout)
         # Implementation of Feedforward model
         self.linear1 = Linear(d_model, dim_feedforward)
         self.dropout = Dropout(dropout)
@@ -728,9 +806,10 @@ class AgentFormerEncoderLayer(Module):
             see the docs in Transformer class.
         """
         # print(f"{src, src.shape=}")
-        src2 = self.self_attn(query=src, key=src, value=src,
-                              query_identities=src_identities, key_identities=src_identities,
-                              attn_mask=src_mask, key_padding_mask=src_key_padding_mask)[0]
+        # src2 = self.self_attn(query=src, key=src, value=src,
+        #                       query_identities=src_identities, key_identities=src_identities,
+        #                       attn_mask=src_mask, key_padding_mask=src_key_padding_mask)[0]
+        src2 = self.self_attn(q=src, k=src, v=src, q_identities=src_identities, k_identities=src_identities, mask=src_mask)[0]
         src = src + self.dropout1(src2)
         src = self.norm1(src)
         src2 = self.linear2(self.dropout(self.activation(self.linear1(src))))
@@ -764,8 +843,11 @@ class AgentFormerDecoderLayer(Module):
     def __init__(self, cfg, d_model, nhead, dim_feedforward=2048, dropout=0.1, activation="relu"):
         super().__init__()
         self.cfg = cfg
-        self.self_attn = AgentAwareAttention(cfg, d_model, nhead, dropout=dropout)
-        self.multihead_attn = AgentAwareAttention(cfg, d_model, nhead, dropout=dropout)
+        # print(f"DECODER_LAYER")
+        # self.self_attn = AgentAwareAttention(cfg, d_model, nhead, dropout=dropout)
+        self.self_attn = AgentAwareAttentionV2(cfg=cfg, traj_dim=d_model, vdim=d_model, num_heads=nhead, dropout=dropout)
+        # self.multihead_attn = AgentAwareAttention(cfg, d_model, nhead, dropout=dropout)
+        self.multihead_attn = AgentAwareAttentionV2(cfg=cfg, traj_dim=d_model, vdim=d_model, num_heads=nhead, dropout=dropout)
         # Implementation of Feedforward model
         self.linear1 = Linear(d_model, dim_feedforward)
         self.dropout = Dropout(dropout)
@@ -806,15 +888,21 @@ class AgentFormerDecoderLayer(Module):
         Shape:
             see the docs in Transformer class.
         """
+        # tgt2, self_attn_weights = self.self_attn(
+        #     query=tgt, key=tgt, value=tgt, query_identities=tgt_identities, key_identities=tgt_identities,
+        #     attn_mask=tgt_mask, key_padding_mask=tgt_key_padding_mask, need_weights=need_weights
+        # )
         tgt2, self_attn_weights = self.self_attn(
-            query=tgt, key=tgt, value=tgt, query_identities=tgt_identities, key_identities=tgt_identities,
-            attn_mask=tgt_mask, key_padding_mask=tgt_key_padding_mask, need_weights=need_weights
+            q=tgt, k=tgt, v=tgt, q_identities=tgt_identities, k_identities=tgt_identities, mask=tgt_mask
         )
         tgt = tgt + self.dropout1(tgt2)
         tgt = self.norm1(tgt)
+        # tgt2, cross_attn_weights = self.multihead_attn(
+        #     query=tgt, key=memory, value=memory, query_identities=tgt_identities, key_identities=mem_identities,
+        #     attn_mask=memory_mask, key_padding_mask=memory_key_padding_mask, need_weights=need_weights
+        # )
         tgt2, cross_attn_weights = self.multihead_attn(
-            query=tgt, key=memory, value=memory, query_identities=tgt_identities, key_identities=mem_identities,
-            attn_mask=memory_mask, key_padding_mask=memory_key_padding_mask, need_weights=need_weights
+            q=tgt, k=memory, v=memory, q_identities=tgt_identities, k_identities=mem_identities, mask=memory_mask
         )
         tgt = tgt + self.dropout2(tgt2)
         tgt = self.norm2(tgt)
