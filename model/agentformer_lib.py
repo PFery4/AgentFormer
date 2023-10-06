@@ -698,11 +698,11 @@ class MapAgentAwareAttention(AgentAwareAttentionV2):
 
         self.map_scaling = float(self.map_head_dim) ** -0.5
 
-        self.w_q_traj_map = torch.nn.Linear(self.traj_dim, self.map_dim, bias=False)
+        self.w_q_traj_map = torch.nn.Linear(self.traj_dim, self.traj_dim, bias=False)
         self.w_k_traj_map = torch.nn.Linear(self.traj_dim, self.map_dim, bias=False)
 
         self.w_q_map_self = torch.nn.Linear(self.map_dim, self.map_dim, bias=False)
-        self.w_q_map_agents = torch.nn.Linear(self.map_dim, self.traj_dim, bias=False)
+        self.w_q_map_agents = torch.nn.Linear(self.map_dim, self.map_dim, bias=False)
         self.w_k_map_self = torch.nn.Linear(self.map_dim, self.map_dim, bias=False)
         self.w_k_map_agents = torch.nn.Linear(self.map_dim, self.traj_dim, bias=False)
         self.w_v_map = torch.nn.Linear(self.map_dim, self.vdim, bias=False)
@@ -719,32 +719,59 @@ class MapAgentAwareAttention(AgentAwareAttentionV2):
         # map_feature: [M]
         # q_identities: [L]
         # k_identities: [S]
+
+        # print(f"{q.shape, k.shape, v.shape, map_feature.shape=}")
+        # print(f"{q_identities.shape, k_identities.shape=}")
+        # print(f"{mask, mask.shape=}")
+
         L, N, _ = q.size()
         S, _, _ = k.size()
 
         # NOTE: No residual connections used in AgentAwareAttention
 
         # trajectory related keys, queries and values
-        q_traj_map = self.w_q_traj_map(q) * self.map_scaling        # [L, N, M]
+        q_traj_map = self.w_q_traj_map(q) * self.map_scaling        # [L, N, T]
         k_traj_map = self.w_k_traj_map(k)                           # [S, N, M]
         v_traj = self.w_v_traj(v)                                   # [S, N, V]
 
         # map related keys, queries and values
         q_map_self = self.w_q_map_self(map_feature) * self.map_scaling          # [M]
-        q_map_agents = self.w_q_map_agents(map_feature) * self.traj_scaling     # [T]
+        q_map_agents = self.w_q_map_agents(map_feature) * self.traj_scaling     # [M]
         k_map_self = self.w_k_map_self(map_feature)         # [M]
         k_map_agents = self.w_k_map_agents(map_feature)     # [T]
         v_map = self.w_v_map(map_feature)                   # [V]
 
-        # TODO: Tensor reshaping
-        # TODO: cross agent attention
-        # TODO: cross map attention
-        # TODO: agent map attention
-        # TODO: map agent attention
+        # Tensor reshaping
+        q_traj_map = q_traj_map.view(L, N, self.num_heads, self.map_head_dim).transpose(0, 2)       # [H, N, L, t]
+        k_traj_map = k_traj_map.view(L, N, self.num_heads, self.map_head_dim).transpose(0, 2)       # [H, N, L, m]
+        v_traj = v_traj.view(S, N, self.num_heads, self.v_head_dim).transpose(0, 2)                 # [H, N, S, v]
+
+        q_map_self = q_map_self.view(self.num_heads, self.map_head_dim)     # [H, m]
+        q_map_agents = q_map_agents.view(self.num_heads, self.traj_head_dim).unsqueeze(1).unsqueeze(1)  # [H, 1, 1, m]
+        k_map_self = k_map_self.view(self.num_heads, self.map_head_dim)     # [H, m]
+        k_map_agents = k_map_agents.view(self.num_heads, self.traj_head_dim).unsqueeze(1).unsqueeze(1)  # [H, 1, 1, t]
+        v_map = v_map.view(self.num_heads, self.v_head_dim)     # [H, v]
+
+        # cross agent attention
+        cross_agent_attention = self.agent_scaled_dot_product(
+            q=q, k=k, q_identities=q_identities, k_identities=k_identities, mask=mask
+        )       # [N, H, L, S]
+
+        # cross map attention
+        map_map_attention = (q_map_self * k_map_self).sum(dim=-1)       # [H]
+
+        # agent map attention, agents query the map
+        agent_map_attention = q_traj_map @ k_map_agents.transpose(2, 3)         # [H, N, L, 1]
+
+        # map agent attention, the map queries the agents
+        map_agent_attention = q_map_agents @ k_traj_map.transpose(2, 3)         # [H, N, 1, L]
+
         # TODO: Combine attention scores
         # TODO: dropout
         # TODO: score multiply values
         # TODO: return output
+
+        # TODO: CHECK VALID TENSOR SIZES
 
 
 class AgentFormerEncoderLayer(Module):
