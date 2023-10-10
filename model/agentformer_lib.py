@@ -817,7 +817,7 @@ class MapAgentAwareAttention(AgentAwareAttentionV2):
 
         if need_weights:
             # [L, N, V], [1, N, V], [N, L+1, S+1]
-            # TODO: what does 'need_weights' need exactly? return combined_attetion, or something else?
+            # TODO: what does 'need_weights' need exactly? return combined_attention, or something else?
             return traj_output, map_output, combined_attention.sum(dim=0) / self.num_heads
         else:
             # [L, N, V], [1, N, V], None
