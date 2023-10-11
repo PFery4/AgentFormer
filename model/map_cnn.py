@@ -2,9 +2,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from typing import Dict
 
 class MapCNN(nn.Module):
-    def __init__(self, cfg):
+    def __init__(self, cfg: Dict):
         super().__init__()
         self.convs = nn.ModuleList()
         map_channels = cfg.get('map_channels', 3)
@@ -37,24 +38,25 @@ class GlobalMapCNN(nn.Module):
         'conv2d': torch.nn.Conv2d,
         'maxpool': torch.nn.MaxPool2d
     }
+    # example of a cfg dict to provide to the class
+    # cfg = {
+    #     'map_channels': 3,
+    #     'use_occlusion_map': True,
+    #     'map_resolution': [400, 400],
+    #     'output_dim': 256,
+    #     'layers': [
+    #         ['conv2d', 4, 7, 3],
+    #         ['maxpool', 2, 2],
+    #         ['conv2d', 8, 5, 2],
+    #         ['maxpool', 2, 2],
+    #         ['conv2d', 8, 3, 1],
+    #         ['maxpool', 2, 2],
+    #     ]
+    # }
 
-    def __init__(self, cfg):
+    def __init__(self, cfg: Dict):
         super().__init__()
         self.layers = nn.ModuleList()
-        cfg = {
-            'map_channels': 3,
-            'use_occlusion_map': True,
-            'map_resolution': [400, 400],
-            'output_dim': 256,
-            'layers': [
-                ['conv2d', 4, 7, 3],
-                ['maxpool', 2, 2],
-                ['conv2d', 8, 5, 2],
-                ['maxpool', 2, 2],
-                ['conv2d', 8, 3, 1],
-                ['maxpool', 2, 2],
-            ]
-        }
         self.use_occlusion_map = cfg.get('use_occlusion_map', False)    # whether to add occlusion map as extra channel
         self.map_channels = cfg.get('map_channels', 3)                  # (R, G, B)
         self.input_channels = self.map_channels + int(self.use_occlusion_map)   # number of input channels
@@ -93,12 +95,17 @@ class GlobalMapCNN(nn.Module):
 
 
 if __name__ == "__main__":
+    from utils.config import Config
 
-    map_cnn = GlobalMapCNN(None)
-    print(f"{map_cnn.__dict__=}")
+    cfg = Config('sdd_occlusion_agentformer_pre')
+    map_cfg = cfg.get('global_map_encoder')
+
+    map_cnn = GlobalMapCNN(cfg=map_cfg)
+    print("GlobalMapCNN attributes:")
     [print(f"{k}:\t\t{v}") for k, v in map_cnn.__dict__.items()]
 
     x = torch.randn([1, *map_cnn.input_shape])
     y = map_cnn(x)
+    print(f"{x.shape=}")
     print(f"{y.shape=}")
 
