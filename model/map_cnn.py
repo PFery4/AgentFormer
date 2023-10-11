@@ -42,73 +42,40 @@ class GlobalMapCNN(nn.Module):
         super().__init__()
         self.layers = nn.ModuleList()
         cfg = {
-            'map_channels': 4,
+            'map_channels': 3,
+            'use_occlusion_map': True,
             'map_resolution': [400, 400],
             'output_dim': 256,
             'layers': [
-                (
-                    'conv2d', {
-                        # 'in_channels': None,
-                        'out_channels': 4,
-                        'kernel_size': 7,
-                        'stride': 3,
-                        # 'padding': None,
-                        # 'padding_mode': None,
-                        # 'dilation': None,
-                        # 'groups': None,
-                        # 'bias': None
-                    }
-                ),
-                (
-                    'maxpool', {
-                        'kernel_size': 2,
-                        'stride': 2,
-                        # 'padding': None,
-                        # 'dilation': None,
-                        # 'return_indices': None,
-                        # 'ceil_mode': None
-                    }
-                ),
-                (
-                    'conv2d', {
-                        'out_channels': 8,
-                        'kernel_size': 5,
-                        'stride': 2,
-                    }
-                ),
-                (
-                    'maxpool', {
-                        'kernel_size': 2,
-                        'stride': 2,
-                    }
-                ),
-                (
-                    'conv2d', {
-                        'out_channels': 8,
-                        'kernel_size': 3,
-                        'stride': 1,
-                    }
-                ),
-                (
-                    'maxpool', {
-                        'kernel_size': 2,
-                        'stride': 2,
-                    }
-                )
+                ['conv2d', 4, 7, 3],
+                ['maxpool', 2, 2],
+                ['conv2d', 8, 5, 2],
+                ['maxpool', 2, 2],
+                ['conv2d', 8, 3, 1],
+                ['maxpool', 2, 2],
             ]
         }
-        self.input_channels = cfg.get('map_channels', 4)            # (R, G, B, occlusion_map)
+        self.use_occlusion_map = cfg.get('use_occlusion_map', False)    # whether to add occlusion map as extra channel
+        self.map_channels = cfg.get('map_channels', 3)                  # (R, G, B)
+        self.input_channels = self.map_channels + int(self.use_occlusion_map)   # number of input channels
         self.map_size = cfg.get('map_resolution', [400, 400])       # resolution of the scene maps
         self.output_dim = cfg.get('output_dim', 256)                # dimension of the produced compressed state
-        self.input_size = (self.input_channels, *self.map_size)
+        self.input_shape = (self.input_channels, *self.map_size)
 
-        x_dummy = torch.randn(self.input_size).unsqueeze(0)
+        x_dummy = torch.randn(self.input_shape).unsqueeze(0)
 
         layers = cfg.get('layers')
-        # print(f"{layers=}")
-        for layer_type, layer_params in layers:
+        for layer in layers:
+            layer_type = layer[0]
+            layer_params = dict()
             if layer_type == 'conv2d':
                 layer_params['in_channels'] = x_dummy.shape[1]
+                layer_params['out_channels'] = layer[1]
+                layer_params['kernel_size'] = layer[2]
+                layer_params['stride'] = layer[3]
+            elif layer_type == 'maxpool':
+                layer_params['kernel_size'] = layer[1]
+                layer_params['stride'] = layer[2]
             layer = self.layer_types[layer_type](**layer_params)
             self.layers.append(layer)
             x_dummy = layer(x_dummy)
@@ -126,10 +93,10 @@ class GlobalMapCNN(nn.Module):
 if __name__ == "__main__":
 
     map_cnn = GlobalMapCNN(None)
-    # print(f"{map_cnn.__dict__=}")
-    # [print(f"{k}:\t\t{v}") for k, v in map_cnn.__dict__.items()]
+    print(f"{map_cnn.__dict__=}")
+    [print(f"{k}:\t\t{v}") for k, v in map_cnn.__dict__.items()]
 
-    x = torch.randn([1, 4, 400, 400])
+    x = torch.randn([1, *map_cnn.input_shape])
     y = map_cnn(x)
     print(f"{y.shape=}")
 
