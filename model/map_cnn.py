@@ -76,6 +76,8 @@ class GlobalMapCNN(nn.Module):
             elif layer_type == 'maxpool':
                 layer_params['kernel_size'] = layer[1]
                 layer_params['stride'] = layer[2]
+            else:
+                raise NotImplementedError("only 'conv2d' or 'maxpool' please")
             layer = self.layer_types[layer_type](**layer_params)
             self.layers.append(layer)
             x_dummy = layer(x_dummy)
