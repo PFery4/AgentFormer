@@ -7,27 +7,28 @@ from typing import Union
 
 from utils.utils import recreate_dirs
 
+REPO_ROOT = os.path.abspath(os.path.join(os.path.abspath(__file__), "..", ".."))
 
 class Config:
 
     def __init__(self, cfg_id, tmp=False, create_dirs=False):
         self.id = cfg_id
-        cfg_path = 'cfg/**/%s.yml' % cfg_id
+        cfg_path = os.path.join(REPO_ROOT, 'cfg/**/%s.yml' % cfg_id)
         files = glob.glob(cfg_path, recursive=True)
         assert(len(files) == 1)
         self.yml_dict = EasyDict(yaml.safe_load(open(files[0], 'r')))
 
         # data dir
-        self.results_root_dir = os.path.expanduser(self.yml_dict['results_root_dir'])
+        self.results_root_dir = os.path.join(REPO_ROOT, self.yml_dict['results_root_dir'])
         # results dirs
         cfg_root_dir = '/tmp/agentformer' if tmp else self.results_root_dir
         self.cfg_root_dir = os.path.expanduser(cfg_root_dir)
 
-        self.cfg_dir = '%s/%s' % (self.cfg_root_dir, cfg_id)
-        self.model_dir = '%s/models' % self.cfg_dir
-        self.result_dir = '%s/results' % self.cfg_dir
-        self.log_dir = '%s/log' % self.cfg_dir
-        self.tb_dir = '%s/tb' % self.cfg_dir
+        self.cfg_dir = os.path.join(self.cfg_root_dir, cfg_id)
+        self.model_dir = os.path.join(self.cfg_dir, 'models')
+        self.result_dir = os.path.join(self.cfg_dir, 'results')
+        self.log_dir = os.path.join(self.cfg_dir, 'log')
+        self.tb_dir = os.path.join(self.cfg_dir, 'tb')
         self.model_path = os.path.join(self.model_dir, 'model_%04d.p')
         os.makedirs(self.model_dir, exist_ok=True)
         os.makedirs(self.result_dir, exist_ok=True)
