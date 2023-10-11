@@ -40,7 +40,8 @@ scene_orig_all_past: true
 use_global_map: true
 global_map_encoder:
   model_id: global_map_cnn
-  normalize: true
+  normalize: false
+  dropout: 0.0
   map_channels: 3
   use_occlusion_map: true
   global_map_resolution: [400, 400]
