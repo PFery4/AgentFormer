@@ -38,7 +38,7 @@ class AgentFormerDataGeneratorForSDD:
     def __init__(self, parser: Config, log: TextIOWrapper, split: str = 'train', phase: str = 'training'):
         self.past_frames = parser.past_frames
         self.min_past_frames = parser.min_past_frames
-        self.frame_skip = parser.get('frame_skip', 1)
+        # self.frame_skip = parser.get('frame_skip', 1)     # TODO: remove
         self.rand_rot_scene = parser.get('rand_rot_scene', False)
         self.max_train_agent = parser.get('max_train_agent', 100)
         self.phase = phase
@@ -127,6 +127,7 @@ class AgentFormerDataGeneratorForSDD:
         scene_map = kwargs['scene_map']             # GeometricMap
         past_window = kwargs['past_window']         # NDArray   [T_obs]
         ids = kwargs['ids']                         # NDArray   [N]
+        px_per_m = kwargs['px_per_m']               # float
 
         trajs = scene_map.to_map_points(trajs)
         scene_map.set_homography(np.eye(3))
@@ -146,7 +147,7 @@ class AgentFormerDataGeneratorForSDD:
         trajs -= mean_point
         scene_map.translation(mean_point)
 
-        scaling = self.traj_scale / self.px_per_m
+        scaling = self.traj_scale / px_per_m
         trajs *= scaling
         scene_map.scale(scaling=1/scaling)
 
@@ -179,6 +180,7 @@ class AgentFormerDataGeneratorForSDD:
         orig_occluders = kwargs['occluders']        # List[List[NDArray]]
         past_window = kwargs['past_window']         # NDArray   [T_obs]
         ids = kwargs['ids']                         # NDArray   [N]
+        px_per_m = kwargs['px_per_m']               # float
 
         # compute trajs, ego and occluder positions (transforming to map coords)
         trajs = scene_map.to_map_points(trajs)
@@ -227,7 +229,7 @@ class AgentFormerDataGeneratorForSDD:
         ego_visipoly = sg.Polygon(ego_visipoly.coords - mean_point)
         scene_map.translation(mean_point)
 
-        scaling = self.traj_scale / self.px_per_m
+        scaling = self.traj_scale / px_per_m
 
         ego *= scaling
         trajs *= scaling
@@ -310,6 +312,9 @@ class AgentFormerDataGeneratorForSDD:
         )       # [N, T, 2]
         ids = np.stack([agent.id for agent in extracted_data['agents']])        # [N]
 
+        # load px to m conversion
+        px_per_m = extracted_data['px_per_m']
+
         # fig, ax = plt.subplots()
         # print(f"{data['theta']=}")
         # visualize.visualize_training_instance(
@@ -323,7 +328,8 @@ class AgentFormerDataGeneratorForSDD:
             ego=extracted_data['ego_point'],
             occluders=extracted_data['occluders'],
             past_window=extracted_data['past_window'],
-            ids=ids
+            ids=ids,
+            px_per_m=px_per_m
         )
 
         # Visualize ##################################################################################################
@@ -351,9 +357,9 @@ class AgentFormerDataGeneratorForSDD:
         # data['ego'] = torch.from_numpy(processed_data['ego'])
         # data['occluders'] = torch.from_numpy(np.stack(processed_data['occluders']))         # [n_occluders, 2, 2]
         # data['ego_visipoly'] = processed_data['ego_visipoly']                               # sg.Polygon
-        data['occlusion_map'] = torch.from_numpy(processed_data['occlusion_map'])         # [H, W]
-        data['dt_occlusion_map'] = torch.from_numpy(processed_data['dt_occlusion_map'])   # [H, W]
-        data['p_occl_map'] = torch.from_numpy(processed_data['p_occl_map'])                       # [H, W]
+        data['occlusion_map'] = torch.from_numpy(processed_data['occlusion_map'])               # [H, W]
+        data['dt_occlusion_map'] = torch.from_numpy(processed_data['dt_occlusion_map'])         # [H, W]
+        data['p_occl_map'] = torch.from_numpy(processed_data['p_occl_map'])                     # [H, W]
         data['timesteps'] = torch.from_numpy(
             np.arange(len(extracted_data['full_window'])) - len(extracted_data['past_window']) + 1
         )
