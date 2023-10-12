@@ -16,14 +16,13 @@ future_frames                : 12
 min_past_frames              : 8
 min_future_frames            : 12
 
-traj_scale                   : 1    # TODO: figure out correct value
+traj_scale                   : 1
 motion_dim                   : 2
 forecast_dim                 : 2
 
 # ------------------- Model -------------------------
 
 model_id: agentformer
-#tf_version: v2   # TODO: remove once obvious it has no impact
 tf_model_dim: 256
 tf_ff_dim: 512
 tf_nhead: 8
@@ -37,7 +36,7 @@ rand_rot_scene: true
 scene_orig_all_past: true
 
 # TODO: properly parameterize the global map processing unit
-use_global_map: true
+global_map_attention: true
 global_map_encoder:
   model_id: global_map_cnn
   normalize: false
