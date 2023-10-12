@@ -116,26 +116,29 @@ class PositionalEncoding(nn.Module):
 
 class ContextEncoder(nn.Module):
     """ Context (Past) Encoder """
-    def __init__(self, cfg, ctx, **kwargs):
+    def __init__(self, ctx):
         super().__init__()
-        self.cfg = cfg
         self.ctx = ctx
         self.motion_dim = ctx['motion_dim']
         self.model_dim = ctx['tf_model_dim']
         self.ff_dim = ctx['tf_ff_dim']
         self.nhead = ctx['tf_nhead']
         self.dropout = ctx['tf_dropout']
-        self.nlayer = cfg.get('nlayer', 6)
+        self.nlayer = ctx['context_encoder'].get('nlayer', 6)
         self.input_type = ctx['input_type']
-        self.pooling = cfg.get('pooling', 'mean')
+        self.pooling = ctx['context_encoder'].get('pooling', 'mean')
         self.vel_heading = ctx['vel_heading']
+        self.global_map_attention = 'map_agent' if ctx['global_map_attention'] else 'agent'
+
+        print(f"{self.global_map_attention=}")
+
         ctx['context_dim'] = self.model_dim
         in_dim = self.motion_dim * len(self.input_type)
         # if 'map' in self.input_type:
         #     in_dim += ctx['map_enc_dim'] - self.motion_dim
         self.input_fc = nn.Linear(in_dim, self.model_dim)
 
-        encoder_layers = AgentFormerEncoderLayer(ctx['tf_cfg'], self.model_dim, self.nhead, self.ff_dim, self.dropout)
+        encoder_layers = AgentFormerEncoderLayer(self.model_dim, self.nhead, self.ff_dim, self.dropout)
         self.tf_encoder = AgentFormerEncoder(encoder_layers, self.nlayer)
         self.pos_encoder = PositionalEncoding(self.model_dim, dropout=self.dropout, concat=ctx['pos_concat'])
 
@@ -173,10 +176,10 @@ class ContextEncoder(nn.Module):
 
         # print(f"{tf_in_pos.shape=}")
         data['context_enc'] = self.tf_encoder(
-            src=tf_in_pos,                          # [O, 1, model_dim]
-            src_identities=data['pre_agents'],      # [O]
-            mask=src_mask                           # [O, O]
-        )                                           # [O, 1, model_dim]
+            src=tf_in_pos,                                          # [O, 1, model_dim]
+            src_identities=data['pre_agents'].unsqueeze(1),         # [O, 1]
+            mask=src_mask                                           # [O, O]
+        )                                                           # [O, 1, model_dim]
         # print(f"{data['context_enc'].shape=}")
 
         # compute per agent context
@@ -195,9 +198,8 @@ class ContextEncoder(nn.Module):
 
 class FutureEncoder(nn.Module):
     """ Future Encoder """
-    def __init__(self, cfg, ctx, **kwargs):
+    def __init__(self, ctx):
         super().__init__()
-        self.cfg = cfg
         self.context_dim = context_dim = ctx['context_dim']
         self.forecast_dim = forecast_dim = ctx['forecast_dim']
         self.nz = ctx['nz']
@@ -207,10 +209,10 @@ class FutureEncoder(nn.Module):
         self.ff_dim = ctx['tf_ff_dim']
         self.nhead = ctx['tf_nhead']
         self.dropout = ctx['tf_dropout']
-        self.nlayer = cfg.get('nlayer', 6)
-        self.out_mlp_dim = cfg.get('out_mlp_dim', None)
+        self.nlayer = ctx['future_encoder'].get('nlayer', 6)
+        self.out_mlp_dim = ctx['future_encoder'].get('out_mlp_dim', None)
         self.input_type = ctx['fut_input_type']
-        self.pooling = cfg.get('pooling', 'mean')
+        self.pooling = ctx['future_encoder'].get('pooling', 'mean')
         self.vel_heading = ctx['vel_heading']
         # networks
         in_dim = forecast_dim * len(self.input_type)
@@ -261,13 +263,13 @@ class FutureEncoder(nn.Module):
         tgt_mask = generate_mask(data['fut_timesteps'].shape[0], data['fut_timesteps'].shape[0]).to(tf_seq_in.device)
 
         tf_out, _ = self.tf_decoder(
-            tgt=tf_in_pos,                          # [P, 1, model_dim]
-            memory=data['context_enc'],             # [O, 1, model_dim]
-            tgt_identities=data['fut_agents'],      # [P]
-            mem_identities=data['pre_agents'],      # [O]
-            tgt_mask=tgt_mask,                      # [P, P]
-            memory_mask=mem_mask,                   # [P, O]
-        )                                           # [P, 1, model_dim]
+            tgt=tf_in_pos,                                          # [P, 1, model_dim]
+            memory=data['context_enc'],                             # [O, 1, model_dim]
+            tgt_identities=data['fut_agents'].unsqueeze(1),         # [P, 1]
+            mem_identities=data['pre_agents'].unsqueeze(1),         # [O, 1]
+            tgt_mask=tgt_mask,                                      # [P, P]
+            memory_mask=mem_mask,                                   # [P, O]
+        )                                                           # [P, 1, model_dim]
 
         if self.pooling == 'mean':
             h = torch.cat(
@@ -291,15 +293,14 @@ class FutureEncoder(nn.Module):
 
 class FutureDecoder(nn.Module):
     """ Future Decoder """
-    def __init__(self, cfg, ctx, **kwargs):
+    def __init__(self, ctx):
         super().__init__()
-        self.cfg = cfg
         self.ar_detach = ctx['ar_detach']
         self.context_dim = context_dim = ctx['context_dim']
         self.forecast_dim = forecast_dim = ctx['forecast_dim']
-        self.pred_scale = cfg.get('pred_scale', 1.0)
+        self.pred_scale = ctx['future_decoder'].get('pred_scale', 1.0)
         self.pred_type = ctx['pred_type']
-        self.pred_mode = cfg.get('mode', 'point')
+        self.pred_mode = ctx['future_decoder'].get('mode', 'point')
         self.sn_out_type = ctx['sn_out_type']
         self.sn_out_heading = ctx['sn_out_heading']
         self.input_type = ctx['dec_input_type']
@@ -311,9 +312,9 @@ class FutureDecoder(nn.Module):
         self.ff_dim = ctx['tf_ff_dim']
         self.nhead = ctx['tf_nhead']
         self.dropout = ctx['tf_dropout']
-        self.nlayer = cfg.get('nlayer', 6)
-        self.out_mlp_dim = cfg.get('out_mlp_dim', None)
-        self.pos_offset = cfg.get('pos_offset', False)
+        self.nlayer = ctx['future_decoder'].get('nlayer', 6)
+        self.out_mlp_dim = ctx['future_decoder'].get('out_mlp_dim', None)
+        self.pos_offset = ctx['future_decoder'].get('pos_offset', False)
         self.learn_prior = ctx['learn_prior']
 
         # sanity check
@@ -379,8 +380,8 @@ class FutureDecoder(nn.Module):
         tf_out, attn_weights = self.tf_decoder(
             tgt=tf_in_pos,  # [B, n_sample, model_dim]
             memory=context,  # [O, n_sample, model_dim]
-            tgt_identities=agent_sequence,  # [B]
-            mem_identities=data['pre_agents'],  # [O]
+            tgt_identities=agent_sequence.unsqueeze(1).repeat(1, sample_num),       # [B, n_sample]
+            mem_identities=data['pre_agents'].unsqueeze(1).repeat(1, sample_num),   # [O, n_sample]
             tgt_mask=tgt_mask,  # [B, B]
             memory_mask=mem_mask  # [B, O]
         )  # [B, n_sample, model_dim]
@@ -660,7 +661,6 @@ class AgentFormer(nn.Module):
         super().__init__()
 
         self.device = torch.device('cpu')
-        self.cfg = cfg
 
         input_type = cfg.get('input_type', 'pos')
         pred_type = cfg.get('pred_type', input_type)
@@ -668,7 +668,7 @@ class AgentFormer(nn.Module):
             input_type = [input_type]
         fut_input_type = cfg.get('fut_input_type', input_type)
         dec_input_type = cfg.get('dec_input_type', [])
-        self.ctx = {
+        ctx = {
             'tf_cfg': cfg.get('tf_cfg', {}),
             'nz': cfg.nz,
             'z_type': cfg.get('z_type', 'gaussian'),
@@ -693,20 +693,26 @@ class AgentFormer(nn.Module):
             'sn_out_heading': cfg.get('sn_out_heading', False),
             'vel_heading': cfg.get('vel_heading', False),
             'learn_prior': cfg.get('learn_prior', False),
-            'use_map': cfg.get('use_map', False)
+            'use_map': cfg.get('use_map', False),
+            'global_map_attention': cfg.get('global_map_attention', False),
+            'context_encoder': cfg.context_encoder,
+            'future_encoder': cfg.future_encoder,
+            'future_decoder': cfg.future_decoder
         }
-        self.use_map = self.ctx['use_map']
-        self.rand_rot_scene = cfg.get('rand_rot_scene', False)
-        self.discrete_rot = cfg.get('discrete_rot', False)
+        self.scene_orig_all_past = cfg.get('scene_orig_all_past', False)
+        self.conn_dist = cfg.get('conn_dist', 100000.0)
+        self.use_map = cfg.get('use_map', False)
+        self.global_map_attention = cfg.get('global_map_attention', False)
         self.map_global_rot = cfg.get('map_global_rot', False)
         self.ar_train = cfg.get('ar_train', True)
-        self.max_train_agent = cfg.get('max_train_agent', 100)
-        self.loss_cfg = self.cfg.loss_cfg
+        # self.max_train_agent = cfg.get('max_train_agent', 100)        # this has been moved to preprocessor
+        self.loss_cfg = cfg.get('loss_cfg')
         self.loss_names = list(self.loss_cfg.keys())
         self.compute_sample = 'sample' in self.loss_names
         self.param_annealers = nn.ModuleList()
-        if self.ctx['z_type'] == 'discrete':
-            self.ctx['z_tau_annealer'] = z_tau_annealer = ExpParamAnnealer(cfg.z_tau.start, cfg.z_tau.finish, cfg.z_tau.decay)
+        self.z_type = cfg.get('z_type', 'gaussian')
+        if self.z_type == 'discrete':
+            ctx['z_tau_annealer'] = z_tau_annealer = ExpParamAnnealer(cfg.z_tau.start, cfg.z_tau.finish, cfg.z_tau.decay)
             self.param_annealers.append(z_tau_annealer)
 
         # save all computed variables
@@ -715,12 +721,16 @@ class AgentFormer(nn.Module):
         # map encoder
         if self.use_map:
             self.map_encoder = MapEncoder(cfg.map_encoder)
-            self.ctx['map_enc_dim'] = self.map_encoder.out_dim
+            ctx['map_enc_dim'] = self.map_encoder.out_dim
+
+        if self.global_map_attention:
+            self.global_map_encoder = MapEncoder(cfg.global_map_encoder)
+            ctx['global_map_enc_dim'] = self.global_map_encoder.out_dim
 
         # models
-        self.context_encoder = ContextEncoder(cfg.context_encoder, self.ctx)
-        self.future_encoder = FutureEncoder(cfg.future_encoder, self.ctx)
-        self.future_decoder = FutureDecoder(cfg.future_decoder, self.ctx)
+        self.context_encoder = ContextEncoder(ctx)
+        self.future_encoder = FutureEncoder(ctx)
+        self.future_decoder = FutureDecoder(ctx)
 
     def set_device(self, device):
         self.device = device
@@ -758,7 +768,7 @@ class AgentFormer(nn.Module):
         ).to(self.device)        # [N]
 
         # define the scene origin
-        if self.cfg.get('scene_orig_all_past', False):
+        if self.scene_orig_all_past:
             scene_orig = full_motion[obs_mask].mean(dim=0).contiguous()           # [2]
         else:
             scene_orig = last_observed_pos.mean(dim=0).contiguous()               # [2]
@@ -835,21 +845,22 @@ class AgentFormer(nn.Module):
         self.data['occlusion_map'] = data['occlusion_map'].detach().clone().to(self.device)
 
         self.data['combined_map'] = torch.cat((self.data['global_map'], self.data['occlusion_map'].unsqueeze(0))).to(torch.float32)
-        # print(f"{self.data['combined_map'], self.data['combined_map'].shape=}")
+        print(f"{self.data['combined_map'], self.data['combined_map'].shape=}")
+
         self.data['dt_occlusion_map'] = data['dt_occlusion_map'].detach().clone().to(self.device)
         self.data['p_occl_map'] = data['p_occl_map'].detach().clone().to(self.device)
 
-        conn_dist = self.cfg.get('conn_dist', 100000.0)
         cur_motion = self.data['cur_motion'][0]
-        if conn_dist < 1000.0:
-            # threshold = conn_dist / self.cfg.traj_scale
+        # TODO: REMOVE THIS PART ALTOGHETHER: WE ARE NEVER GOING TO USE IT
+        if self.conn_dist < 1000.0:
+            # threshold = self.conn_dist / self.cfg.traj_scale
             # pdist = F.pdist(cur_motion)
             # D = torch.zeros([cur_motion.shape[0], cur_motion.shape[0]]).to(device)
             # D[np.triu_indices(cur_motion.shape[0], 1)] = pdist
             # D += D.T
             # mask = torch.zeros_like(D)
             # mask[D > threshold] = float('-inf')
-            raise NotImplementedError("if conn_dist < 1000.0")
+            raise NotImplementedError("if self.conn_dist < 1000.0")
         else:
             mask = torch.zeros([cur_motion.shape[0], cur_motion.shape[0]]).to(self.device)
         self.data['agent_mask'] = mask          # [N, N]
@@ -1004,20 +1015,26 @@ class AgentFormer(nn.Module):
             anl.step()
 
     def forward(self):
+        if self.global_map_attention:
+            self.data['global_map_encoding'] = self.global_map_encoder(self.data['combined_map'].unsqueeze(0))
+            print(f"{self.data['global_map_encoding'].shape=}")
+
         if self.use_map:
             # self.data['map_enc'] = self.map_encoder(self.data['agent_maps'])
-            print(f"{self.data['combined_map'], self.data['combined_map'].shape=}")
-            self.data['map_encoding'] = self.map_encoder(self.data['combined_map'].unsqueeze(0)).squeeze()
-            print(f"{self.data['map_encoding'], self.data['map_encoding'].shape=}")
-        # print(f"\nCALLING:  CONTEXT ENCODER\n")
+            # print(f"{self.data['combined_map'], self.data['combined_map'].shape=}")
+            # self.data['map_encoding'] = self.map_encoder(self.data['combined_map'].unsqueeze(0)).squeeze()
+            # print(f"{self.data['map_encoding'], self.data['map_encoding'].shape=}")
+            raise NotImplementedError
+        print(f"\nCALLING:  CONTEXT ENCODER\n")
         self.context_encoder(self.data)
-        # print(f"\nCALLING:  FUTURE ENCODER\n")
+        print(f"\nCALLING:  FUTURE ENCODER\n")
         self.future_encoder(self.data)
-        # print(f"\nCALLING:  FUTURE DECODER\n")
+        print(f"\nCALLING:  FUTURE DECODER\n")
         self.future_decoder(self.data, mode='train', autoregress=self.ar_train)
         if self.compute_sample:
             # print(f"\nCALLING:  INFERENCE\n")
             self.inference(sample_num=self.loss_cfg['sample']['k'])
+        raise NotImplementedError       # for now
         return self.data
 
     def inference(self, mode='infer', sample_num=20, need_weights=False):
