@@ -4,7 +4,6 @@ Modified version of PyTorch Transformer module for the implementation of Agent-A
 
 
 import warnings
-import math
 import copy
 
 import numpy as np
@@ -12,17 +11,19 @@ import torch
 from torch.nn import functional as F
 from torch.nn.functional import *
 from torch.nn.modules.module import Module
-from torch.nn.modules.activation import MultiheadAttention
 from torch.nn.modules.container import ModuleList
-from torch.nn.modules.dropout import Dropout
-from torch.nn.modules.linear import Linear, _LinearWithBias
-from torch.nn.modules.normalization import LayerNorm
+from torch.nn.modules.linear import _LinearWithBias
 import torch.nn.init
 from torch.nn.parameter import Parameter
-from torch.overrides import has_torch_function, handle_torch_function
 
-from typing import Optional, Tuple
-Tensor = torch.Tensor       # type alias for torch tensor class
+from model.layers import \
+    WrappedAgentFormerEncoderLayerForMapInput,\
+    WrappedAgentFormerDecoderLayerForMapInput,\
+    MapAwareAgentFormerEncoderLayer,\
+    MapAwareAgentFormerDecoderLayer
+
+from typing import Optional, Tuple, Dict
+Tensor = torch.Tensor       # type alias for torch tensor
 
 
 def agent_aware_mask(q_identities: Tensor, k_identities: Tensor) -> Tensor:
@@ -532,597 +533,134 @@ class AgentAwareAttention(Module):
                 )
 
 
-class AgentAwareAttentionV2(Module):
-
-    def __init__(self, cfg, traj_dim: int, vdim: int, num_heads: int, dropout: float = 0.1):
-        super().__init__()
-        self.cfg = cfg
-        self.traj_dim = traj_dim            # T
-        self.vdim = vdim                    # V
-        self.num_heads = num_heads          # H
-
-        self.traj_head_dim = traj_dim // num_heads      # t
-        assert self.traj_head_dim * self.num_heads == self.traj_dim, "traj_dim must be divisible by num_heads"
-
-        self.v_head_dim = vdim // num_heads             # v
-        assert self.v_head_dim * self.num_heads == self.vdim, "vdim must be divisible by num_heads"
-
-        self.traj_scaling = float(self.traj_head_dim ** -0.5)
-
-        # MLP's for mapping trajectory sequences to keys, queries and values
-        self.w_q_traj_self = torch.nn.Linear(self.traj_dim, self.traj_dim, bias=False)
-        self.w_q_traj_other = torch.nn.Linear(self.traj_dim, self.traj_dim, bias=False)
-        self.w_k_traj_self = torch.nn.Linear(self.traj_dim, self.traj_dim, bias=False)
-        self.w_k_traj_other = torch.nn.Linear(self.traj_dim, self.traj_dim, bias=False)
-        self.w_v_traj = torch.nn.Linear(self.traj_dim, self.vdim, bias=False)
-
-        # output MLP
-        self.fc_traj = torch.nn.Linear(self.vdim, self.vdim)
-
-        # dropout layer
-        self.dropout = torch.nn.Dropout(dropout)
-
-        self._reset_parameters()
-
-        # print(f"Hey, here are my params:\n")
-        # for k, v in self.__dict__.items():
-        #     prnt_str = f"\n{k}: {v}"
-        #     try:
-        #         prnt_str += f"\t\t(shape: {v.shape})"
-        #     except:
-        #         prnt_str += ""
-        #     print(prnt_str)
-        # print(f"\n\n\n\n")
-
-    def _reset_parameters(self):
-        # https://ai.stackexchange.com/questions/30491/is-there-a-proper-initialization-technique-for-the-weight-matrices-in-multi-head
-        torch.nn.init.xavier_normal_(self.w_q_traj_self.weight)
-        torch.nn.init.xavier_normal_(self.w_k_traj_self.weight)
-        torch.nn.init.xavier_normal_(self.w_q_traj_other.weight)
-        torch.nn.init.xavier_normal_(self.w_k_traj_other.weight)
-        torch.nn.init.xavier_normal_(self.w_v_traj.weight)
-        torch.nn.init.xavier_normal_(self.fc_traj.weight)
-        torch.nn.init.zeros_(self.fc_traj.bias)
-
-    @staticmethod
-    def agent_aware_mask(q_identities: Tensor, k_identities: Tensor):
-        # q_identities: [L, N]
-        # k_identities: [S, N]
-
-        mask = torch.empty(
-            [*reversed(q_identities.shape), k_identities.shape[0]]
-        ).to(q_identities.dtype)        # [N, L, S]
-        for idx, q_id in enumerate(q_identities):
-            mask[:, idx, :] = (k_identities == q_id).T
-
-        return mask     # [N, L, S]
-
-    def agent_scaled_dot_product(
-            self,
-            q: Tensor, k: Tensor,
-            q_identities: Tensor, k_identities: Tensor,
-            mask: Tensor
-    ) -> Tensor:
-        # q: [L, N, T]
-        # k: [S, N, T]
-        # v: [S, N, T]
-        # q_identities: [L, N]
-        # k_identities: [S, N]
-        L, N, _ = q.size()
-        S, _, _ = k.size()
-
-        q_self = self.w_q_traj_self(q) * self.traj_scaling          # [L, N, T]
-        q_other = self.w_q_traj_other(q) * self.traj_scaling        # [L, N, T]
-        k_self = self.w_k_traj_self(k)          # [S, N, T]
-        k_other = self.w_k_traj_other(k)        # [S, N, T]
-
-        # print(f"2. {q_self.shape, q_other.shape, k_self.shape, k_other.shape=}")
-
-        q_self = q_self.reshape(L, N, self.num_heads, self.traj_head_dim).transpose(0, 2)          # [H, N, L, t]
-        q_other = q_other.reshape(L, N, self.num_heads, self.traj_head_dim).transpose(0, 2)        # [H, N, L, t]
-        k_self = k_self.reshape(S, N, self.num_heads, self.traj_head_dim).permute(2, 1, 3, 0)      # [H, N, t, S]
-        k_other = k_other.reshape(S, N, self.num_heads, self.traj_head_dim).permute(2, 1, 3, 0)    # [H, N, t, S]
-
-        # print(f"3. {q_self.shape, q_other.shape, k_self.shape, k_other.shape=}")
-
-        attention_self = q_self @ k_self            # [H, N, L, t] @ [H, N, t, S] = [H, N, L, S]
-        attention_other = q_other @ k_other         # [H, N, L, t] @ [H, N, t, S] = [H, N, L, S]
-
-        # print(f"4. {attention_self.shape, attention_other.shape=}")
-
-        agent_aware_mask = self.agent_aware_mask(q_identities, k_identities)    # [N, L, S]
-        # print(f"5. {agent_aware_mask.shape=}")
-
-        attention = attention_other * (1 - agent_aware_mask) + attention_self * agent_aware_mask        # [H, N, L, S]
-
-        # print(f"6. {attention.shape=}")
-        attention += mask                                                                               # [H, N, L, S]
-        # print(f"7. {attention.shape=}")
-
-        return attention
-
-    def forward(
-            self,
-            q: Tensor, k: Tensor, v: Tensor,
-            q_identities: Tensor, k_identities: Tensor,
-            mask: Tensor, need_weights: bool = True
-    ) -> Tuple[Tensor, Optional[Tensor]]:
-        # q: [L, N, T]
-        # k: [S, N, T]
-        # v: [S, N, T]
-        # q_identities: [L, N]
-        # k_identities: [S, N]
-
-        # print(f"{q.shape, k.shape, v.shape=}")
-        # print(f"{q_identities.shape, k_identities.shape=}")
-        # print(f"{mask, mask.shape=}")
-
-        L, N, _ = q.size()
-        S, _, _ = k.size()
-
-        # mapping inputs to keys, queries and values
-        v = self.w_v_traj(v)                                                    # [S, N, V]
-        v = v.reshape(S, N, self.num_heads, self.v_head_dim).transpose(0, 2)    # [H, N, S, v]
-
-        # print(f"1. {v.shape=}")
-
-        attention = self.agent_scaled_dot_product(
-            q=q, k=k, q_identities=q_identities, k_identities=k_identities, mask=mask
-        )       # [H, N, L, S]
-
-        # print(f"8. {attention.shape=}")
-
-        attention = F.softmax(attention, dim=-1)        # [H, N, L, S]
-        # print(f"9. {attention.shape=}")
-        attention = self.dropout(attention)             # [H, N, L, S]
-        # print(f"10. {attention.shape=}")
-
-        attention_output = attention @ v                # [H, N, L, S] @ [H, N, S, v] = [H, N, L, v]
-        # print(f"11. {attention_output.shape=}")
-
-        attention_output = attention_output.permute(2, 1, 0, 3).reshape(L, N, self.vdim)        # [L, N, V]
-        # print(f"12. {attention_output.shape=}")
-
-        attention_output = self.fc_traj(attention_output)                                       # [L, N, V]
-        # print(f"13. {attention_output.shape=}")
-
-        if need_weights:
-            # print(f"14. {attention_output.shape, (attention.sum(dim=1) / self.num_heads).shape=}")
-            return attention_output, attention.sum(dim=0) / self.num_heads      # [L, N, V], [N, L, S]
-        else:
-            return attention_output, None                                       # [L, N, V], None
-
-
-class MapAgentAwareAttention(AgentAwareAttentionV2):
-
-    def __init__(self, cfg, traj_dim: int, map_dim: int, vdim: int, num_heads: int, dropout: float = 0.1):
-        super().__init__(cfg=cfg, traj_dim=traj_dim, vdim=vdim, num_heads=num_heads, dropout=dropout)
-        self.map_dim = map_dim              # M
-
-        self.map_head_dim = map_dim // num_heads        # m
-        assert self.map_head_dim * self.num_heads == self.map_dim, "map_dim must be divisible by num_heads"
-
-        self.map_scaling = float(self.map_head_dim ** -0.5)
-
-        # MLP's for mapping trajectory sequences to keys and queries for attending to the map features
-        self.w_q_traj_map = torch.nn.Linear(self.traj_dim, self.traj_dim, bias=False)
-        self.w_k_traj_map = torch.nn.Linear(self.traj_dim, self.map_dim, bias=False)
-
-        # MLP's for mapping map feature data to keys, queries and values
-        self.w_q_map_self = torch.nn.Linear(self.map_dim, self.map_dim, bias=False)
-        self.w_q_map_agents = torch.nn.Linear(self.map_dim, self.map_dim, bias=False)
-        self.w_k_map_self = torch.nn.Linear(self.map_dim, self.map_dim, bias=False)
-        self.w_k_map_agents = torch.nn.Linear(self.map_dim, self.traj_dim, bias=False)
-        self.w_v_map = torch.nn.Linear(self.map_dim, self.vdim, bias=False)
-
-        # output MLP for the map
-        self.fc_map = torch.nn.Linear(self.vdim, self.vdim)
-
-        self._reset_parameters()
-
-    def _reset_parameters(self):
-        super()._reset_parameters()
-        torch.nn.init.xavier_normal_(self.w_q_traj_map.weight)
-        torch.nn.init.xavier_normal_(self.w_k_traj_map.weight)
-        torch.nn.init.xavier_normal_(self.w_q_map_self.weight)
-        torch.nn.init.xavier_normal_(self.w_k_map_self.weight)
-        torch.nn.init.xavier_normal_(self.w_q_map_agents.weight)
-        torch.nn.init.xavier_normal_(self.w_k_map_agents.weight)
-        torch.nn.init.xavier_normal_(self.w_v_map.weight)
-        torch.nn.init.xavier_normal_(self.fc_map.weight)
-        torch.nn.init.zeros_(self.fc_map.bias)
-
-    def forward(
-            self,
-            q: Tensor, k: Tensor, v: Tensor, map_feature: Tensor,
-            q_identities: Tensor, k_identities: Tensor,
-            mask: Tensor, need_weights: bool = True
-    ) -> Tuple[Tensor, Optional[Tensor]]:
-        # TODO: CHECK VALID TENSOR SIZES
-
-        # q: [L, N, T]
-        # k: [S, N, T]
-        # v: [S, N, T]
-        # map_feature: [M, N]
-        # q_identities: [L, N]
-        # k_identities: [S, N]
-
-        # print(f"{q.shape, k.shape, v.shape, map_feature.shape=}")
-        # print(f"{q_identities.shape, k_identities.shape=}")
-        # print(f"{mask, mask.shape=}")
-
-        L, N, _ = q.size()
-        S, _, _ = k.size()
-
-        # trajectory related keys, queries and values
-        q_traj_map = self.w_q_traj_map(q) * self.map_scaling        # [L, N, T]
-        k_traj_map = self.w_k_traj_map(k)                           # [S, N, M]
-        v_traj = self.w_v_traj(v)                                   # [S, N, V]
-
-        # map related keys, queries and values
-        q_map_self = self.w_q_map_self(map_feature.T) * self.map_scaling          # [N, M]
-        q_map_agents = self.w_q_map_agents(map_feature.T) * self.traj_scaling     # [N, M]
-        k_map_self = self.w_k_map_self(map_feature.T)                             # [N, M]
-        k_map_agents = self.w_k_map_agents(map_feature.T)                         # [N, T]
-        v_map = self.w_v_map(map_feature.T)                                       # [N, V]
-
-        # Tensor reshaping
-        q_traj_map = q_traj_map.reshape(L, N, self.num_heads, self.map_head_dim).transpose(0, 2)        # [H, N, L, t]
-        k_traj_map = k_traj_map.reshape(S, N, self.num_heads, self.map_head_dim).permute(2, 1, 3, 0)    # [H, N, m, S]
-        v_traj = v_traj.reshape(S, N, self.num_heads, self.v_head_dim).transpose(0, 2)                  # [H, N, S, v]
-
-        q_map_self = q_map_self.reshape(N, self.num_heads, 1, self.map_head_dim).transpose(0, 1)        # [H, N, 1, m]
-        q_map_agents = q_map_agents.reshape(N, self.num_heads, 1, self.map_head_dim).transpose(0, 1)    # [H, N, 1, m]
-        k_map_self = k_map_self.reshape(N, self.num_heads, self.map_head_dim, 1).transpose(0, 1)        # [H, N, m, 1]
-        k_map_agents = k_map_agents.reshape(N, self.num_heads, self.traj_head_dim, 1).transpose(0, 1)   # [H, N, t, 1]
-        v_map = v_map.reshape(N, self.num_heads, 1, self.v_head_dim).transpose(0, 1)                    # [H, N, 1, v]
-
-        # cross agent attention
-        cross_agent_attention = self.agent_scaled_dot_product(
-            q=q, k=k, q_identities=q_identities, k_identities=k_identities, mask=mask
-        )       # [N, H, L, S]
-
-        # cross map attention
-        map_map_attention = q_map_self @ k_map_self         # [H, N, 1, m] @ [H, N, m, 1] = [H, N, 1, 1]
-
-        # agent map attention, agents query the map
-        agent_map_attention = q_traj_map @ k_map_agents     # [H, N, L, t] @ [H, N, t, 1] = [H, N, L, 1]
-
-        # map agent attention, the map queries the agents
-        map_agent_attention = q_map_agents @ k_traj_map     # [H, N, 1, m] @ [H, N, m, S] = [H, N, 1, S]
-
-        # Combine attention scores
-        traj_attention = torch.cat([agent_map_attention, cross_agent_attention], dim=-1)    # [H, N, L, S+1]
-        map_attention = torch.cat([map_map_attention, map_agent_attention], dim=-1)         # [H, N, 1, S+1]
-        combined_attention = torch.cat([map_attention, traj_attention], dim=-2)             # [H, N, L+1, S+1]
-
-        # softmax
-        combined_attention = F.softmax(combined_attention, dim=-1)
-
-        # dropout       # TODO: CAREFUL: ARE WE IN DANGER IF WE DROPOUT THE MAP ENTIRELY?
-        combined_attention = self.dropout(combined_attention)
-
-        # score multiply values
-        combined_v = torch.cat([v_map, v_traj], dim=-2)             # [H, N, S+1, v]
-        attention_output = combined_attention @ combined_v          # [H, N, L+1, S+1] @ [H, N, S+1, v] = [H, N, L+1, v]
-
-        # return output
-        attention_output = attention_output.permute(2, 1, 0, 3).reshape(L+1, N, self.vdim)      # [L+1, N, V]
-        traj_output = attention_output[1:, ...]                     # [L, N, V]
-        map_output = attention_output[0, ...]                       # [1, N, V]
-
-        # separate MLP for map and traj
-        traj_output = self.fc_traj(traj_output)                     # [L, N, V]
-        map_output = self.fc_map(map_output)                        # [1, N, V]
-
-        if need_weights:
-            # [L, N, V], [1, N, V], [N, L+1, S+1]
-            # TODO: what does 'need_weights' need exactly? return combined_attention, or something else?
-            return traj_output, map_output, combined_attention.sum(dim=0) / self.num_heads
-        else:
-            # [L, N, V], [1, N, V], None
-            return traj_output, map_output, None
-
-
-class AgentFormerEncoderLayer(Module):
-    r"""TransformerEncoderLayer is made up of self-attn and feedforward network.
-    This standard encoder layer is based on the paper "Attention Is All You Need".
-    Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez,
-    Lukasz Kaiser, and Illia Polosukhin. 2017. Attention is all you need. In Advances in
-    Neural Information Processing Systems, pages 6000-6010. Users may modify or implement
-    in a different way during application.
-
-    Args:
-        d_model: the number of expected features in the input (required).
-        nhead: the number of heads in the multiheadattention models (required).
-        dim_feedforward: the dimension of the feedforward network model (default=2048).
-        dropout: the dropout value (default=0.1).
-        activation: the activation function of intermediate layer, relu or gelu (default=relu).
-
-    Examples::
-        >>> encoder_layer = nn.TransformerEncoderLayer(d_model=512, nhead=8)
-        >>> src = torch.rand(10, 32, 512)
-        >>> out = encoder_layer(src)
-    """
-
-    def __init__(self, cfg, d_model, nhead, dim_feedforward=2048, dropout=0.1, activation="relu"):
-        super().__init__()
-        self.cfg = cfg
-        # print(f"ENCODER_LAYER")
-        # self.self_attn = AgentAwareAttention(cfg, d_model, nhead, dropout=dropout)
-        self.self_attn = AgentAwareAttentionV2(cfg=cfg, traj_dim=d_model, vdim=d_model, num_heads=nhead, dropout=dropout)
-        # Implementation of Feedforward model
-        self.linear1 = Linear(d_model, dim_feedforward)
-        self.dropout = Dropout(dropout)
-        self.linear2 = Linear(dim_feedforward, d_model)
-
-        self.norm1 = LayerNorm(d_model)
-        self.norm2 = LayerNorm(d_model)
-        self.dropout1 = Dropout(dropout)
-        self.dropout2 = Dropout(dropout)
-
-        self.activation = _get_activation_fn(activation)
-
-    def __setstate__(self, state):
-        if 'activation' not in state:
-            state['activation'] = F.relu
-        super().__setstate__(state)
-
-    def forward(
-            self, src: Tensor, src_identities: Tensor,
-            src_mask: Optional[Tensor] = None, src_key_padding_mask: Optional[Tensor] = None
-    ) -> Tensor:
-        r"""Pass the input through the encoder layer.
-
-        Args:
-            src: the sequence to the encoder layer (required).
-            src_mask: the mask for the src sequence (optional).
-            src_key_padding_mask: the mask for the src keys per batch (optional).
-
-        Shape:
-            see the docs in Transformer class.
-        """
-        # print(f"{src, src.shape=}")
-        # src2 = self.self_attn(query=src, key=src, value=src,
-        #                       query_identities=src_identities, key_identities=src_identities,
-        #                       attn_mask=src_mask, key_padding_mask=src_key_padding_mask)[0]
-        src2 = self.self_attn(q=src, k=src, v=src, q_identities=src_identities, k_identities=src_identities, mask=src_mask)[0]
-        src = src + self.dropout1(src2)
-        src = self.norm1(src)
-        src2 = self.linear2(self.dropout(self.activation(self.linear1(src))))
-        src = src + self.dropout2(src2)
-        src = self.norm2(src)
-        return src
-
-
-class AgentFormerDecoderLayer(Module):
-    r"""TransformerDecoderLayer is made up of self-attn, multi-head-attn and feedforward network.
-    This standard decoder layer is based on the paper "Attention Is All You Need".
-    Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez,
-    Lukasz Kaiser, and Illia Polosukhin. 2017. Attention is all you need. In Advances in
-    Neural Information Processing Systems, pages 6000-6010. Users may modify or implement
-    in a different way during application.
-
-    Args:
-        d_model: the number of expected features in the input (required).
-        nhead: the number of heads in the multiheadattention models (required).
-        dim_feedforward: the dimension of the feedforward network model (default=2048).
-        dropout: the dropout value (default=0.1).
-        activation: the activation function of intermediate layer, relu or gelu (default=relu).
-
-    Examples::
-        >>> decoder_layer = nn.TransformerDecoderLayer(d_model=512, nhead=8)
-        >>> memory = torch.rand(10, 32, 512)
-        >>> tgt = torch.rand(20, 32, 512)
-        >>> out = decoder_layer(tgt, memory)
-    """
-
-    def __init__(self, cfg, d_model, nhead, dim_feedforward=2048, dropout=0.1, activation="relu"):
-        super().__init__()
-        self.cfg = cfg
-        # print(f"DECODER_LAYER")
-        # self.self_attn = AgentAwareAttention(cfg, d_model, nhead, dropout=dropout)
-        self.self_attn = AgentAwareAttentionV2(cfg=cfg, traj_dim=d_model, vdim=d_model, num_heads=nhead, dropout=dropout)
-        # self.multihead_attn = AgentAwareAttention(cfg, d_model, nhead, dropout=dropout)
-        self.multihead_attn = AgentAwareAttentionV2(cfg=cfg, traj_dim=d_model, vdim=d_model, num_heads=nhead, dropout=dropout)
-        # Implementation of Feedforward model
-        self.linear1 = Linear(d_model, dim_feedforward)
-        self.dropout = Dropout(dropout)
-        self.linear2 = Linear(dim_feedforward, d_model)
-
-        self.norm1 = LayerNorm(d_model)
-        self.norm2 = LayerNorm(d_model)
-        self.norm3 = LayerNorm(d_model)
-        self.dropout1 = Dropout(dropout)
-        self.dropout2 = Dropout(dropout)
-        self.dropout3 = Dropout(dropout)
-
-        self.activation = _get_activation_fn(activation)
-
-    def __setstate__(self, state):
-        if 'activation' not in state:
-            state['activation'] = F.relu
-        super().__setstate__(state)
-
-    def forward(
-            self, tgt: Tensor, memory: Tensor, tgt_identities: Tensor, mem_identities: Tensor,
-            tgt_mask: Optional[Tensor] = None,
-            memory_mask: Optional[Tensor] = None,
-            tgt_key_padding_mask: Optional[Tensor] = None,
-            memory_key_padding_mask: Optional[Tensor] = None,
-            need_weights = False
-    ) -> Tensor:
-        r"""Pass the inputs (and mask) through the decoder layer.
-
-        Args:
-            tgt: the sequence to the decoder layer (required).
-            memory: the sequence from the last layer of the encoder (required).
-            tgt_mask: the mask for the tgt sequence (optional).
-            memory_mask: the mask for the memory sequence (optional).
-            tgt_key_padding_mask: the mask for the tgt keys per batch (optional).
-            memory_key_padding_mask: the mask for the memory keys per batch (optional).
-
-        Shape:
-            see the docs in Transformer class.
-        """
-        # tgt2, self_attn_weights = self.self_attn(
-        #     query=tgt, key=tgt, value=tgt, query_identities=tgt_identities, key_identities=tgt_identities,
-        #     attn_mask=tgt_mask, key_padding_mask=tgt_key_padding_mask, need_weights=need_weights
-        # )
-        tgt2, self_attn_weights = self.self_attn(
-            q=tgt, k=tgt, v=tgt, q_identities=tgt_identities, k_identities=tgt_identities, mask=tgt_mask
-        )
-        tgt = tgt + self.dropout1(tgt2)
-        tgt = self.norm1(tgt)
-        # tgt2, cross_attn_weights = self.multihead_attn(
-        #     query=tgt, key=memory, value=memory, query_identities=tgt_identities, key_identities=mem_identities,
-        #     attn_mask=memory_mask, key_padding_mask=memory_key_padding_mask, need_weights=need_weights
-        # )
-        tgt2, cross_attn_weights = self.multihead_attn(
-            q=tgt, k=memory, v=memory, q_identities=tgt_identities, k_identities=mem_identities, mask=memory_mask
-        )
-        tgt = tgt + self.dropout2(tgt2)
-        tgt = self.norm2(tgt)
-        tgt2 = self.linear2(self.dropout(self.activation(self.linear1(tgt))))
-        tgt = tgt + self.dropout3(tgt2)
-        tgt = self.norm3(tgt)
-        return tgt, self_attn_weights, cross_attn_weights
-
-
-class AgentFormerEncoder(Module):
-    r"""TransformerEncoder is a stack of N encoder layers
-
-    Args:
-        encoder_layer: an instance of the TransformerEncoderLayer() class (required).
-        num_layers: the number of sub-encoder-layers in the encoder (required).
-        norm: the layer normalization component (optional).
-
-    Examples::
-        >>> encoder_layer = nn.TransformerEncoderLayer(d_model=512, nhead=8)
-        >>> transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=6)
-        >>> src = torch.rand(10, 32, 512)
-        >>> out = transformer_encoder(src)
-    """
-    __constants__ = ['norm']
-
-    def __init__(self, encoder_layer, num_layers, norm=None):
-        super().__init__()
-        self.layers = _get_clones(encoder_layer, num_layers)
-        self.num_layers = num_layers
-        self.norm = norm
-
-    def forward(
-            self,
-            src: Tensor,
-            src_identities: Tensor,
-            mask: Optional[Tensor] = None,
-            src_key_padding_mask: Optional[Tensor] = None,
-    ) -> Tensor:
-        r"""Pass the input through the encoder layers in turn.
-
-        Args:
-            src: the sequence to the encoder (required).
-            mask: the mask for the src sequence (optional).
-            src_key_padding_mask: the mask for the src keys per batch (optional).
-
-        Shape:
-            see the docs in Transformer class.
-        """
-        output = src
-
-        for mod in self.layers:
-            output = mod(
-                src=output, src_identities=src_identities, src_mask=mask, src_key_padding_mask=src_key_padding_mask
-            )
-
-        if self.norm is not None:
-            output = self.norm(output)
-
-        return output
-
-
-class AgentFormerDecoder(Module):
-    r"""TransformerDecoder is a stack of N decoder layers
-
-    Args:
-        decoder_layer: an instance of the TransformerDecoderLayer() class (required).
-        num_layers: the number of sub-decoder-layers in the decoder (required).
-        norm: the layer normalization component (optional).
-
-    Examples::
-        >>> decoder_layer = nn.TransformerDecoderLayer(d_model=512, nhead=8)
-        >>> transformer_decoder = nn.TransformerDecoder(decoder_layer, num_layers=6)
-        >>> memory = torch.rand(10, 32, 512)
-        >>> tgt = torch.rand(20, 32, 512)
-        >>> out = transformer_decoder(tgt, memory)
-    """
-    __constants__ = ['norm']
-
-    def __init__(self, decoder_layer, num_layers, norm=None):
-        super().__init__()
-        self.layers = _get_clones(decoder_layer, num_layers)
-        self.num_layers = num_layers
-        self.norm = norm
-
-    def forward(
-            self,
-            tgt: Tensor, memory: Tensor,
-            tgt_identities: Tensor, mem_identities: Tensor,
-            tgt_mask: Optional[Tensor] = None,
-            memory_mask: Optional[Tensor] = None,
-            tgt_key_padding_mask: Optional[Tensor] = None,
-            memory_key_padding_mask: Optional[Tensor] = None,
-            need_weights = False
-    ) -> Tensor:
-        r"""Pass the inputs (and mask) through the decoder layer in turn.
-
-        Args:
-            tgt: the sequence to the decoder (required).
-            memory: the sequence from the last layer of the encoder (required).
-            tgt_mask: the mask for the tgt sequence (optional).
-            memory_mask: the mask for the memory sequence (optional).
-            tgt_key_padding_mask: the mask for the tgt keys per batch (optional).
-            memory_key_padding_mask: the mask for the memory keys per batch (optional).
-
-        Shape:
-            see the docs in Transformer class.
-        """
-        output = tgt
-
-        self_attn_weights = [None] * len(self.layers)
-        cross_attn_weights = [None] * len(self.layers)
-        for i, mod in enumerate(self.layers):
-            output, self_attn_weights[i], cross_attn_weights[i] = mod(
-                tgt=output, memory=memory,
-                tgt_identities=tgt_identities, mem_identities=mem_identities,
-                tgt_mask=tgt_mask,
-                memory_mask=memory_mask,
-                tgt_key_padding_mask=tgt_key_padding_mask,
-                memory_key_padding_mask=memory_key_padding_mask,
-                need_weights=need_weights
-            )
-
-        if self.norm is not None:
-            output = self.norm(output)
-
-        if need_weights:
-            self_attn_weights = torch.stack(self_attn_weights).cpu().numpy()
-            cross_attn_weights = torch.stack(cross_attn_weights).cpu().numpy()
-
-        return output, {'self_attn_weights': self_attn_weights, 'cross_attn_weights': cross_attn_weights}
-
-
-def _get_clones(module, N):
-    return ModuleList([copy.deepcopy(module) for i in range(N)])
-
-
-def _get_activation_fn(activation):
-    if activation == "relu":
-        return F.relu
-    elif activation == "gelu":
-        return F.gelu
-
-    raise RuntimeError("activation should be relu/gelu, not {}".format(activation))
+# class AgentFormerEncoder(Module):
+#     r"""TransformerEncoder is a stack of N encoder layers
+#
+#     Args:
+#         encoder_layer: an instance of the TransformerEncoderLayer() class (required).
+#         num_layers: the number of sub-encoder-layers in the encoder (required).
+#         norm: the layer normalization component (optional).
+#
+#     Examples::
+#         >>> encoder_layer = nn.TransformerEncoderLayer(d_model=512, nhead=8)
+#         >>> transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=6)
+#         >>> src = torch.rand(10, 32, 512)
+#         >>> out = transformer_encoder(src)
+#     """
+#
+#     layer_types = {
+#         'agent': WrappedAgentFormerEncoderLayerForMapInput,
+#         'map_agent': MapAwareAgentFormerEncoderLayer
+#     }
+#
+#     def __init__(self, encoder_config, num_layers):
+#         super().__init__()
+#         self.encoder_config = encoder_config
+#         self.num_layers = num_layers
+#         layer = self.layer_types[encoder_config['layer_type']](**encoder_config['layer_params'])
+#         self.layers = _get_clones(layer, num_layers)
+#
+#     def forward(
+#             self, src: Tensor, src_identities: Tensor, map_feature: Tensor,
+#             src_mask: Optional[Tensor] = None,
+#     ) -> Tuple[Tensor, Tensor]:
+#         r"""Pass the input through the encoder layers in turn.
+#
+#         Args:
+#             src: the sequence to the encoder (required).
+#             src_mask: the mask for the src sequence (optional).
+#
+#         Shape:
+#             see the docs in Transformer class.
+#         """
+#         output = src
+#         map_output = map_feature
+#
+#         for layer in self.layers:
+#             output, map_output = layer(
+#                 src=output, src_identities=src_identities, map_feature=map_output, src_mask=src_mask,
+#             )
+#
+#         return output, map_output
+#
+#
+# class AgentFormerDecoder(Module):
+#     r"""TransformerDecoder is a stack of N decoder layers
+#
+#     Args:
+#         decoder_layer: an instance of the TransformerDecoderLayer() class (required).
+#         num_layers: the number of sub-decoder-layers in the decoder (required).
+#         norm: the layer normalization component (optional).
+#
+#     Examples::
+#         >>> decoder_layer = nn.TransformerDecoderLayer(d_model=512, nhead=8)
+#         >>> transformer_decoder = nn.TransformerDecoder(decoder_layer, num_layers=6)
+#         >>> memory = torch.rand(10, 32, 512)
+#         >>> tgt = torch.rand(20, 32, 512)
+#         >>> out = transformer_decoder(tgt, memory)
+#     """
+#     layer_types = {
+#         'agent': WrappedAgentFormerDecoderLayerForMapInput,
+#         'map_agent': MapAwareAgentFormerDecoderLayer
+#     }
+#
+#     def __init__(self, decoder_config, num_layers):
+#         super().__init__()
+#         self.decoder_config = decoder_config
+#         self.num_layers = num_layers
+#         layer = self.layer_types[decoder_config['layer_type']](**decoder_config['layer_params'])
+#         self.layers = _get_clones(layer, num_layers)
+#
+#     def forward(
+#             self, tgt: Tensor, memory: Tensor,
+#             tgt_identities: Tensor, mem_identities: Tensor,
+#             tgt_map: Tensor, mem_map: Tensor,
+#             tgt_mask: Optional[Tensor] = None, memory_mask: Optional[Tensor] = None
+#     ) -> Tuple[Tensor, Tensor, Dict]:
+#         r"""Pass the inputs (and mask) through the decoder layer in turn.
+#
+#         Args:
+#             tgt: the sequence to the decoder (required).
+#             memory: the sequence from the last layer of the encoder (required).
+#             tgt_mask: the mask for the tgt sequence (optional).
+#             memory_mask: the mask for the memory sequence (optional).
+#             tgt_key_padding_mask: the mask for the tgt keys per batch (optional).
+#             memory_key_padding_mask: the mask for the memory keys per batch (optional).
+#
+#         Shape:
+#             see the docs in Transformer class.
+#         """
+#         output = tgt
+#         map_output = tgt_map
+#
+#         self_attn_weights = [None] * len(self.layers)
+#         cross_attn_weights = [None] * len(self.layers)
+#         for i, mod in enumerate(self.layers):
+#             output, map_output, self_attn_weights[i], cross_attn_weights[i] = mod(
+#                 tgt=output, memory=memory,
+#                 tgt_identities=tgt_identities, mem_identities=mem_identities,
+#                 tgt_map=map_output, mem_map=mem_map,
+#                 tgt_mask=tgt_mask, memory_mask=memory_mask,
+#             )
+#
+#         # if need_weights:
+#         #     self_attn_weights = torch.stack(self_attn_weights).cpu().numpy()
+#         #     cross_attn_weights = torch.stack(cross_attn_weights).cpu().numpy()
+#
+#         return output, map_output, {'self_attn_weights': self_attn_weights, 'cross_attn_weights': cross_attn_weights}
+
+
+# def _get_clones(module, N):
+#     return ModuleList([copy.deepcopy(module) for i in range(N)])
+
+
+# def _get_activation_fn(activation):
+#     if activation == "relu":
+#         return F.relu
+#     elif activation == "gelu":
+#         return F.gelu
+#
+#     raise RuntimeError("activation should be relu/gelu, not {}".format(activation))
 
 
 if __name__ == '__main__':
