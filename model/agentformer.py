@@ -10,9 +10,9 @@ import model.decoder_out_submodels as decoder_out_submodels
 from model.common.mlp import MLP
 from model.agentformer_loss import loss_func
 from model.common.dist import Normal, Categorical
-from model.agentformer_lib import AgentFormerEncoderLayer, AgentFormerDecoderLayer, AgentFormerDecoder, AgentFormerEncoder
+from model.attention_modules import AgentFormerEncoder, AgentFormerDecoder
 from model.map_encoder import MapEncoder
-from utils.torch import rotation_2d_torch, ExpParamAnnealer
+from utils.torch import ExpParamAnnealer
 from utils.utils import initialize_weights
 
 
@@ -128,7 +128,7 @@ class ContextEncoder(nn.Module):
         self.input_type = ctx['input_type']
         self.pooling = ctx['context_encoder'].get('pooling', 'mean')
         self.vel_heading = ctx['vel_heading']
-        self.global_map_attention = 'map_agent' if ctx['global_map_attention'] else 'agent'
+        self.global_map_attention = ctx['global_map_attention']
 
         print(f"{self.global_map_attention=}")
 
@@ -138,8 +138,17 @@ class ContextEncoder(nn.Module):
         #     in_dim += ctx['map_enc_dim'] - self.motion_dim
         self.input_fc = nn.Linear(in_dim, self.model_dim)
 
-        encoder_layers = AgentFormerEncoderLayer(self.model_dim, self.nhead, self.ff_dim, self.dropout)
-        self.tf_encoder = AgentFormerEncoder(encoder_layers, self.nlayer)
+        encoder_config = {
+            'layer_type': 'map_agent' if self.global_map_attention else 'agent',
+            'layer_params': {
+                'd_model': self.model_dim,
+                'nhead': self.nhead,
+                'dim_feedforward': self.ff_dim,
+                'dropout': self.dropout,
+            }
+        }
+        self.tf_encoder = AgentFormerEncoder(encoder_config=encoder_config, num_layers=self.nlayer)
+
         self.pos_encoder = PositionalEncoding(self.model_dim, dropout=self.dropout, concat=ctx['pos_concat'])
 
     def forward(self, data):
@@ -175,10 +184,14 @@ class ContextEncoder(nn.Module):
         ).to(tf_seq_in.device)        # [O, O]
 
         # print(f"{tf_in_pos.shape=}")
-        data['context_enc'] = self.tf_encoder(
+        # print(f"{tf_in_pos.shape=}")
+        # print(f"{type(data['global_map_encoding'])=}")
+        # print(f"{data['global_map_encoding'].shape=}")
+        data['context_enc'], data['context_map'] = self.tf_encoder(
             src=tf_in_pos,                                          # [O, 1, model_dim]
             src_identities=data['pre_agents'].unsqueeze(1),         # [O, 1]
-            mask=src_mask                                           # [O, O]
+            map_feature=data['global_map_encoding'],                # [1, model_dim]
+            src_mask=src_mask                                       # [O, O]
         )                                                           # [O, 1, model_dim]
         # print(f"{data['context_enc'].shape=}")
 
@@ -214,15 +227,24 @@ class FutureEncoder(nn.Module):
         self.input_type = ctx['fut_input_type']
         self.pooling = ctx['future_encoder'].get('pooling', 'mean')
         self.vel_heading = ctx['vel_heading']
+        self.global_map_attention = ctx['global_map_attention']
+
         # networks
         in_dim = forecast_dim * len(self.input_type)
         if 'map' in self.input_type:
             in_dim += ctx['map_enc_dim'] - forecast_dim
         self.input_fc = nn.Linear(in_dim, self.model_dim)
 
-        decoder_layers = AgentFormerDecoderLayer(ctx['tf_cfg'], self.model_dim, self.nhead, self.ff_dim, self.dropout)
-        self.tf_decoder = AgentFormerDecoder(decoder_layers, self.nlayer)
-
+        decoder_config = {
+            'layer_type': 'map_agent' if self.global_map_attention else 'agent',
+            'layer_params': {
+                'd_model': self.model_dim,
+                'nhead': self.nhead,
+                'dim_feedforward': self.ff_dim,
+                'dropout': self.dropout
+            }
+        }
+        self.tf_decoder = AgentFormerDecoder(decoder_config=decoder_config, num_layers=self.nlayer)
         self.pos_encoder = PositionalEncoding(self.model_dim, dropout=self.dropout, concat=ctx['pos_concat'])
         num_dist_params = 2 * self.nz if self.z_type == 'gaussian' else self.nz     # either gaussian or discrete
         if self.out_mlp_dim is None:
@@ -262,14 +284,19 @@ class FutureEncoder(nn.Module):
         mem_mask = generate_mask(data['fut_timesteps'].shape[0], data['pre_timesteps'].shape[0]).to(tf_seq_in.device)
         tgt_mask = generate_mask(data['fut_timesteps'].shape[0], data['fut_timesteps'].shape[0]).to(tf_seq_in.device)
 
-        tf_out, _ = self.tf_decoder(
+        # print(f"{data['global_map_encoding'].shape=}")
+        # print(f"{data['context_map'].shape=}")
+        tf_out, map_out, _ = self.tf_decoder(
             tgt=tf_in_pos,                                          # [P, 1, model_dim]
             memory=data['context_enc'],                             # [O, 1, model_dim]
             tgt_identities=data['fut_agents'].unsqueeze(1),         # [P, 1]
             mem_identities=data['pre_agents'].unsqueeze(1),         # [O, 1]
+            tgt_map=data['global_map_encoding'],                    # [1, model_dim]
+            mem_map=data['context_map'],                            # [1, model_dim]
             tgt_mask=tgt_mask,                                      # [P, P]
             memory_mask=mem_mask,                                   # [P, O]
         )                                                           # [P, 1, model_dim]
+        # TODO: EVALUATE WHAT TO DO / WHAT IS DONE WITH MAP_OUT
 
         if self.pooling == 'mean':
             h = torch.cat(
@@ -316,6 +343,7 @@ class FutureDecoder(nn.Module):
         self.out_mlp_dim = ctx['future_decoder'].get('out_mlp_dim', None)
         self.pos_offset = ctx['future_decoder'].get('pos_offset', False)
         self.learn_prior = ctx['learn_prior']
+        self.global_map_attention = ctx['global_map_attention']
 
         # sanity check
         assert self.pred_mode in ["point", "gauss"]
@@ -328,8 +356,16 @@ class FutureDecoder(nn.Module):
             in_dim += 3     # adding three extra input dimensions: for the variance terms and correlation term of the distribution
         self.input_fc = nn.Linear(in_dim, self.model_dim)
 
-        decoder_layers = AgentFormerDecoderLayer(ctx['tf_cfg'], self.model_dim, self.nhead, self.ff_dim, self.dropout)
-        self.tf_decoder = AgentFormerDecoder(decoder_layers, self.nlayer)
+        decoder_config = {
+            'layer_type': 'map_agent' if self.global_map_attention else 'agent',
+            'layer_params': {
+                'd_model': self.model_dim,
+                'nhead': self.nhead,
+                'dim_feedforward': self.ff_dim,
+                'dropout': self.dropout
+            }
+        }
+        self.tf_decoder = AgentFormerDecoder(decoder_config=decoder_config, num_layers=self.nlayer)
 
         self.pos_encoder = PositionalEncoding(self.model_dim, dropout=self.dropout, concat=ctx['pos_concat'])
 
@@ -377,15 +413,20 @@ class FutureDecoder(nn.Module):
         mem_mask = generate_mask(timestep_sequence.shape[0], context.shape[0]).to(tf_in.device)
 
         # Go through the attention mechanism
-        tf_out, attn_weights = self.tf_decoder(
+        # print(f"{data['global_map_encoding'].shape=}")
+        # print(f"{data['context_map'].shape=}")
+        tf_out, map_out, attn_weights = self.tf_decoder(
             tgt=tf_in_pos,  # [B, n_sample, model_dim]
             memory=context,  # [O, n_sample, model_dim]
             tgt_identities=agent_sequence.unsqueeze(1).repeat(1, sample_num),       # [B, n_sample]
             mem_identities=data['pre_agents'].unsqueeze(1).repeat(1, sample_num),   # [O, n_sample]
+            tgt_map=data['global_map_encoding'].repeat(sample_num, 1),              # [1, model_dim]
+            mem_map=data['context_map'].repeat(sample_num, 1),                      # [1, model_dim]
             tgt_mask=tgt_mask,  # [B, B]
             memory_mask=mem_mask  # [B, O]
         )  # [B, n_sample, model_dim]
         # print(f"{tf_out.shape=}")
+        # TODO: EVALUATE WHAT TO DO / WHAT IS DONE WITH MAP_OUT
 
         # Map back to physical space
         seq_out = self.out_module(
@@ -1034,7 +1075,6 @@ class AgentFormer(nn.Module):
         if self.compute_sample:
             # print(f"\nCALLING:  INFERENCE\n")
             self.inference(sample_num=self.loss_cfg['sample']['k'])
-        raise NotImplementedError       # for now
         return self.data
 
     def inference(self, mode='infer', sample_num=20, need_weights=False):
