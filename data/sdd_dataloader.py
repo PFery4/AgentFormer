@@ -84,10 +84,9 @@ class AgentFormerDataGeneratorForSDD:
         self.sample_list = list(range(self.num_total_samples))
         self.index = 0
 
-        self.px_per_m = full_dataset.px_per_m
         self.traj_scale = parser.traj_scale
-        self.map_side = 50      # [m]
-        self.map_res = 400      # [px]
+        self.map_side = 150         # [m]
+        self.map_res = 400          # [px]
         self.map_crop_coords = np.array(
             [[-self.map_side, -self.map_side], [self.map_side, self.map_side]]
         ) * self.traj_scale / 2
@@ -127,7 +126,7 @@ class AgentFormerDataGeneratorForSDD:
         scene_map = kwargs['scene_map']             # GeometricMap
         past_window = kwargs['past_window']         # NDArray   [T_obs]
         ids = kwargs['ids']                         # NDArray   [N]
-        px_per_m = kwargs['px_per_m']               # float
+        m_per_px = kwargs['m_per_px']               # float
 
         trajs = scene_map.to_map_points(trajs)
         scene_map.set_homography(np.eye(3))
@@ -147,7 +146,7 @@ class AgentFormerDataGeneratorForSDD:
         trajs -= mean_point
         scene_map.translation(mean_point)
 
-        scaling = self.traj_scale / px_per_m
+        scaling = self.traj_scale * m_per_px
         trajs *= scaling
         scene_map.scale(scaling=1/scaling)
 
@@ -180,7 +179,7 @@ class AgentFormerDataGeneratorForSDD:
         orig_occluders = kwargs['occluders']        # List[List[NDArray]]
         past_window = kwargs['past_window']         # NDArray   [T_obs]
         ids = kwargs['ids']                         # NDArray   [N]
-        px_per_m = kwargs['px_per_m']               # float
+        m_per_px = kwargs['m_per_px']               # float
 
         # compute trajs, ego and occluder positions (transforming to map coords)
         trajs = scene_map.to_map_points(trajs)
@@ -229,7 +228,7 @@ class AgentFormerDataGeneratorForSDD:
         ego_visipoly = sg.Polygon(ego_visipoly.coords - mean_point)
         scene_map.translation(mean_point)
 
-        scaling = self.traj_scale / px_per_m
+        scaling = self.traj_scale * m_per_px
 
         ego *= scaling
         trajs *= scaling
@@ -312,9 +311,6 @@ class AgentFormerDataGeneratorForSDD:
         )       # [N, T, 2]
         ids = np.stack([agent.id for agent in extracted_data['agents']])        # [N]
 
-        # load px to m conversion
-        px_per_m = extracted_data['px_per_m']
-
         # fig, ax = plt.subplots()
         # print(f"{data['theta']=}")
         # visualize.visualize_training_instance(
@@ -329,7 +325,7 @@ class AgentFormerDataGeneratorForSDD:
             occluders=extracted_data['occluders'],
             past_window=extracted_data['past_window'],
             ids=ids,
-            px_per_m=px_per_m
+            m_per_px=extracted_data['m/px']
         )
 
         # Visualize ##################################################################################################
