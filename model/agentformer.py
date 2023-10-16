@@ -741,7 +741,6 @@ class AgentFormer(nn.Module):
             'future_decoder': cfg.future_decoder
         }
         self.scene_orig_all_past = cfg.get('scene_orig_all_past', False)
-        self.conn_dist = cfg.get('conn_dist', 100000.0)
         self.use_map = cfg.get('use_map', False)
         self.global_map_attention = cfg.get('global_map_attention', False)
         self.map_global_rot = cfg.get('map_global_rot', False)
@@ -891,19 +890,7 @@ class AgentFormer(nn.Module):
         self.data['dt_occlusion_map'] = data['dt_occlusion_map'].detach().clone().to(self.device)
         self.data['p_occl_map'] = data['p_occl_map'].detach().clone().to(self.device)
 
-        cur_motion = self.data['cur_motion'][0]
-        # TODO: REMOVE THIS PART ALTOGHETHER: WE ARE NEVER GOING TO USE IT
-        if self.conn_dist < 1000.0:
-            # threshold = self.conn_dist / self.cfg.traj_scale
-            # pdist = F.pdist(cur_motion)
-            # D = torch.zeros([cur_motion.shape[0], cur_motion.shape[0]]).to(device)
-            # D[np.triu_indices(cur_motion.shape[0], 1)] = pdist
-            # D += D.T
-            # mask = torch.zeros_like(D)
-            # mask[D > threshold] = float('-inf')
-            raise NotImplementedError("if self.conn_dist < 1000.0")
-        else:
-            mask = torch.zeros([cur_motion.shape[0], cur_motion.shape[0]]).to(self.device)
+        mask = torch.zeros([self.data['agent_num'], self.data['agent_num']]).to(self.device)
         self.data['agent_mask'] = mask          # [N, N]
 
         self.visualize_data_dict()
