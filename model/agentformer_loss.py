@@ -193,9 +193,39 @@ def compute_sample_loss(data, cfg):
     return loss, loss_unweighted
 
 
+def compute_occlusion_map_loss():
+
+    # TODO: finish implementing the occlusion loss
+
+    H = W = 400
+    scene_map = torch.rand([H, W])
+
+    homography_matrix = torch.eye(3)
+
+    print(f"{scene_map, scene_map.shape=}")
+    print(f"{homography_matrix, homography_matrix.shape=}")
+
+
+    points = torch.Tensor([[10, 10],
+                           [12.5, 12.5],
+                           [13.6, 12.6],
+                           [14.2, 12.8],
+                           [14.7, 12.8]]).unsqueeze(0).repeat(2, 1, 1)
+
+    print(f"{points, points.shape=}")
+
+    # TODO: Convert predicted points to scene map coord space
+    # TODO: interpolate points wrt
+    # TODO: provide loss values
+
+
+
 loss_func = {
     'mse': compute_motion_mse,
     'kld': compute_z_kld,
     'sample': compute_sample_loss,
     'nll': compute_gauss_nll
 }
+
+if __name__ == '__main__':
+    compute_occlusion_map_loss()
