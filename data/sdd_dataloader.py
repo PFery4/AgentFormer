@@ -4,20 +4,21 @@ from io import TextIOWrapper
 
 import matplotlib.axes
 import matplotlib.pyplot as plt
+import mpl_toolkits.axes_grid1
 import numpy
 from matplotlib.path import Path
 import torch
 import sys
 import numpy as np
 import skgeom as sg
-from scipy.ndimage.morphology import distance_transform_edt
+from scipy.ndimage import distance_transform_edt
 from scipy.special import softmax
 
 from data.map import GeometricMap
 from utils.config import Config
 from utils.utils import print_log, get_timestring
 
-from typing import Tuple, List, Optional
+from typing import Dict, Optional
 from numpy.typing import NDArray
 
 # imports from https://github.com/PFery4/occlusion-prediction
@@ -85,8 +86,8 @@ class AgentFormerDataGeneratorForSDD:
         self.index = 0
 
         self.traj_scale = parser.traj_scale
-        self.map_side = 150         # [m]
-        self.map_res = 400          # [px]
+        self.map_side = 80         # [m]        # TODO: configurable param
+        self.map_res = 1000          # [px]      # TODO: configurable param
         self.map_crop_coords = np.array(
             [[-self.map_side, -self.map_side], [self.map_side, self.map_side]]
         ) * self.traj_scale / 2
@@ -249,6 +250,8 @@ class AgentFormerDataGeneratorForSDD:
         xy = np.dstack((np.meshgrid(occ_x, occ_y))).reshape((-1, 2))
         mpath = Path(scene_map.to_map_points(ego_visipoly.coords))
         occlusion_map = mpath.contains_points(xy).reshape(*reversed(map_dims)).astype(np.int32)          # NDArray [map_res, map_res]
+        # visi_coords = scene_map.to_map_points(ego_visipoly.coords)
+        # occlusion_map = np.ones(reversed(scene_map.get_map_dimensions()))
 
         invert_occl_map = 1 - occlusion_map
         dt_occl_map = np.where(
@@ -311,13 +314,6 @@ class AgentFormerDataGeneratorForSDD:
         )       # [N, T, 2]
         ids = np.stack([agent.id for agent in extracted_data['agents']])        # [N]
 
-        # fig, ax = plt.subplots()
-        # print(f"{data['theta']=}")
-        # visualize.visualize_training_instance(
-        #     draw_ax=ax, instance_dict=extracted_data
-        # )
-        # plt.show()
-
         processed_data = self.traj_processing(
             trajs=trajs,
             scene_map=scene_map,
@@ -327,25 +323,6 @@ class AgentFormerDataGeneratorForSDD:
             ids=ids,
             m_per_px=extracted_data['m/px']
         )
-
-        # Visualize ##################################################################################################
-        fig, ax = plt.subplots(1, 3)
-        visualize.visualize_training_instance(
-            draw_ax=ax[0], instance_dict=extracted_data
-        )
-        self.visualize(
-            draw_ax=ax[1],
-            scene_map=processed_data['scene_map'],
-            trajs=processed_data['trajs'],
-            occluders=processed_data['occluders'],
-            ego=processed_data['ego'],
-            ego_visipoly=processed_data['ego_visipoly'],
-            plot_norm_box=True
-        )
-        ax[2].imshow(processed_data['occlusion_map'])
-        # plt.show()
-        # print(zblu)
-        #############################################################################################################
 
         data['full_motion_3D'] = torch.from_numpy(processed_data['trajs'])
         data['valid_id'] = torch.from_numpy(processed_data['ids'])
@@ -381,63 +358,49 @@ class AgentFormerDataGeneratorForSDD:
     def visualize(
             self,
             draw_ax: matplotlib.axes.Axes,
-            scene_map: GeometricMap,
-            trajs: np.array,
-            occluders: Optional[List[np.array]] = None,
-            ego: Optional[np.array] = None,
-            ego_visipoly: Optional[sg.Polygon] = None,
-            plot_norm_box: bool = False,
-            plot_crop_box: bool = False
+            data_dict: Dict,
+            draw_ax_dt_map: Optional[matplotlib.axes.Axes] = None,
+            draw_ax_p_occl_map: Optional[matplotlib.axes.Axes] = None
     ) -> None:
-        draw_ax.set_xlim(0., scene_map.get_map_dimensions()[0])
-        draw_ax.set_ylim(scene_map.get_map_dimensions()[1], 0.)
-        draw_ax.imshow(scene_map.as_image())
-        plot_trajs = scene_map.to_map_points(trajs)
-        draw_ax.scatter(plot_trajs[..., 0], plot_trajs[..., 1], marker='x', s=20)
-        plot_occl = []
-        if occluders is not None:
-            for occluder in occluders:
-                p1 = scene_map.to_map_points(scene_pts=occluder[0])
-                p2 = scene_map.to_map_points(scene_pts=occluder[1])
-                plot_occl.append((p1, p2))
-                draw_ax.plot([occluder[0][0], occluder[1][0]], [occluder[0][1], occluder[1][1]], c='black')
-        if ego is not None:
-            plot_ego = scene_map.to_map_points(ego)
-            draw_ax.scatter(plot_ego[0], plot_ego[1], marker='D', c='yellow', s=30)
-        if ego_visipoly is not None:
-            plot_ego_visipoly = sg.Polygon(scene_map.to_map_points(ego_visipoly.coords))
-            plot_scene_boundary = poly_gen.default_rectangle(corner_coords=(reversed(scene_map.get_map_dimensions())))
-            plot_regions = sg.PolygonSet(plot_scene_boundary).difference(plot_ego_visipoly)
-            [plot_sg_polygon(ax=draw_ax, poly=poly, edgecolor='red', facecolor='red', alpha=0.2)
-             for poly in plot_regions.polygons]
-        if plot_norm_box:
-            plot_box = np.array([[-1, -1],
-                                 [-1, 1],
-                                 [1, 1],
-                                 [1, -1],
-                                 [-1, -1]])
-            plot_box = scene_map.to_map_points(plot_box)
-            draw_ax.plot(plot_box[..., 0], plot_box[..., 1], c='r')
-        if plot_crop_box:
-            k = 2.0         # TODO: move constant to a member variable
-            crop_coords = scene_map.to_map_points(np.array([[-1, -1], [1, 1]]) * k)
-            crop_box = np.array([[crop_coords[0, 0], crop_coords[0, 1]],
-                                 [crop_coords[0, 0], crop_coords[1, 1]],
-                                 [crop_coords[1, 0], crop_coords[1, 1]],
-                                 [crop_coords[1, 0], crop_coords[0, 1]],
-                                 [crop_coords[0, 0], crop_coords[0, 1]]])
-            draw_ax.plot(crop_box[..., 0], crop_box[..., 1], c='k')
+        draw_ax.set_xlim(0., data_dict['scene_map'].get_map_dimensions()[0])
+        draw_ax.set_ylim(data_dict['scene_map'].get_map_dimensions()[1], 0.)
+        draw_ax.imshow(data_dict['scene_map'].as_image())
+
+        occlusion_map = np.full((*data_dict['occlusion_map'].shape, 4), (255, 0, 0, 0.3)) * (1 - data_dict['occlusion_map'])[..., None].numpy()
+        draw_ax.imshow(occlusion_map)
+
+        plot_trajs = data_dict['scene_map'].to_map_points(data_dict['full_motion_3D'])
+
+        color_iter = iter(plt.cm.rainbow(np.linspace(0, 1, data_dict['valid_id'].shape[0])))
+        for agent, obs_mask in zip(plot_trajs, data_dict['obs_mask']):
+            c = next(color_iter).reshape(1, -1)
+            draw_ax.scatter(agent[:, 0][obs_mask], agent[:, 1][obs_mask], marker='x', s=20, color=c)
+            draw_ax.scatter(agent[:, 0][~obs_mask], agent[:, 1][~obs_mask], marker='*', s=20, color=c)
+
+        if draw_ax_dt_map is not None:
+            divider = mpl_toolkits.axes_grid1.make_axes_locatable(draw_ax_dt_map)
+            cax = divider.append_axes('right', size='5%', pad=0.05)
+            img = draw_ax_dt_map.imshow(data_dict['dt_occlusion_map'])
+            draw_ax.get_figure().colorbar(img, cax=cax, orientation='vertical')
+
+        if draw_ax_p_occl_map is not None:
+            divider = mpl_toolkits.axes_grid1.make_axes_locatable(draw_ax_p_occl_map)
+            cax = divider.append_axes('right', size='5%', pad=0.05)
+            img = draw_ax_p_occl_map.imshow(data_dict['p_occl_map'], cmap='Greys')
+            draw_ax.get_figure().colorbar(img, cax=cax, orientation='vertical')
 
 
 if __name__ == '__main__':
+    from utils.utils import prepare_seed
     print(sdd_conf.REPO_ROOT)
 
-    n_calls = 1
+    n_calls = 100
     # config_str = 'sdd_agentformer_pre'
     config_str = 'sdd_occlusion_agentformer_pre'
 
     ####################################################################################################################
     config = Config(config_str)
+    prepare_seed(config.seed)
     log = open(os.path.join(config.log_dir, 'log.txt'), "a+")
     time_str = get_timestring()
     print_log("time str: {}".format(time_str), log)
@@ -447,11 +410,19 @@ if __name__ == '__main__':
 
     generator = AgentFormerDataGeneratorForSDD(config, log, split='train')
 
-    print(f"{generator.rand_rot_scene=}")
-
     generator.shuffle()
     for i in range(n_calls):
-        print("\nCALLING")
+
+        fig, ax = plt.subplots(1, 4)
+
+        visualize.visualize_training_instance(
+            draw_ax=ax[0], instance_dict=generator.dataset.__getitem__(generator.sample_list[generator.index])
+        )
+
         data_dict = generator()
-        print(f"{data_dict['scene_map']=}")
-        # [print(f"{k}: {type(v)}") for k, v in generator().items()]
+
+        generator.visualize(
+            draw_ax=ax[1], data_dict=data_dict, draw_ax_dt_map=ax[2], draw_ax_p_occl_map=ax[3]
+        )
+
+        plt.show()
