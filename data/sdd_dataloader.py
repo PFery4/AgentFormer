@@ -298,7 +298,7 @@ class AgentFormerDataGeneratorForSDD:
             homography=np.eye(3)
         )
         # expand the map
-        scene_map.mirror_expand()
+        scene_map.mirror_expand(2.0)
 
         # rotate_the_map
         if self.rand_rot_scene:

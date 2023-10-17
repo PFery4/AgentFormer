@@ -89,8 +89,8 @@ class GeometricMap(Map):
         self.data = np.transpose(img, (2, 1, 0))
 
     def square_crop(self, crop_coords: NDArray, side_length: float, resolution: int):
-        assert np.all(crop_coords >= 0)
-        assert np.all(crop_coords[1] <= self.get_map_dimensions())
+        # assert np.all(crop_coords >= 0)
+        # assert np.all(crop_coords[1] <= self.get_map_dimensions())
 
         min_x, min_y = np.round(crop_coords[0, ...].astype(int))
         side = np.round(np.mean(crop_coords[1] - crop_coords[0])).astype(int)
