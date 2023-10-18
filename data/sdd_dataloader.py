@@ -2,7 +2,6 @@ import os.path
 import random
 from io import TextIOWrapper
 
-import cv2
 import matplotlib.axes
 import matplotlib.pyplot as plt
 import mpl_toolkits.axes_grid1
@@ -10,7 +9,6 @@ import matplotlib.colors as colors
 import numpy
 from matplotlib.path import Path
 import torch
-from torchvision import transforms
 import sys
 import numpy as np
 import skgeom as sg
