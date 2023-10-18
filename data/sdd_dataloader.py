@@ -2,17 +2,20 @@ import os.path
 import random
 from io import TextIOWrapper
 
+import cv2
 import matplotlib.axes
 import matplotlib.pyplot as plt
 import mpl_toolkits.axes_grid1
+import matplotlib.colors as colors
 import numpy
 from matplotlib.path import Path
 import torch
+from torchvision import transforms
 import sys
 import numpy as np
 import skgeom as sg
 from scipy.ndimage import distance_transform_edt
-from scipy.special import softmax
+from scipy.special import log_softmax, softmax
 
 from data.map import GeometricMap
 from utils.config import Config
@@ -161,6 +164,7 @@ class AgentFormerDataGeneratorForSDD:
             "occlusion_map": np.ones(scene_map.get_map_dimensions()),
             "dt_occlusion_map": np.zeros(scene_map.get_map_dimensions()),
             "p_occl_map": np.zeros(scene_map.get_map_dimensions()),
+            "min_log_p_occl_map": np.zeros(scene_map.get_map_dimensions()),
             "ego": None,
             "ego_visipoly": None,
             "occluders": None,
@@ -250,22 +254,16 @@ class AgentFormerDataGeneratorForSDD:
         xy = np.dstack((np.meshgrid(occ_x, occ_y))).reshape((-1, 2))
         mpath = Path(scene_map.to_map_points(ego_visipoly.coords))
         occlusion_map = mpath.contains_points(xy).reshape(*reversed(map_dims)).astype(np.int32)          # NDArray [map_res, map_res]
-        # visi_coords = scene_map.to_map_points(ego_visipoly.coords)
-        # occlusion_map = np.ones(reversed(scene_map.get_map_dimensions()))
 
         invert_occl_map = 1 - occlusion_map
         dt_occl_map = np.where(
             invert_occl_map,
             -distance_transform_edt(invert_occl_map),
             distance_transform_edt(occlusion_map)
-        )
+        ) * scaling
 
-        # TODO: maybe change the distance transformed map to metric space.
-        # TODO: consider normalizing dt map wrt ensemble of training data (as proposed by Park et al.)
-
-        p_occl_map = softmax(np.max(dt_occl_map) - np.clip(dt_occl_map, a_min=0, a_max=None))
-        # TODO: FIX THE PROBABILITY MAP (consult the source code of Park et al.)
-
+        p_occl_map = softmax(-np.clip(dt_occl_map, a_min=0, a_max=None))
+        min_log_p_occl_map = -log_softmax(-np.clip(dt_occl_map, a_min=0, a_max=None))
 
         out_dict = {
             "ids": ids,
@@ -275,6 +273,7 @@ class AgentFormerDataGeneratorForSDD:
             "occlusion_map": occlusion_map,
             "dt_occlusion_map": dt_occl_map,
             "p_occl_map": p_occl_map,
+            "min_log_p_occl_map": min_log_p_occl_map,
             "ego": ego,
             "ego_visipoly": ego_visipoly,
             "occluders": occluders,
@@ -333,6 +332,7 @@ class AgentFormerDataGeneratorForSDD:
         data['occlusion_map'] = torch.from_numpy(processed_data['occlusion_map'])               # [H, W]
         data['dt_occlusion_map'] = torch.from_numpy(processed_data['dt_occlusion_map'])         # [H, W]
         data['p_occl_map'] = torch.from_numpy(processed_data['p_occl_map'])                     # [H, W]
+        data['min_log_p_occl_map'] = torch.from_numpy(processed_data['min_log_p_occl_map'])     # [H, W]
         data['timesteps'] = torch.from_numpy(
             np.arange(len(extracted_data['full_window'])) - len(extracted_data['past_window']) + 1
         )
@@ -360,7 +360,8 @@ class AgentFormerDataGeneratorForSDD:
             draw_ax: matplotlib.axes.Axes,
             data_dict: Dict,
             draw_ax_dt_map: Optional[matplotlib.axes.Axes] = None,
-            draw_ax_p_occl_map: Optional[matplotlib.axes.Axes] = None
+            draw_ax_p_occl_map: Optional[matplotlib.axes.Axes] = None,
+            draw_ax_min_log_p_occl_map: Optional[matplotlib.axes.Axes] = None
     ) -> None:
         draw_ax.set_xlim(0., data_dict['scene_map'].get_map_dimensions()[0])
         draw_ax.set_ylim(data_dict['scene_map'].get_map_dimensions()[1], 0.)
@@ -379,14 +380,29 @@ class AgentFormerDataGeneratorForSDD:
 
         if draw_ax_dt_map is not None:
             divider = mpl_toolkits.axes_grid1.make_axes_locatable(draw_ax_dt_map)
+            colors_visible = plt.cm.Purples(np.linspace(0.5, 1, 256))
+            colors_occluded = plt.cm.Reds(np.linspace(1, 0.5, 256))
+            all_colors = np.vstack((colors_occluded, colors_visible))
+            color_map = colors.LinearSegmentedColormap.from_list('color_map', all_colors)
+            divnorm = colors.TwoSlopeNorm(
+                vmin=np.min([-1, torch.min(data_dict['dt_occlusion_map'])]),
+                vcenter=0.0,
+                vmax=np.max([1, torch.max(data_dict['dt_occlusion_map'])])
+            )
             cax = divider.append_axes('right', size='5%', pad=0.05)
-            img = draw_ax_dt_map.imshow(data_dict['dt_occlusion_map'])
+            img = draw_ax_dt_map.imshow(data_dict['dt_occlusion_map'], norm=divnorm, cmap=color_map)
             draw_ax.get_figure().colorbar(img, cax=cax, orientation='vertical')
 
         if draw_ax_p_occl_map is not None:
             divider = mpl_toolkits.axes_grid1.make_axes_locatable(draw_ax_p_occl_map)
             cax = divider.append_axes('right', size='5%', pad=0.05)
             img = draw_ax_p_occl_map.imshow(data_dict['p_occl_map'], cmap='Greys')
+            draw_ax.get_figure().colorbar(img, cax=cax, orientation='vertical')
+
+        if draw_ax_min_log_p_occl_map is not None:
+            divider = mpl_toolkits.axes_grid1.make_axes_locatable(draw_ax_min_log_p_occl_map)
+            cax = divider.append_axes('right', size='5%', pad=0.05)
+            img = draw_ax_min_log_p_occl_map.imshow(data_dict['min_log_p_occl_map'], cmap='Greys')
             draw_ax.get_figure().colorbar(img, cax=cax, orientation='vertical')
 
 
@@ -413,7 +429,7 @@ if __name__ == '__main__':
     generator.shuffle()
     for i in range(n_calls):
 
-        fig, ax = plt.subplots(1, 4)
+        fig, ax = plt.subplots(1, 5)
 
         visualize.visualize_training_instance(
             draw_ax=ax[0], instance_dict=generator.dataset.__getitem__(generator.sample_list[generator.index])
@@ -422,7 +438,7 @@ if __name__ == '__main__':
         data_dict = generator()
 
         generator.visualize(
-            draw_ax=ax[1], data_dict=data_dict, draw_ax_dt_map=ax[2], draw_ax_p_occl_map=ax[3]
+            draw_ax=ax[1], data_dict=data_dict, draw_ax_dt_map=ax[2], draw_ax_p_occl_map=ax[3], draw_ax_min_log_p_occl_map=ax[4]
         )
 
         plt.show()
