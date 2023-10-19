@@ -130,8 +130,6 @@ class ContextEncoder(nn.Module):
         self.vel_heading = ctx['vel_heading']
         self.global_map_attention = ctx['global_map_attention']
 
-        print(f"{self.global_map_attention=}")
-
         ctx['context_dim'] = self.model_dim
         in_dim = self.motion_dim * len(self.input_type)
         # if 'map' in self.input_type:
@@ -416,14 +414,14 @@ class FutureDecoder(nn.Module):
         # print(f"{data['global_map_encoding'].shape=}")
         # print(f"{data['context_map'].shape=}")
         tf_out, map_out, attn_weights = self.tf_decoder(
-            tgt=tf_in_pos,  # [B, n_sample, model_dim]
-            memory=context,  # [O, n_sample, model_dim]
+            tgt=tf_in_pos,                                                          # [B, n_sample, model_dim]
+            memory=context,                                                         # [O, n_sample, model_dim]
             tgt_identities=agent_sequence.unsqueeze(1).repeat(1, sample_num),       # [B, n_sample]
             mem_identities=data['pre_agents'].unsqueeze(1).repeat(1, sample_num),   # [O, n_sample]
             tgt_map=data['global_map_encoding'].repeat(sample_num, 1),              # [1, model_dim]
             mem_map=data['context_map'].repeat(sample_num, 1),                      # [1, model_dim]
-            tgt_mask=tgt_mask,  # [B, B]
-            memory_mask=mem_mask  # [B, O]
+            tgt_mask=tgt_mask,                                                      # [B, B]
+            memory_mask=mem_mask                                                    # [B, O]
         )  # [B, n_sample, model_dim]
         # print(f"{tf_out.shape=}")
         # TODO: EVALUATE WHAT TO DO / WHAT IS DONE WITH MAP_OUT
@@ -471,11 +469,11 @@ class FutureDecoder(nn.Module):
 
         # print(f"{self.ar_detach=}")
         if self.ar_detach:
-            out_in_from_pred = seq_out[from_pred_indices, ...].clone().detach()  # [*~B, n_sample, 2]
+            out_in_from_pred = seq_out[from_pred_indices, ...].clone().detach()          # [*~B, n_sample, 2]
             out_in_from_dec_in = dec_in_orig[from_dec_in_indices, ...].clone().detach()  # [*~N, n_sample, 2]
         else:
-            out_in_from_pred = seq_out[from_pred_indices, ...]  # [*~B, n_sample, 2]
-            out_in_from_dec_in = dec_in_orig[from_dec_in_indices, ...]  # [*~N, n_sample, 2]
+            out_in_from_pred = seq_out[from_pred_indices, ...]              # [*~B, n_sample, 2]
+            out_in_from_dec_in = dec_in_orig[from_dec_in_indices, ...]      # [*~N, n_sample, 2]
 
         # concatenate with latent z codes
         z_in_from_pred = torch.cat(
@@ -582,7 +580,7 @@ class FutureDecoder(nn.Module):
         while not torch.all(catch_up_timestep_sequence == torch.zeros_like(catch_up_timestep_sequence)):
             # print(f"\nBEGINNING LOOP: {catch_up_timestep_sequence=}")
 
-            _, dec_input_sequence, agent_sequence, timestep_sequence, attn_weights = self.decode_next_timestep(
+            seq_out, dec_input_sequence, agent_sequence, timestep_sequence, attn_weights = self.decode_next_timestep(
                 dec_in_orig=dec_in,
                 z_in_orig=z_in,
                 dec_input_sequence=dec_input_sequence,
@@ -595,7 +593,13 @@ class FutureDecoder(nn.Module):
 
             catch_up_timestep_sequence[catch_up_timestep_sequence == torch.min(catch_up_timestep_sequence)] += 1
 
-        # print("DONE WITH THE CATCHING UP")
+            # print(f"{seq_out.shape=}")
+            # print(f"{dec_input_sequence.shape=}")
+            # print(f"{agent_sequence=}")
+            # print(f"{timestep_sequence=}")
+            # print(f"{catch_up_timestep_sequence=}")
+            # print(f"{attn_weights.shape=}")
+        # print("DONE WITH CATCHING UP")
         # PREDICT THE FUTURE
 
         for i in range(self.future_frames):
@@ -628,6 +632,11 @@ class FutureDecoder(nn.Module):
         pred_timestep_sequence = (timestep_sequence[keep_indices] + 1).detach().clone()
         pred_agent_sequence = (agent_sequence[keep_indices]).detach().clone()
 
+        past_indices = (pred_timestep_sequence <= 0)
+        # print(f"{pred_timestep_sequence=}")
+        # print(f"{past_indices=}")
+        # print(f"{seq_out.shape=}")
+
         # print(f"{pred_agent_sequence, pred_timestep_sequence.shape=}")
         # print(f"{pred_timestep_sequence, pred_timestep_sequence.shape=}")
         # print(f"{data['fut_agents'], data['fut_agents'].shape=}")
@@ -644,6 +653,7 @@ class FutureDecoder(nn.Module):
 
         data[f'{mode}_dec_motion'] = dec_motion                     # [T_sequence, n_sample, 2]
         data[f'{mode}_dec_agents'] = pred_agent_sequence            # [T_sequence]
+        data[f'{mode}_dec_past_mask'] = past_indices                # [T_sequence]
         data[f'{mode}_dec_timesteps'] = pred_timestep_sequence      # [T_sequence]
         if self.pred_mode == "gauss":
             data[f'{mode}_dec_mu'] = dec_motion[..., 0:self.forecast_dim]
@@ -883,6 +893,7 @@ class AgentFormer(nn.Module):
         self.data['global_map'] = torch.from_numpy(data['scene_map'].data.transpose(0, 2, 1)).to(self.device)
         # occlusion map
         self.data['occlusion_map'] = data['occlusion_map'].detach().clone().to(self.device)
+        self.data['min_log_p_occl_map'] = data['min_log_p_occl_map'].detach().clone().to(self.device)
 
         self.data['combined_map'] = torch.cat((self.data['global_map'], self.data['occlusion_map'].unsqueeze(0))).to(torch.float32)
         print(f"{self.data['combined_map'], self.data['combined_map'].shape=}")
