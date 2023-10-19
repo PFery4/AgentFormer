@@ -19,6 +19,7 @@ min_future_frames            : 12
 traj_scale                   : 1
 motion_dim                   : 2
 forecast_dim                 : 2
+scene_side_length            : 80.0     # [m]
 
 # ------------------- Model -------------------------
 
@@ -35,7 +36,6 @@ pos_concat: true
 rand_rot_scene: true
 scene_orig_all_past: true
 
-# TODO: properly parameterize the global map processing unit
 global_map_attention: true
 global_map_encoder:
   model_id: global_map_cnn
@@ -43,7 +43,7 @@ global_map_encoder:
   dropout: 0.0
   map_channels: 3
   use_occlusion_map: true
-  global_map_resolution: [400, 400]
+  map_resolution: 800         # [px]
   output_dim: 256
   layers:
     - [conv2d, 4, 7, 3]     # [out_channels, kernel_size, stride]   (in_channels=None, padding=None, padding_mode=None, dilation=None, groups=None, bias=None)
