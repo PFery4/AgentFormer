@@ -82,6 +82,8 @@ loss_cfg:
   sample:
     weight: 1.0
     k: 20
+  occl_map:
+    weight: 1.0
 
 num_epochs                   : 100
 lr_fix_epochs                : 10
