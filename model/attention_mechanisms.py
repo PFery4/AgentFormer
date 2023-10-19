@@ -90,28 +90,28 @@ class AgentAwareAttentionV2(Module):
         k_self = self.w_k_traj_self(k)          # [S, N, T]
         k_other = self.w_k_traj_other(k)        # [S, N, T]
 
-        print(f"2. {q_self.shape, q_other.shape, k_self.shape, k_other.shape=}")
+        # print(f"2. {q_self.shape, q_other.shape, k_self.shape, k_other.shape=}")
 
         q_self = q_self.reshape(L, N, self.num_heads, self.traj_head_dim).transpose(0, 2)          # [H, N, L, t]
         q_other = q_other.reshape(L, N, self.num_heads, self.traj_head_dim).transpose(0, 2)        # [H, N, L, t]
         k_self = k_self.reshape(S, N, self.num_heads, self.traj_head_dim).permute(2, 1, 3, 0)      # [H, N, t, S]
         k_other = k_other.reshape(S, N, self.num_heads, self.traj_head_dim).permute(2, 1, 3, 0)    # [H, N, t, S]
 
-        print(f"3. {q_self.shape, q_other.shape, k_self.shape, k_other.shape=}")
+        # print(f"3. {q_self.shape, q_other.shape, k_self.shape, k_other.shape=}")
 
         attention_self = q_self @ k_self            # [H, N, L, t] @ [H, N, t, S] = [H, N, L, S]
         attention_other = q_other @ k_other         # [H, N, L, t] @ [H, N, t, S] = [H, N, L, S]
 
-        print(f"4. {attention_self.shape, attention_other.shape=}")
+        # print(f"4. {attention_self.shape, attention_other.shape=}")
 
         agent_aware_mask = self.agent_aware_mask(q_identities, k_identities)    # [N, L, S]
-        print(f"5. {agent_aware_mask.shape=}")
+        # print(f"5. {agent_aware_mask.shape=}")
 
         attention = attention_other * (1 - agent_aware_mask) + attention_self * agent_aware_mask        # [H, N, L, S]
 
-        print(f"6. {attention.shape=}")
+        # print(f"6. {attention.shape=}")
         attention += mask                                                                               # [H, N, L, S]
-        print(f"7. {attention.shape=}")
+        # print(f"7. {attention.shape=}")
 
         return attention
 
@@ -128,9 +128,9 @@ class AgentAwareAttentionV2(Module):
         # k_identities: [S, N]
         # mask: [L, S]
 
-        print(f"\n\n{q.shape, k.shape, v.shape=}")
-        print(f"{q_identities.shape, k_identities.shape=}")
-        print(f"{mask, mask.shape=}")
+        # print(f"\n\n{q.shape, k.shape, v.shape=}")
+        # print(f"{q_identities.shape, k_identities.shape=}")
+        # print(f"{mask, mask.shape=}")
 
         L, N, _ = q.size()
         S, _, _ = k.size()
@@ -139,29 +139,29 @@ class AgentAwareAttentionV2(Module):
         v = self.w_v_traj(v)                                                    # [S, N, V]
         v = v.reshape(S, N, self.num_heads, self.v_head_dim).transpose(0, 2)    # [H, N, S, v]
 
-        print(f"1. {v.shape=}")
+        # print(f"1. {v.shape=}")
 
         attention = self.agent_scaled_dot_product(
             q=q, k=k, q_identities=q_identities, k_identities=k_identities, mask=mask
         )       # [H, N, L, S]
 
-        print(f"8. {attention.shape=}")
+        # print(f"8. {attention.shape=}")
 
         attention = F.softmax(attention, dim=-1)        # [H, N, L, S]
-        print(f"9. {attention.shape=}")
+        # print(f"9. {attention.shape=}")
         attention = self.dropout(attention)             # [H, N, L, S]
-        print(f"10. {attention.shape=}")
+        # print(f"10. {attention.shape=}")
 
         attention_output = attention @ v                # [H, N, L, S] @ [H, N, S, v] = [H, N, L, v]
-        print(f"11. {attention_output.shape=}")
+        # print(f"11. {attention_output.shape=}")
 
         attention_output = attention_output.permute(2, 1, 0, 3).reshape(L, N, self.vdim)        # [L, N, V]
-        print(f"12. {attention_output.shape=}")
+        # print(f"12. {attention_output.shape=}")
 
         attention_output = self.fc_traj(attention_output)                                       # [L, N, V]
-        print(f"13. {attention_output.shape=}")
+        # print(f"13. {attention_output.shape=}")
 
-        print(f"14. {attention_output.shape, (attention.sum(dim=0) / self.num_heads).shape=}")
+        # print(f"14. {attention_output.shape, (attention.sum(dim=0) / self.num_heads).shape=}")
         return attention_output, attention.sum(dim=0) / self.num_heads      # [L, N, V], [N, L, S]
 
 
@@ -220,10 +220,10 @@ class MapAgentAwareAttention(AgentAwareAttentionV2):
         # k_identities: [S, N]
         # mask: [L, S]
 
-        print(f"IN ATTENTION MECHANISM")
-        print(f"{q.shape, k.shape, v.shape, q_map.shape, k_map.shape, v_map.shape=}")
-        print(f"{q_identities.shape, k_identities.shape=}")
-        print(f"{mask, mask.shape=}")
+        # print(f"IN ATTENTION MECHANISM")
+        # print(f"{q.shape, k.shape, v.shape, q_map.shape, k_map.shape, v_map.shape=}")
+        # print(f"{q_identities.shape, k_identities.shape=}")
+        # print(f"{mask, mask.shape=}")
 
         L, N, _ = q.size()
         S, _, _ = k.size()
@@ -240,8 +240,8 @@ class MapAgentAwareAttention(AgentAwareAttentionV2):
         k_map_agents = self.w_k_map_agents(k_map)                           # [N, T]
         v_map_ = self.w_v_map(v_map)                                        # [N, V]
 
-        print(f"1. {q_traj_map.shape, k_traj_map.shape, v_traj.shape=}")
-        print(f"{q_map_self.shape, q_map_agents.shape, k_map_self.shape, k_map_agents.shape, v_map_.shape=}")
+        # print(f"1. {q_traj_map.shape, k_traj_map.shape, v_traj.shape=}")
+        # print(f"{q_map_self.shape, q_map_agents.shape, k_map_self.shape, k_map_agents.shape, v_map_.shape=}")
 
         # Tensor reshaping
         q_traj_map = q_traj_map.reshape(L, N, self.num_heads, self.map_head_dim).transpose(0, 2)        # [H, N, L, t]
@@ -254,69 +254,69 @@ class MapAgentAwareAttention(AgentAwareAttentionV2):
         k_map_agents = k_map_agents.reshape(N, self.num_heads, self.traj_head_dim, 1).transpose(0, 1)   # [H, N, t, 1]
         v_map_ = v_map_.reshape(N, self.num_heads, 1, self.v_head_dim).transpose(0, 1)                  # [H, N, 1, v]
 
-        print(f"\n{q_traj_map.shape, k_traj_map.shape, v_traj.shape=}")
-        print(f"{q_map_self.shape, q_map_agents.shape, k_map_self.shape, k_map_agents.shape, v_map_.shape=}\n")
+        # print(f"\n{q_traj_map.shape, k_traj_map.shape, v_traj.shape=}")
+        # print(f"{q_map_self.shape, q_map_agents.shape, k_map_self.shape, k_map_agents.shape, v_map_.shape=}\n")
 
         # cross agent attention
         cross_agent_attention = self.agent_scaled_dot_product(
             q=q, k=k, q_identities=q_identities, k_identities=k_identities, mask=mask
         )       # [N, H, L, S]
 
-        print(f"8. {cross_agent_attention.shape=}")
+        # print(f"8. {cross_agent_attention.shape=}")
 
         # cross map attention
         map_map_attention = q_map_self @ k_map_self         # [H, N, 1, m] @ [H, N, m, 1] = [H, N, 1, 1]
 
-        print(f"9. {map_map_attention.shape=}")
+        # print(f"9. {map_map_attention.shape=}")
 
         # agent map attention, agents query the map
         agent_map_attention = q_traj_map @ k_map_agents     # [H, N, L, t] @ [H, N, t, 1] = [H, N, L, 1]
 
-        print(f"10. {agent_map_attention.shape=}")
+        # print(f"10. {agent_map_attention.shape=}")
 
         # map agent attention, the map queries the agents
         map_agent_attention = q_map_agents @ k_traj_map     # [H, N, 1, m] @ [H, N, m, S] = [H, N, 1, S]
 
-        print(f"11. {map_agent_attention.shape=}")
+        # print(f"11. {map_agent_attention.shape=}")
 
         # Combine attention scores
         traj_attention = torch.cat([agent_map_attention, cross_agent_attention], dim=-1)    # [H, N, L, S+1]
         map_attention = torch.cat([map_map_attention, map_agent_attention], dim=-1)         # [H, N, 1, S+1]
         combined_attention = torch.cat([map_attention, traj_attention], dim=-2)             # [H, N, L+1, S+1]
 
-        print(f"12. {traj_attention.shape, map_attention.shape, combined_attention.shape=}")
+        # print(f"12. {traj_attention.shape, map_attention.shape, combined_attention.shape=}")
 
         # softmax
         combined_attention = F.softmax(combined_attention, dim=-1)
 
-        print(f"13. {combined_attention.shape=}")
+        # print(f"13. {combined_attention.shape=}")
 
         # dropout       # TODO: CAREFUL: ARE WE IN DANGER IF WE DROPOUT THE MAP ENTIRELY? --> Should we dropout only the trajectory data?
         combined_attention = self.dropout(combined_attention)
 
-        print(f"14. {combined_attention.shape=}")
+        # print(f"14. {combined_attention.shape=}")
 
         # score multiply values
         combined_v = torch.cat([v_map_, v_traj], dim=-2)             # [H, N, S+1, v]
 
-        print(f"15. {combined_v.shape=}")
+        # print(f"15. {combined_v.shape=}")
 
         attention_output = combined_attention @ combined_v          # [H, N, L+1, S+1] @ [H, N, S+1, v] = [H, N, L+1, v]
 
-        print(f"16. {attention_output.shape=}")
+        # print(f"16. {attention_output.shape=}")
 
         # return output
         attention_output = attention_output.permute(2, 1, 0, 3).reshape(L+1, N, self.vdim)      # [L+1, N, V]
         traj_output = attention_output[1:, ...]                     # [L, N, V]
         map_output = attention_output[0, ...]                       # [N, V]
 
-        print(f"17. {attention_output.shape, traj_output.shape, map_output.shape=}")
+        # print(f"17. {attention_output.shape, traj_output.shape, map_output.shape=}")
 
         # separate MLP for map and traj
         traj_output = self.fc_traj(traj_output)                     # [L, N, V]
         map_output = self.fc_map(map_output)                        # [N, V]
 
-        print(f"18. {traj_output.shape, map_output.shape, (combined_attention.sum(dim=0) / self.num_heads).shape=}")
+        # print(f"18. {traj_output.shape, map_output.shape, (combined_attention.sum(dim=0) / self.num_heads).shape=}")
 
         # [L, N, V], [N, V], [N, L+1, S+1]
         return traj_output, map_output, combined_attention.sum(dim=0) / self.num_heads
