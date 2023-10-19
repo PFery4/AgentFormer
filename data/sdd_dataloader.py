@@ -40,7 +40,6 @@ class AgentFormerDataGeneratorForSDD:
     def __init__(self, parser: Config, log: TextIOWrapper, split: str = 'train', phase: str = 'training'):
         self.past_frames = parser.past_frames
         self.min_past_frames = parser.min_past_frames
-        # self.frame_skip = parser.get('frame_skip', 1)     # TODO: remove
         self.rand_rot_scene = parser.get('rand_rot_scene', False)
         self.max_train_agent = parser.get('max_train_agent', 100)
         self.phase = phase
@@ -87,8 +86,11 @@ class AgentFormerDataGeneratorForSDD:
         self.index = 0
 
         self.traj_scale = parser.traj_scale
-        self.map_side = 80         # [m]        # TODO: configurable param
-        self.map_res = 1000          # [px]      # TODO: configurable param
+        self.map_side = parser.get('scene_side_length', 80.0)           # [m]
+        try:
+            self.map_res = parser.get('global_map_encoder').get('map_resolution', 800)
+        except:
+            self.map_res = 800
         self.map_crop_coords = np.array(
             [[-self.map_side, -self.map_side], [self.map_side, self.map_side]]
         ) * self.traj_scale / 2
