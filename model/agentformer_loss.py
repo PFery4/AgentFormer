@@ -1,10 +1,12 @@
 import torch
 from numpy import pi
 
+from typing import Dict
+
 
 def compute_motion_mse(
-        data: dict,
-        cfg: dict
+        data: Dict,
+        cfg: Dict
 ):
 
     # print(f"INDEX MAPPING")
@@ -113,7 +115,7 @@ def multivariate_gaussian_nll(mu, Sig, targets, eps: float = 1e-20):
     return result
 
 
-def compute_gauss_nll(data, cfg):
+def compute_gauss_nll(data: Dict, cfg: Dict):
     loss_unweighted = multivariate_gaussian_nll(mu=data['train_dec_mu'],
                                                 Sig=data['train_dec_Sig'],
                                                 targets=data['fut_motion_orig'])
@@ -142,7 +144,7 @@ def index_mapping_gt_seq_pred_seq(
     return torch.cat([torch.nonzero(torch.all(gt_seq == elem, dim=1)) for elem in pred_seq]).squeeze()
 
 
-def compute_z_kld(data, cfg):
+def compute_z_kld(data: Dict, cfg: Dict):
     loss_unweighted = data['q_z_dist'].kl(data['p_z_dist']).sum()
     if cfg.get('normalize', True):
         loss_unweighted /= data['batch_size']
@@ -151,7 +153,7 @@ def compute_z_kld(data, cfg):
     return loss, loss_unweighted
 
 
-def compute_sample_loss(data, cfg):
+def compute_sample_loss(data: Dict, cfg: Dict):
     # print(f"{data['fut_sequence'].shape=}")
     # print(f"{data['fut_sequence'].unsqueeze(1).shape=}")
     # print(f"{data['train_dec_motion'].shape=}")
@@ -193,39 +195,107 @@ def compute_sample_loss(data, cfg):
     return loss, loss_unweighted
 
 
-def compute_occlusion_map_loss():
+def compute_occlusion_map_loss(data: Dict, cfg: Dict):
 
-    # TODO: finish implementing the occlusion loss
+    # points = torch.Tensor([[10, 10],
+    #                        [12.5, 12.5],
+    #                        [13.6, 12.6],
+    #                        [14.2, 12.8],
+    #                        [14.7, 12.8],
+    #                        [-12, -13],
+    #                        [-300, 44],
+    #                        [455, 63],
+    #                        [47, 969],
+    #                        [47, -20]]).unsqueeze(1).repeat(1, 1, 1)
+    # mask = torch.Tensor([True, True, False, False, False, False, False, False, False, False]).to(bool)
+    # print(mask)
+    # print(f"{points, points.shape=}")
 
-    H = W = 400
-    scene_map = torch.rand([H, W])
+    # print(f"\n\n\n\nLOSS REPORT:")
+    points = data['train_dec_motion']
+    mask = data['train_dec_past_mask']
 
-    homography_matrix = torch.eye(3)
+    # print(f"{points.shape, mask.shape=}")
 
-    print(f"{scene_map, scene_map.shape=}")
-    print(f"{homography_matrix, homography_matrix.shape=}")
+    nlog_p_map = data['min_log_p_occl_map']
+    H, W = nlog_p_map.shape
 
+    # print(f"{nlog_p_map.shape, H, W=}")
+    # H = W = 400
+    # nlog_p_map = torch.rand([H, W])
+    # nlog_p_map = torch.arange(0, H).unsqueeze(1).repeat(1, W)
+    # nlog_p_map = torch.arange(0, W).unsqueeze(0).repeat(H, 1)
+    # print(f"{nlog_p_map, nlog_p_map.shape=}")
 
-    points = torch.Tensor([[10, 10],
-                           [12.5, 12.5],
-                           [13.6, 12.6],
-                           [14.2, 12.8],
-                           [14.7, 12.8]]).unsqueeze(0).repeat(2, 1, 1)
+    homography_matrix = torch.from_numpy(data['scene_map'].homography).to(torch.float32).to(points.device)
+    # homography_matrix = torch.Tensor([[2, 0., 0.],
+    #                                   [0., 2, 0.],
+    #                                   [0., 0., 1]])
 
-    print(f"{points, points.shape=}")
+    # print(f"{homography_matrix, homography_matrix.shape=}")
 
-    # TODO: Convert predicted points to scene map coord space
-    # TODO: interpolate points wrt
-    # TODO: provide loss values
+    # transforming points to scene coordinate system
+    points = torch.cat([points, torch.ones((*points.shape[:-1], 1)).to(points.device)], dim=-1).transpose(-1, -2)
+    points = (homography_matrix @ points).transpose(-1, -2)
+    # print(f"{points, points.shape=}")
 
+    x = points[..., 0]
+    y = points[..., 1]
+
+    # print(f"{x, x.shape=}")
+    # print(f"{x[7, 0]=}")
+    # print(f"{y, y.shape=}")
+
+    x = x.clamp(1e-4, W - (1 + 1e-4))
+    y = y.clamp(1e-4, H - (1 + 1e-4))
+
+    # print(f"{x, x.shape=}")
+    # print(f"{x[7, 0]=}")
+    # print(f"{y, y.shape=}")
+
+    x0 = torch.floor(x).long()
+    x1 = x0+1
+    y0 = torch.floor(y).long()
+    y1 = y0+1
+
+    # print(f"{x0, x1=}")
+    # print(f"{y0, y1=}")
+
+    Ia = nlog_p_map[y0, x0]
+    Ib = nlog_p_map[y1, x0]
+    Ic = nlog_p_map[y0, x1]
+    Id = nlog_p_map[y1, x1]
+
+    wa = (x1 - x) * (y1 - y)
+    wb = (x1 - x) * (y - y0)
+    wc = (x - x0) * (y1 - y)
+    wd = (x - x0) * (y - y0)
+
+    interp_vals = (wa * Ia + wb * Ib + wc * Ic + wd * Id) * mask.unsqueeze(1)
+
+    # print(f"{interp_vals, interp_vals.shape=}")
+
+    loss_unweighted = interp_vals.sum()
+    if cfg.get('normalize', True) and mask.sum() != 0:
+        # print(f"we are doing things normally, {mask.sum()=}")
+        loss_unweighted /= mask.sum()
+    loss = loss_unweighted * cfg['weight']
+
+    # print(f"\n\n\n\n{loss, loss_unweighted=}\n\n\n\n")
+
+    return loss, loss_unweighted
 
 
 loss_func = {
     'mse': compute_motion_mse,
     'kld': compute_z_kld,
     'sample': compute_sample_loss,
-    'nll': compute_gauss_nll
+    'nll': compute_gauss_nll,
+    'occl_map': compute_occlusion_map_loss
 }
 
 if __name__ == '__main__':
-    compute_occlusion_map_loss()
+    # cfg = {'normalize': True, 'weight': 3.0}
+    # compute_occlusion_map_loss(data=None, cfg=cfg)
+    print(f'Hello')
+
