@@ -4,6 +4,7 @@ import torch.nn.functional as F
 
 from typing import Dict
 
+
 class MapCNN(nn.Module):
     def __init__(self, cfg: Dict):
         super().__init__()
@@ -60,7 +61,8 @@ class GlobalMapCNN(nn.Module):
         self.use_occlusion_map = cfg.get('use_occlusion_map', False)    # whether to add occlusion map as extra channel
         self.map_channels = cfg.get('map_channels', 3)                  # (R, G, B)
         self.input_channels = self.map_channels + int(self.use_occlusion_map)   # number of input channels
-        self.map_size = cfg.get('map_resolution', [400, 400])       # resolution of the scene maps
+        self.resolution = cfg.get('map_resolution', 800)            # [px], resolution of the scene maps
+        self.map_size = [self.resolution] * 2
         self.output_dim = cfg.get('output_dim', 256)                # dimension of the produced compressed state
         self.input_shape = (self.input_channels, *self.map_size)
 
