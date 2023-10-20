@@ -48,34 +48,15 @@ class AgentFormerDataGeneratorForSDD:
         assert split in ['train', 'val', 'test'], 'error'
         assert parser.dataset == 'sdd', f"error: wrong dataset name: {parser.dataset} (should be \"sdd\")"
 
+        print_log("\n-------------------------- loading %s data --------------------------" % split, log=log)
         self.sdd_config = sdd_conf.get_config(parser.sdd_config_file_name)
         if not parser.get('sdd_occlusion_data', False):
-            full_dataset = StanfordDroneDataset(self.sdd_config)
+            self.dataset = StanfordDroneDataset(self.sdd_config, split=self.split)
             self.traj_processing = self.traj_processing_without_occlusion
         else:
-            full_dataset = StanfordDroneDatasetWithOcclusionSim(self.sdd_config)
+            self.dataset = StanfordDroneDatasetWithOcclusionSim(self.sdd_config, split=self.split)
             self.traj_processing = self.traj_processing_with_occlusion
-        print(f"instantiating dataloader from {full_dataset.__class__} class")
-
-        # TODO: investigate whether a split strategy such as the one used here won't possibly result in data leakage
-        # No, it won't, so long as normalization does not involve data from the test/val splits.
-        split_proportions = [0.7, 0.2, 0.1]
-        train_size = int(split_proportions[0] * len(full_dataset))
-        val_size = int(split_proportions[1] * len(full_dataset))
-        test_size = len(full_dataset) - (train_size + val_size)
-
-        train_dataset, val_dataset, test_dataset = torch.utils.data.random_split(
-            full_dataset, [train_size, val_size, test_size]
-        )
-        print_log("\n-------------------------- loading %s data --------------------------" % split, log=log)
-        if self.split == 'train':
-            self.dataset = train_dataset
-        elif self.split == 'val':
-            self.dataset = val_dataset
-        elif self.split == 'test':
-            self.dataset = test_dataset
-        else:
-            assert False, 'error'
+        print(f"instantiating dataloader from {self.dataset.__class__} class")
 
         self.num_total_samples = len(self.dataset)
 
