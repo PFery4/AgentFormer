@@ -68,6 +68,7 @@ class AgentFormerDataGeneratorForSDD:
 
         self.traj_scale = parser.traj_scale
         self.map_side = parser.get('scene_side_length', 80.0)           # [m]
+        self.dist_threshold_tgt_agent = self.map_side / 4               # [m]
         try:
             self.map_res = parser.get('global_map_encoder').get('map_resolution', 800)
         except:
@@ -75,6 +76,9 @@ class AgentFormerDataGeneratorForSDD:
         self.map_crop_coords = np.array(
             [[-self.map_side, -self.map_side], [self.map_side, self.map_side]]
         ) * self.traj_scale / 2
+
+        # self.compute_center_point = self.mean_last_observations
+        self.compute_center_point = self.random_agent_last_obs
 
     def shuffle(self) -> None:
         random.shuffle(self.sample_list)
@@ -86,14 +90,6 @@ class AgentFormerDataGeneratorForSDD:
         else:
             return False
 
-    def check_n_agents_and_subsample(self, ids: NDArray):
-        # ids is an NDArray of shape [N]
-        # TODO: check that we are never eliminating the target agent for occlusion
-        if ids.shape[0] > self.max_train_agent:     # TODO: add 'self.training'
-            keep_indices = np.sort(np.random.choice(ids.shape[0], self.max_train_agent, replace=False))
-            return keep_indices
-        return numpy.arange(ids.shape[0])
-
     def cropped_scene_map(self, scene_map: GeometricMap):
         # cropping the scene_map
         crop_coords = scene_map.to_map_points(self.map_crop_coords)
@@ -103,6 +99,32 @@ class AgentFormerDataGeneratorForSDD:
             resolution=self.map_res
         )
         return scene_map
+
+    @staticmethod
+    def mean_last_observations(trajs: NDArray, obs_mask: NDArray) -> NDArray:
+        # trajs [N, T, 2]
+        # obs_mask [N, T]
+        last_obs_indices = trajs.shape[1] - np.argmax(obs_mask[:, ::-1], axis=1) - 1
+        last_obs_points = trajs[np.arange(trajs.shape[0]), last_obs_indices, :]
+        return np.mean(last_obs_points, axis=0).copy()                 # [2]
+
+    @staticmethod
+    def random_agent_last_obs(trajs: NDArray, obs_mask: NDArray) -> NDArray:
+        # trajs [N, T, 2]
+        # obs_mask [N, T]
+        rnd_agent_idx = np.random.randint(trajs.shape[0])
+        last_obs_index = trajs.shape[1] - np.argmax(obs_mask[rnd_agent_idx, ::-1], axis=0) - 1
+        return trajs[rnd_agent_idx, last_obs_index, :].copy()          # [2]
+
+    @staticmethod
+    def agents_within_distance(target_point: NDArray, trajs: NDArray, obs_mask: NDArray, distance: float) -> NDArray:
+        # target_point [2]
+        # trajs [N, T, 2]
+        # obs_mask [N, T]
+        last_obs_indices = trajs.shape[1] - np.argmax(obs_mask[:, ::-1], axis=1) - 1
+        last_obs_points = trajs[np.arange(trajs.shape[0]), last_obs_indices, :]     # [N, 2]
+        agent_distances = np.linalg.norm(last_obs_points - target_point, axis=-1)
+        return agent_distances <= distance      # [N]
 
     def traj_processing_without_occlusion(
             self, trajs: NDArray, **kwargs
@@ -119,23 +141,26 @@ class AgentFormerDataGeneratorForSDD:
         obs_mask = np.full(trajs.shape[:2], True)
         obs_mask[..., len(past_window):] = False
 
-        keep_indices = self.check_n_agents_and_subsample(ids)
-        ids = ids[keep_indices]
-        trajs = trajs[keep_indices]
-        obs_mask = obs_mask[keep_indices]
-
         # calculating the mean of all points at t_0
-        mean_point = np.mean(trajs[:, past_window.shape[0]-1, :], axis=0)
+        center_point = self.compute_center_point(trajs=trajs, obs_mask=obs_mask)
 
         # normalize
-        trajs -= mean_point
-        scene_map.translation(mean_point)
+        trajs -= center_point
+        scene_map.translation(center_point)
 
         scaling = self.traj_scale * m_per_px
         trajs *= scaling
         scene_map.scale(scaling=1/scaling)
-
         scene_map = self.cropped_scene_map(scene_map)
+
+        # removing agents who are lying outside the scene
+        outside = np.any(np.abs(trajs) >= 0.9 * self.map_side, axis=(1, 2))
+        trajs, ids, obs_mask = trajs[~outside], ids[~outside], obs_mask[~outside]
+
+        # randomly removing additional agents if we have too many
+        if ids.shape[0] > self.max_train_agent:
+            keep_indices = np.sort(np.random.choice(ids.shape[0], self.max_train_agent, replace=False))
+            ids, trajs, obs_mask = ids[keep_indices], trajs[keep_indices], obs_mask[keep_indices]
 
         out_dict = {
             "ids": ids,
@@ -165,6 +190,7 @@ class AgentFormerDataGeneratorForSDD:
         orig_occluders = kwargs['occluders']        # List[List[NDArray]]
         past_window = kwargs['past_window']         # NDArray   [T_obs]
         ids = kwargs['ids']                         # NDArray   [N]
+        tgt_idx = kwargs['tgt_idx']                 # NDArray   [1]
         m_per_px = kwargs['m_per_px']               # float
 
         # compute trajs, ego and occluder positions (transforming to map coords)
@@ -193,40 +219,63 @@ class AgentFormerDataGeneratorForSDD:
         obs_mask[..., len(past_window):] = False
 
         # check for all agents that they have at least 2 observations available for the model to process
-        # other agents (those who are insufficiently observed) are discarded
-        keep = (np.sum(obs_mask, axis=1) >= 2)  # [N]
-        trajs, ids, obs_mask = trajs[keep], ids[keep], obs_mask[keep]
+        # other agents (those who are insufficiently observed) will be discarded
+        sufficiently_observed = (np.sum(obs_mask, axis=1) >= 2)  # [N]
 
-        keep = self.check_n_agents_and_subsample(ids)
-        ids = ids[keep]
-        trajs = trajs[keep]
-        obs_mask = obs_mask[keep]
+        # computing the list of potential agents to use as the center point of the instance. We want to ensure that
+        # this agent is within some distance threshold of the agent we simulated an occlusion for, in order to ensure
+        # the occlusion event is visible from the model.
+        target_last_obs = trajs.shape[1] - np.argmax(obs_mask[tgt_idx[0], ::-1], axis=0) - 1
+        dist_threshold_mask = self.agents_within_distance(
+            target_point=trajs[tgt_idx[0], target_last_obs, ...],
+            trajs=trajs, obs_mask=obs_mask, distance=self.dist_threshold_tgt_agent/m_per_px
+        )
 
         # performing all shifting / normalization only based on points we have observed
         # (using all past points, even unobserved ones, would constitute data leakage)
-        last_obs_indices = trajs.shape[1] - np.argmax(obs_mask[:, ::-1], axis=1) - 1
-        last_obs_points = trajs[np.arange(ids.shape[0]), last_obs_indices, :]
-        mean_point = np.mean(last_obs_points, axis=0)
+        center_point = self.compute_center_point(
+            trajs=trajs[np.logical_and(sufficiently_observed, dist_threshold_mask)],
+            obs_mask=obs_mask[np.logical_and(sufficiently_observed, dist_threshold_mask)]
+        )
 
-        # normalize
-        ego -= mean_point
-        trajs -= mean_point
-        ego_visipoly = sg.Polygon(ego_visipoly.coords - mean_point)
-        scene_map.translation(mean_point)
+        # centering the instance
+        ego -= center_point
+        trajs -= center_point
+        ego_visipoly = sg.Polygon(ego_visipoly.coords - center_point)
+        scene_map.translation(center_point)
 
+        # converting to metric space coordinate
         scaling = self.traj_scale * m_per_px
 
         ego *= scaling
         trajs *= scaling
         ego_visipoly = sg.Polygon(ego_visipoly.coords * scaling)
         scene_map.scale(scaling=1/scaling)
-
-        # # cropping the scene_map
-        # box_coords = np.array([[-1, -1], [1, 1]])
-        # k = 2.0
-        # crop_coords = scene_map.to_map_points(box_coords * k)
-        # scene_map.square_crop(crop_coords=crop_coords, h_scaling=k)
         scene_map = self.cropped_scene_map(scene_map)
+
+        # removing the unsufficiently observed agents
+        trajs, ids, obs_mask = trajs[sufficiently_observed], ids[sufficiently_observed], obs_mask[sufficiently_observed]
+
+        # removing agents who are lying outside the scene
+        # 0.95 is a safety margin
+        # 0.5 is half the map side, as the coordinate system is centered at the middle of the scene map
+        outside = np.any(np.abs(trajs) >= 0.95 * 0.5 * self.map_side, axis=(1, 2))
+        trajs, ids, obs_mask = trajs[~outside], ids[~outside], obs_mask[~outside]
+
+        # randomly removing additional agents if we have too many, while making sure we do not remove the agent who
+        # is the target of the occlusion simulation
+        if ids.shape[0] > self.max_train_agent:
+            # decreasing tgt_idx, as we have filtered out some trajectories previously
+            tgt_idx -= (~sufficiently_observed[:tgt_idx[0]]).sum()
+            tgt_idx -= (outside[:tgt_idx[0]]).sum()
+
+            selection = np.setdiff1d(np.arange(ids.shape[0]), tgt_idx)
+            keep_indices = np.sort(
+                np.concatenate(
+                    [tgt_idx, np.random.choice(selection, self.max_train_agent, replace=False)]
+                )
+            )
+            ids, trajs, obs_mask = ids[keep_indices], trajs[keep_indices], obs_mask[keep_indices]
 
         # compute occlusion map and distance transformed occlusion map
         map_dims = scene_map.get_map_dimensions()
@@ -301,7 +350,8 @@ class AgentFormerDataGeneratorForSDD:
             occluders=extracted_data['occluders'],
             past_window=extracted_data['past_window'],
             ids=ids,
-            m_per_px=extracted_data['m/px']
+            tgt_idx=extracted_data['target_agent_indices'],
+            m_per_px=extracted_data['m/px'],
         )
 
         data['full_motion_3D'] = torch.from_numpy(processed_data['trajs'])
@@ -389,9 +439,10 @@ class AgentFormerDataGeneratorForSDD:
 
 if __name__ == '__main__':
     from utils.utils import prepare_seed
+    from tqdm import tqdm
     print(sdd_conf.REPO_ROOT)
 
-    n_calls = 100
+    n_calls = 10000
     # config_str = 'sdd_agentformer_pre'
     config_str = 'sdd_occlusion_agentformer_pre'
 
@@ -408,18 +459,21 @@ if __name__ == '__main__':
     generator = AgentFormerDataGeneratorForSDD(config, log, split='train')
 
     generator.shuffle()
-    for i in range(n_calls):
+    for i in tqdm(range(n_calls)):
+        if i < 2280:
+            continue
+        if i == 2280:
+            generator.index = 2280
 
-        fig, ax = plt.subplots(1, 5)
-
-        visualize.visualize_training_instance(
-            draw_ax=ax[0], instance_dict=generator.dataset.__getitem__(generator.sample_list[generator.index])
-        )
+        # fig, ax = plt.subplots(1, 5)
+        # visualize.visualize_training_instance(
+        #     draw_ax=ax[0], instance_dict=generator.dataset.__getitem__(generator.sample_list[generator.index])
+        # )
 
         data_dict = generator()
 
-        generator.visualize(
-            draw_ax=ax[1], data_dict=data_dict, draw_ax_dt_map=ax[2], draw_ax_p_occl_map=ax[3], draw_ax_min_log_p_occl_map=ax[4]
-        )
-
-        plt.show()
+        # generator.visualize(
+        #     draw_ax=ax[1], data_dict=data_dict, draw_ax_dt_map=ax[2], draw_ax_p_occl_map=ax[3], draw_ax_min_log_p_occl_map=ax[4]
+        # )
+        #
+        # plt.show()
