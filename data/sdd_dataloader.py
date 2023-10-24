@@ -80,6 +80,8 @@ class AgentFormerDataGeneratorForSDD:
         # self.compute_center_point = self.mean_last_observations
         self.compute_center_point = self.random_agent_last_obs
 
+        self.timesteps = np.arange(-self.dataset.T_obs, self.dataset.T_pred) + 1
+
     def shuffle(self) -> None:
         random.shuffle(self.sample_list)
 
@@ -101,12 +103,83 @@ class AgentFormerDataGeneratorForSDD:
         return scene_map
 
     @staticmethod
-    def mean_last_observations(trajs: NDArray, obs_mask: NDArray) -> NDArray:
+    def last_observed_indices(obs_mask: NDArray) -> NDArray:
+        # obs_mask [N, T]
+        return obs_mask.shape[1] - np.argmax(obs_mask[:, ::-1], axis=1) - 1         # [N]
+
+    def last_observed_timesteps(self, obs_mask: NDArray) -> NDArray:
+        # obs_mask [N, T]
+        return self.timesteps[self.last_observed_indices(obs_mask=obs_mask)]        # [N]
+
+    def last_observed_positions(self, trajs: NDArray, obs_mask: NDArray) -> NDArray:
         # trajs [N, T, 2]
         # obs_mask [N, T]
-        last_obs_indices = trajs.shape[1] - np.argmax(obs_mask[:, ::-1], axis=1) - 1
-        last_obs_points = trajs[np.arange(trajs.shape[0]), last_obs_indices, :]
-        return np.mean(last_obs_points, axis=0).copy()                 # [2]
+        last_obs_indices = self.last_observed_indices(obs_mask=obs_mask)            # [N]
+        return trajs[np.arange(trajs.shape[0]), last_obs_indices, :]                # [N, 2]
+
+    def predict_mask(self, obs_mask: NDArray) -> NDArray:
+        # obs_mask [N, T]
+        predict_mask = np.full_like(obs_mask, False)                                # [N, T]
+        pred_indices = self.last_observed_indices(obs_mask=obs_mask) + 1            # [N]
+        for i, pred_idx in enumerate(pred_indices):
+            predict_mask[i, pred_idx:] = True
+        return predict_mask                                                         # [N, T]
+
+    def agent_mask(self, ids: NDArray) -> NDArray:
+        # ids [N]
+        return np.hstack([ids[:, np.newaxis]] * self.timesteps.shape[0])        # [N, T]
+
+    def timestep_mask(self, ids: NDArray) -> NDArray:
+        # ids [N]
+        return np.vstack([self.timesteps] * ids.shape[0])          # [N, T]
+
+    @staticmethod
+    def true_velocity(trajs: NDArray) -> NDArray:
+        # trajs [N, T, 2]
+        vel = np.zeros_like(trajs)
+        vel[:, 1:, :] = trajs[:, 1:, :] - trajs[:, :-1, :]
+        return vel                  # [N, T, 2]
+
+    @staticmethod
+    def observed_velocity(trajs: NDArray, obs_mask: NDArray) -> NDArray:
+        # trajs [N, T, 2]
+        # obs_mask [N, T]
+        vel = np.zeros_like(trajs)
+        for traj, mask, v in zip(trajs, obs_mask, vel):
+            obs_indices = np.flatnonzero(mask)
+            motion_diff = traj[obs_indices[1:], :] - traj[obs_indices[:-1], :]
+            v[obs_indices[1:], :] = motion_diff / (obs_indices[1:] - obs_indices[:-1])[:, np.newaxis]
+        return vel              # [N, T, 2]
+
+    @staticmethod
+    def cv_extrapolate(trajs: NDArray, obs_vel: NDArray, last_obs_indices: NDArray) -> NDArray:
+        # trajs [N, T, 2]
+        # obs_vel [N, T, 2]
+        # last_obs_indices [N]
+        xtrpl_trajs = trajs.copy()
+        for traj, vel, obs_idx in zip(xtrpl_trajs, obs_vel, last_obs_indices):
+            last_pos = traj[obs_idx]
+            last_vel = vel[obs_idx]
+            extra_seq = last_pos + np.arange(traj.shape[0] - obs_idx)[:, np.newaxis] * last_vel
+            traj[obs_idx:] = extra_seq
+        return xtrpl_trajs
+
+    @staticmethod
+    def impute_interpolate(trajs: NDArray, obs_mask: NDArray) -> NDArray:
+        # trajs [N, T, 2]
+        # obs_mask [N, T]
+        imputed_trajs = np.zeros_like(trajs)
+        for imputed_traj, traj, mask in zip(imputed_trajs, trajs, obs_mask):
+            obs_indices = np.flatnonzero(mask)
+            trajpoints = traj[mask]
+            imputed_traj[:, 0] = np.interp(np.arange(traj.shape[0]), obs_indices, trajpoints[:, 0])
+            imputed_traj[:, 1] = np.interp(np.arange(traj.shape[0]), obs_indices, trajpoints[:, 1])
+        return imputed_trajs
+
+    def mean_position_last_observations(self, trajs: NDArray, obs_mask: NDArray) -> NDArray:
+        # trajs [N, T, 2]
+        # obs_mask [N, T]
+        return np.mean(self.last_observed_positions(trajs=trajs, obs_mask=obs_mask), axis=0).copy()         # [2]
 
     @staticmethod
     def random_agent_last_obs(trajs: NDArray, obs_mask: NDArray) -> NDArray:
@@ -354,6 +427,25 @@ class AgentFormerDataGeneratorForSDD:
             m_per_px=extracted_data['m/px'],
         )
 
+        # TODO: Cleanup this bit of code
+        # TODO: Remove preprocessing from AgentFormer.
+        # try_time = np.arange(-7, 13)
+        # try_traj = np.hstack([np.sin(try_time)[:, np.newaxis], np.cos(try_time)[:, np.newaxis]])[np.newaxis, :]
+        # try_mask = np.full([1, 20], True)
+        # try_mask[:, 8:] = False
+        # try_mask[:, 2:5] = False
+        #
+        # print(f"{try_traj, try_traj.shape=}")
+        # print(f"{try_mask=}")
+        # try_vel = self.observed_velocity(try_traj, try_mask)
+        # try_last = self.last_observed_indices(try_mask)
+        # print(f"{try_vel=}")
+        # print(f"{try_last=}")
+        # print(f"{self.cv_extrapolate(try_traj, try_vel, try_last)=}")
+        # print(zblu)
+        # print(f"{self.cv_extrapolate(trajs=, obs_vel=, last_obs_indices=)=}")
+        # print(f"{self.impute_interpolate(trajs=, obs_mask=)=}")
+
         data['full_motion_3D'] = torch.from_numpy(processed_data['trajs'])
         data['valid_id'] = torch.from_numpy(processed_data['ids'])
         data['obs_mask'] = torch.from_numpy(processed_data['obs_mask'])
@@ -364,16 +456,13 @@ class AgentFormerDataGeneratorForSDD:
         data['dt_occlusion_map'] = torch.from_numpy(processed_data['dt_occlusion_map'])         # [H, W]
         data['p_occl_map'] = torch.from_numpy(processed_data['p_occl_map'])                     # [H, W]
         data['min_log_p_occl_map'] = torch.from_numpy(processed_data['min_log_p_occl_map'])     # [H, W]
-        data['timesteps'] = torch.from_numpy(
-            np.arange(len(extracted_data['full_window'])) - len(extracted_data['past_window']) + 1
-        )
+        data['timesteps'] = torch.from_numpy(self.timesteps)
         data['heading'] = heading
         data['traj_scale'] = self.traj_scale
         data['pred_mask'] = pred_mask
         data['scene_map'] = scene_map
         data['seq'] = extracted_data['scene'] + '_' + extracted_data['video']
         data['frame'] = extracted_data['timestep']
-
         return data
 
     def next_sample(self) -> dict:
