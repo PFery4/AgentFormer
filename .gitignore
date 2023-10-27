@@ -11,5 +11,8 @@ results
 # ignoring the preprocessed nuscenes dataset
 datasets/nuscenes_pred
 
+# ignoring the padded scene images directory for the SDD dataset
+datasets/SDD/padded_images*
+
 # ignoring the compressed zip file of agentformer_models
 agentformer_models.zip
