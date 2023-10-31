@@ -5,10 +5,11 @@ import time
 
 import torch
 from torch import optim
+from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
 from data.dataloader import data_generator
-from data.sdd_dataloader import AgentFormerDataGeneratorForSDD
+from data.sdd_dataloader import AgentFormerDataGeneratorForSDD, TorchDataGeneratorSDD
 from model.model_lib import model_dict
 from utils.torch import get_scheduler
 from utils.config import Config
@@ -20,65 +21,64 @@ torch.backends.cudnn.benchmark = True
 
 
 def logging(cfg, epoch, total_epoch, iter, total_iter, ep, seq, frame, losses_str, log):
-	print_log('{} | Epo: {:02d}/{:02d}, '
-		'It: {:04d}/{:04d}, '
-		'EP: {:s}, ETA: {:s}, seq {:s}, frame {:05d}, {}'
-        .format(cfg, epoch, total_epoch, iter, total_iter, \
-		convert_secs2time(ep), convert_secs2time(ep / iter * (total_iter * (total_epoch - epoch) - iter)), seq, frame, losses_str), log)
+    print_log('{} | Epo: {:02d}/{:02d}, '
+              'It: {:04d}/{:04d}, '
+              'EP: {:s}, ETA: {:s}, seq {:s}, frame {:05d}, {}'
+              .format(cfg, epoch, total_epoch, iter, total_iter, \
+                      convert_secs2time(ep), convert_secs2time(ep / iter * (total_iter * (total_epoch - epoch) - iter)),
+                      seq, frame, losses_str), log)
 
 
-def train(epoch):
-    global tb_ind
+def train(epoch_index: int):
     since_train = time.time()
-    generator.shuffle()
     train_loss_meter = {x: AverageMeter() for x in cfg.loss_cfg.keys()}
     train_loss_meter['total_loss'] = AverageMeter()
-    last_generator_index = 0
 
-    # RESOURCE TEST ##################################################################################################
-    stop_counter = 500
-    cnt = 0
-    # RESOURCE TEST ##################################################################################################
+    # # RESOURCE TEST ##################################################################################################
+    # stop_counter = 500
+    # cnt = 0
+    # # RESOURCE TEST ##################################################################################################
 
-    while not generator.is_epoch_end():
-        data = generator()
-        if data is not None:
+    # TODO: CHECK IF THE NEW TRAINING LOOP WORKS (SPOILER IT DOESN'T, BUT YOU'LL GET THERE)
 
-            seq, frame = data['seq'], data['frame']
-            model.set_data(data)
+    for i, data in enumerate(training_loader):
 
-            model_data = model()
-            total_loss, loss_dict, loss_unweighted_dict = model.compute_loss()
+        # providing the data dictionary to the model
+        model.set_data(data=data)
 
-            """ optimize """
-            optimizer.zero_grad()
-            total_loss.backward()
-            optimizer.step()
+        # zeroing the gradients
+        optimizer.zero_grad()
 
-            train_loss_meter['total_loss'].update(total_loss.item())
-            for key in loss_unweighted_dict.keys():
-                train_loss_meter[key].update(loss_unweighted_dict[key])
-        # else:     # I believe it makes more sense to continue here
-        #     continue
+        # making a prediction
+        model_data = model()
 
-        # RESOURCE TEST ##############################################################################################
-            if cnt >= stop_counter:
-                print(
-                    f"DONE: process lasted a total of {time.time() - since_train} seconds for {stop_counter} training instances")
-                print(f"Exitting process, goodbye world!")
-                sys.exit()
+        # computing loss and updating model parameters
+        total_loss, loss_dict, loss_unweighted_dict = model.compute_loss()
+        total_loss.backward()
+        optimizer.step()
 
-            cnt += 1
-        # RESOURCE TEST ##############################################################################################
+        train_loss_meter['total_loss'].update(total_loss.item())
+        for key in loss_unweighted_dict.keys():
+            train_loss_meter[key].update(loss_unweighted_dict[key])
 
-        if generator.index - last_generator_index >= cfg.print_freq:
-                ep = time.time() - since_train
-                losses_str = ' '.join([f'{x}: {y.avg:.3f} ({y.val:.3f})' for x, y in train_loss_meter.items()])
-                logging(args.cfg, epoch, cfg.num_epochs, generator.index, generator.num_total_samples, ep, seq, frame, losses_str, log)
-                for name, meter in train_loss_meter.items():
-                    tb_logger.add_scalar('model_' + name, meter.avg, tb_ind)
-                tb_ind += 1
-                last_generator_index = generator.index
+        if i % cfg.print_freq == 0:
+            ep = time.time() - since_train
+            losses_str = ' '.join([f'{x}: {y.avg:.3f} ({y.val:3.f})' for x, y in train_loss_meter.items()])
+            logging(
+                cfg=args.cfg,
+                epoch=epoch_index,
+                total_epoch=cfg.num_epochs,
+                iter=i,
+                total_iter=len(training_loader),
+                ep=ep,
+                seq=data['seq'],
+                frame=data['frame'],
+                losses_str=losses_str,
+                log=log
+            )
+            tb_x = epoch_index * len(training_loader) + i + 1
+            for name, meter in train_loss_meter.items():
+                tb_logger.add_scalar(f'model_{name}', meter.avg, tb_x)
 
     scheduler.step()
     model.step_annealer()
@@ -138,8 +138,6 @@ if __name__ == '__main__':
         sys.exit()
     # DELFTBLUE GPU ##################################################################################################
 
-
-
     time_str = get_timestring()
     log = open(os.path.join(cfg.log_dir, 'log.txt'), 'a+')
     print_log("time str: {}".format(time_str), log)
@@ -148,15 +146,15 @@ if __name__ == '__main__':
     print_log("cudnn version : {}".format(torch.backends.cudnn.version()), log)
     tb_logger = SummaryWriter(cfg.tb_dir)
     print(f"{cfg.tb_dir=}")
-    tb_ind = 0
 
     """ data """
     if cfg.dataset == "sdd":
-        generator = AgentFormerDataGeneratorForSDD(cfg, log, split="train", phase="training")
+        # generator = AgentFormerDataGeneratorForSDD(cfg, log, split="train", phase="training")
+        sdd_dataset = TorchDataGeneratorSDD(parser=cfg, log=log, split='train')
+        training_loader = DataLoader(dataset=sdd_dataset, shuffle=True)
     else:
         generator = data_generator(cfg, log, split='train', phase='training')
     # print(f"{type(generator)=}")
-
 
     """ model """
     model_id = cfg.get('model_id', 'agentformer')
@@ -188,6 +186,6 @@ if __name__ == '__main__':
         """ save model """
         if cfg.model_save_freq > 0 and (i + 1) % cfg.model_save_freq == 0:
             cp_path = cfg.model_path % (i + 1)
-            model_cp = {'model_dict': model.state_dict(), 'opt_dict': optimizer.state_dict(), 'scheduler_dict': scheduler.state_dict(), 'epoch': i + 1}
+            model_cp = {'model_dict': model.state_dict(), 'opt_dict': optimizer.state_dict(),
+                        'scheduler_dict': scheduler.state_dict(), 'epoch': i + 1}
             torch.save(model_cp, cp_path)
-
