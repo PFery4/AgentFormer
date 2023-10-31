@@ -29,7 +29,6 @@ Tensor = torch.Tensor
 
 # imports from https://github.com/PFery4/occlusion-prediction
 from src.data.sdd_dataloader import StanfordDroneDataset, StanfordDroneDatasetWithOcclusionSim
-from src.visualization.plot_utils import plot_sg_polygon
 import src.visualization.sdd_visualize as visualize
 import src.occlusion_simulation.visibility as visibility
 import src.occlusion_simulation.polygon_generation as poly_gen
