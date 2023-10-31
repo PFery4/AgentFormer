@@ -787,6 +787,8 @@ class AgentFormer(nn.Module):
         self.to(device)
 
     def set_data(self, data: dict) -> None:
+        # TODO: DO NOT RECENTER, USE ONLY THE TRAJ DATA AS IT IS PROVIDED BY THE DATALOADER
+        # TODO: MOVE ALL PREPROCESSING TO THE DATALOADER CLASS
 
         self.data = defaultdict(lambda: None)
         self.data['valid_id'] = data['valid_id'].detach().clone().to(self.device).to(int)       # [N]
@@ -816,6 +818,11 @@ class AgentFormer(nn.Module):
         self.data['last_observed_timesteps'] = torch.stack(
             [self.data['timesteps'][last_obs] for last_obs in last_observed_timestep_indices], dim=0
         ).to(self.device)        # [N]
+        # print(f"{self.data['timesteps']=}")
+        # print(f"{self.data['last_observed_timesteps']=}")
+        # print(f"{timesteps_to_predict=}")
+        # print(f"{full_agent_mask=}")
+        # print(f"{full_timestep_mask=}")
 
         # define the scene origin
         if self.scene_orig_all_past:
@@ -865,6 +872,9 @@ class AgentFormer(nn.Module):
         self.data['cur_motion'] = cur_motion.to(self.device)
         cur_motion_scene_norm = full_motion_scene_norm[last_observed_timestep_indices, torch.arange(self.data['agent_num'])].unsqueeze(0)
         self.data['cur_motion_scene_norm'] = cur_motion_scene_norm.to(self.device)                   # [1, N, 2]
+
+        print(f"{self.data['cur_motion'], self.data['cur_motion_scene_norm']=}")
+        raise NotImplementedError
 
         # # NOTE: heading does not follow the occlusion pattern
         # if in_data['heading'] is not None:
