@@ -24,17 +24,21 @@ def generate_ar_mask(sz: int, agent_num: int, agent_mask: torch.Tensor) -> torch
         i1 = t * agent_num
         i2 = (t+1) * agent_num
         mask[i1:i2, i2:] = float('-inf')
+    raise NotImplementedError
     return mask
 
 
-def generate_ar_mask_with_variable_agents_per_timestep(timestep_sequence: torch.Tensor) -> torch.Tensor:
+def generate_ar_mask_with_variable_agents_per_timestep(
+        timestep_sequence: torch.Tensor,
+        batch_size: int = 1
+) -> torch.Tensor:
     # timestep_sequence [T]
     stop_at = torch.argmax(timestep_sequence)
     mask = torch.zeros(timestep_sequence.shape[0], timestep_sequence.shape[0])
     for idx in range(stop_at):
         mask_seq = (timestep_sequence > timestep_sequence[idx])
         mask[idx, mask_seq] = float('-inf')
-    return mask
+    return mask.unsqueeze(0).repeat(batch_size, 1, 1)
 
 
 def generate_mask(tgt_sz: int, src_sz: int, batch_size: int = 1) -> torch.Tensor:
@@ -409,139 +413,155 @@ class FutureDecoder(nn.Module):
 
     def decode_next_timestep(
             self,
-            dec_in_orig: torch.Tensor,              # [N, n_sample, 2]
-            z_in_orig: torch.Tensor,                # [N, n_sample, nz]
-            dec_input_sequence: torch.Tensor,       # [B, n_sample, nz + 2]
-            timestep_sequence: torch.Tensor,        # [B]
-            agent_sequence: torch.Tensor,           # [B]
+            dec_in_orig: torch.Tensor,              # [B * sample_num, N, 2]
+            z_in_orig: torch.Tensor,                # [B * sample_num, N, nz]
+            dec_input_sequence: torch.Tensor,       # [B * sample_num, K, nz + 2]
+            timestep_sequence: torch.Tensor,        # [K]
+            agent_sequence: torch.Tensor,           # [B, K]
             data: dict,
-            context: torch.Tensor,                  # [O, n_sample, model_dim]
-            sample_num: int                         # n_sample
+            context: torch.Tensor,                  # [B * sample_num, O, model_dim]
+            sample_num: int
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        # old shapes
+        # dec_in_orig: torch.Tensor,  # [N, n_sample, 2]
+        # z_in_orig: torch.Tensor,  # [N, n_sample, nz]
+        # dec_input_sequence: torch.Tensor,  # [B, n_sample, nz + 2]
+        # timestep_sequence: torch.Tensor,  # [B]
+        # agent_sequence: torch.Tensor,  # [B]
+        # data: dict,
+        # context: torch.Tensor,  # [O, n_sample, model_dim]
+        # sample_num: int  # n_sample
 
         # Embed input sequence in high-dim space
-        tf_in = self.input_fc(
-            dec_input_sequence.view(-1, dec_input_sequence.shape[-1])  # [B * n_sample, nz + 2]
-        ).view(dec_input_sequence.shape[0], -1, self.model_dim)  # [B, n_sample, model_dim]
-        # print(f"{tf_in.shape=}")
-        # print(f"{timestep_sequence.shape=}")
+        tf_in = self.input_fc(dec_input_sequence)   # [B * sample_num, K, model_dim]
+        print(f"{tf_in.shape=}")
+        print(f"{timestep_sequence.shape=}")
 
         # Temporal encoding
         tf_in_pos = self.pos_encoder(
-            x=tf_in,  # [B, n_sample, model_dim]
-            time_tensor=timestep_sequence  # [B]
-        ).view(timestep_sequence.shape[0], sample_num, self.model_dim)  # [B, n_sample, model_dim]
+            x=tf_in,
+            time_tensor=timestep_sequence.unsqueeze(0).repeat(tf_in.shape[0], 1)       # [B * sample_num, K]
+        )           # [B * sample_num, K, model_dim]
+        print(f"{tf_in_pos.shape=}")
 
         # Generate attention masks (tgt_mask ensures proper autoregressive attention, such that predictions which
-        # were originally made at loop iteration nr k cannot attend from sequence elements which have been added
-        # at loop iterations >k)
-        tgt_mask = generate_ar_mask_with_variable_agents_per_timestep(timestep_sequence=timestep_sequence).to(
-            tf_in.device)
-        mem_mask = generate_mask(timestep_sequence.shape[0], context.shape[0]).to(tf_in.device)
+        # were originally made at loop iteration nr t cannot attend from sequence elements which have been added
+        # at loop iterations >t)
+        tgt_mask = generate_ar_mask_with_variable_agents_per_timestep(
+            timestep_sequence=timestep_sequence,
+            batch_size=tf_in.shape[0]
+        ).to(tf_in.device)      # [B * sample_num, K, K]
+        mem_mask = generate_mask(
+            timestep_sequence.shape[0],
+            context.shape[1],
+            batch_size=tf_in.shape[0]
+        ).to(tf_in.device)      # [B * sample_num, K, O]
+        print(f"{tgt_mask, tgt_mask.shape=}")
+        print(f"{mem_mask, mem_mask.shape=}")
 
         # Go through the attention mechanism
         # print(f"{data['global_map_encoding'].shape=}")
         # print(f"{data['context_map'].shape=}")
         tf_out, map_out, attn_weights = self.tf_decoder(
-            tgt=tf_in_pos,                                                          # [B, n_sample, model_dim]
-            memory=context,                                                         # [O, n_sample, model_dim]
-            tgt_identities=agent_sequence.unsqueeze(1).repeat(1, sample_num),       # [B, n_sample]
-            mem_identities=data['pre_agents'].unsqueeze(1).repeat(1, sample_num),   # [O, n_sample]
-            tgt_map=data['global_map_encoding'].repeat(sample_num, 1),              # [1, model_dim]
-            mem_map=data['context_map'].repeat(sample_num, 1),                      # [1, model_dim]
-            tgt_mask=tgt_mask,                                                      # [B, B]
-            memory_mask=mem_mask                                                    # [B, O]
-        )  # [B, n_sample, model_dim]
-        # print(f"{tf_out.shape=}")
-        # TODO: EVALUATE WHAT TO DO / WHAT IS DONE WITH MAP_OUT
+            tgt=tf_in_pos,                                                          # [B * sample_num, K, model_dim]
+            memory=context,                                                         # [B * sample_num, O, model_dim]
+            tgt_identities=agent_sequence.repeat(sample_num, 1),                    # [B * sample_num, K]
+            mem_identities=data['obs_identity_sequence'].repeat(sample_num, 1),     # [B * sample_num, O]
+            tgt_map=data['global_map_encoding'].repeat(sample_num, 1),              # [B * sample_num, model_dim]
+            mem_map=data['context_map'].repeat(sample_num, 1),                      # [B * sample_num, model_dim]
+            tgt_mask=tgt_mask,                                                      # [B * sample_num, K, K]
+            memory_mask=mem_mask                                                    # [B * sample_num, K, O]
+        )       # [B * sample_num, K, model_dim], [B * sample_num, model_dim], Dict
+
+        print(f"{tf_out.shape, map_out.shape=}")
 
         # Map back to physical space
-        seq_out = self.out_module(
-            tf_out.view(-1, tf_out.shape[-1])  # [B * n_sample, model_dim]
-        ).view(*tf_out.shape[:2], -1)  # [B, n_sample, 2]
-        # print(f"{seq_out.shape=}")
+        seq_out = self.out_module(tf_out)  # [B * sample_num, K, 2]
+        print(f"{seq_out.shape=}")
 
-        # this mode is used to have the model predict offsets from the last observed position of agents, instead of
-        # absolute coordinates in space
-        # print(f"{self.sn_out_type=}")
+        # self.sn_out_type='norm' is used to have the model predict offsets from the last observed position of agents,
+        # instead of absolute coordinates in space
+        print(f"{self.sn_out_type=}")
         if self.pred_type == 'scene_norm' and self.sn_out_type in {'vel', 'norm'}:
-            norm_motion = seq_out  # [B, n_sample, 2]
-            # print(f"{norm_motion.shape=}")
+            # norm_motion = seq_out  # [B * n_sample, K, 2]
+            # # print(f"{norm_motion.shape=}")
 
             if self.sn_out_type == 'vel':
                 raise NotImplementedError("self.sn_out_type == 'vel'")
 
-            # print(f"{agent_sequence=}")
-            # print(f"{data['valid_id']=}")
-            # print(f"{dec_in_orig.shape=}")
+            print(f"{agent_sequence, agent_sequence.shape=}")       # [B, K]
+            print(f"{data['valid_id'], data['valid_id'].shape=}")     # [B, N]
+            print(f"{dec_in_orig, dec_in_orig.shape=}")          # [B * sample_num, N, 2]
 
             # defining origins for each element in the sequence, using agent_sequence, dec_in and data['valid_id']
+            # NOTE: current implementation cannot handle batched data
+            # TODO: VERIFY THIS IS CORRECT
             seq_origins = torch.cat(
-                [dec_in_orig[(data['valid_id'] == ag_id), ...] for ag_id in agent_sequence], dim=0
-            )  # [B, n_sample, 2]
-            # print(f"{seq_origins.shape=}")
-            seq_out = norm_motion + seq_origins  # [B, n_sample, 2]
-        # print(f"{seq_out.shape=}")
+                [dec_in_orig[:, data['valid_id'][0] == ag_id, :] for ag_id in agent_sequence[0]], dim=1
+            )       # [B * sample_num, K, 2]
+            print(f"{seq_origins, seq_origins.shape=}")
+
+            seq_out = seq_out + seq_origins  # [B * sample_num, K, 2]
 
         # create out_in -> Partially from prediction, partially from dec_in (due to occlusion asynchronicity)
-        from_pred_indices = (timestep_sequence == torch.max(timestep_sequence))  # [B]
-        agents_from_pred = agent_sequence[from_pred_indices]  # [*~B]     (subset of B)
+        from_pred_indices = (timestep_sequence == torch.max(timestep_sequence))  # [K]
+        agents_from_pred = agent_sequence[0, from_pred_indices]         # [⊆K] <==> [k]
 
-        # print(f"{from_pred_indices=}")
-        # print(f"{agents_from_pred=}")
+        print(f"{from_pred_indices=}")
+        print(f"{agents_from_pred=}")
 
-        from_dec_in_indices = (data['last_observed_timesteps'] == torch.max(timestep_sequence) + 1)  # [N]
-        agents_from_dec_in = data['valid_id'][from_dec_in_indices]  # [*~N]
+        from_dec_in_indices = (data['last_obs_timesteps'][0] == torch.max(timestep_sequence) + 1)  # [N]
+        agents_from_dec_in = data['valid_id'][0, from_dec_in_indices]      # [⊆N] <==> [n]
 
-        # print(f"{from_dec_in_indices=}")
-        # print(f"{agents_from_dec_in=}")
+        print(f"{from_dec_in_indices=}")
+        print(f"{agents_from_dec_in=}")
 
         # print(f"{self.ar_detach=}")
         if self.ar_detach:
-            out_in_from_pred = seq_out[from_pred_indices, ...].clone().detach()          # [*~B, n_sample, 2]
-            out_in_from_dec_in = dec_in_orig[from_dec_in_indices, ...].clone().detach()  # [*~N, n_sample, 2]
+            out_in_from_pred = seq_out[:, from_pred_indices, :].clone().detach()          # [B * sample_num, k, 2]
+            out_in_from_dec_in = dec_in_orig[:, from_dec_in_indices, :].clone().detach()  # [B * sample_num, n, 2]
         else:
-            out_in_from_pred = seq_out[from_pred_indices, ...]              # [*~B, n_sample, 2]
-            out_in_from_dec_in = dec_in_orig[from_dec_in_indices, ...]      # [*~N, n_sample, 2]
+            out_in_from_pred = seq_out[from_pred_indices, ...]              # [B * sample_num, k, 2]
+            out_in_from_dec_in = dec_in_orig[from_dec_in_indices, ...]      # [B * sample_num, n, 2]
 
         # concatenate with latent z codes
         z_in_from_pred = torch.cat(
-            [z_in_orig[(data['valid_id'] == agent_idx), ...]
-             for agent_idx in agents_from_pred], dim=0
-        )  # [*~B, n_sample, nz]
+            [z_in_orig[:, (data['valid_id'][0] == agent_idx), :]
+             for agent_idx in agents_from_pred], dim=1
+        )  # [B * sample_num, k, nz]
         out_in_z_from_pred = torch.cat(
             [out_in_from_pred, z_in_from_pred], dim=-1
-        )  # [*~B, n_sample, nz + 2]
-        # print(f"{out_in_from_pred.shape, z_in_from_pred.shape, out_in_z_from_pred.shape=}")
+        )  # [B * sample_num, k, nz + 2]
+        print(f"{out_in_from_pred.shape, z_in_from_pred.shape, out_in_z_from_pred.shape=}")
 
-        z_in_from_dec_in = z_in_orig[from_dec_in_indices, ...]  # [*~N, n_sample, nz]
+        z_in_from_dec_in = z_in_orig[:, from_dec_in_indices, :]  # [B * sample_num, n, nz]
         out_in_z_from_dec_in = torch.cat(
             [out_in_from_dec_in, z_in_from_dec_in], dim=-1
-        )  # [*~N, n_sample, nz + 2]
-        # print(f"{out_in_from_dec_in.shape, z_in_from_dec_in.shape, out_in_z_from_dec_in.shape=}")
+        )  # [B * sample_num, n, nz + 2]
+        print(f"{out_in_from_dec_in.shape, z_in_from_dec_in.shape, out_in_z_from_dec_in.shape=}")
 
         # generate timestep tensor to extend timestep_sequence for next loop iteration
         next_timesteps = torch.full(
             [agents_from_pred.shape[0] + agents_from_dec_in.shape[0]], torch.max(timestep_sequence) + 1
-        ).to(tf_in.device)  # [*~B + *~N]
-        # print(f"{next_timesteps=}")
+        ).to(tf_in.device)  # [k + n]
+        print(f"{next_timesteps=}")
 
         # update trajectory sequence
         dec_input_sequence = torch.cat(
-            [dec_input_sequence, out_in_z_from_pred, out_in_z_from_dec_in], dim=0
-        )  # [B + *~B + *~N, n_sample, nz + 2]     -> next loop: B == B + *~B + *~N
-        # print(f"{dec_input_sequence.shape=}")
+            [dec_input_sequence, out_in_z_from_pred, out_in_z_from_dec_in], dim=1
+        )  # [B * sample_num, K + k + n, nz + 2]     -> next loop: B == B + *~B + *~N
+        print(f"{dec_input_sequence.shape=}")
 
         # update agent_sequence, timestep_sequence
         agent_sequence = torch.cat(
-            [agent_sequence, agents_from_pred, agents_from_dec_in], dim=0
-        )  # [B + *~B + *~N]
-        # print(f"{agent_sequence=}")
+            [agent_sequence, agents_from_pred.unsqueeze(0), agents_from_dec_in.unsqueeze(0)], dim=1
+        )  # [B, K + k + n]
+        print(f"{agent_sequence=}")
 
         timestep_sequence = torch.cat(
             [timestep_sequence, next_timesteps], dim=0
-        )  # [B + *~B + *~N]
-        # print(f"{timestep_sequence=}")
+        )  # [K + k + n]
+        print(f"{timestep_sequence=}")
 
         return seq_out, dec_input_sequence, agent_sequence, timestep_sequence, attn_weights
 
@@ -579,39 +599,35 @@ class FutureDecoder(nn.Module):
 
 
         print(f"{data['last_obs_timesteps'].shape=}")
-        catch_up_timestep_sequence = data['last_observed_timesteps'].detach().clone()                           # [B, N]
-        starting_seq_indices = (catch_up_timestep_sequence == torch.min(catch_up_timestep_sequence, dim=1)[0])  # [B, N]
+        # TODO: CAREFULLY CHECK HOW THIS WORKS ON MULTIPLE AGENTS
+        catch_up_timestep_sequence = data['last_obs_timesteps'][0, ...].detach().clone()                        # [N]
+        starting_seq_indices = (catch_up_timestep_sequence == torch.min(catch_up_timestep_sequence, dim=0)[0])  # [N]
 
         print(f"{starting_seq_indices, starting_seq_indices.shape=}")
 
-        # TODO: HERE HERE
-        raise NotImplementedError
-        timestep_sequence = catch_up_timestep_sequence[starting_seq_indices].to(dec_in.device)          # [⊆N] == [B]
-        agent_sequence = data['valid_id'][starting_seq_indices].detach().clone()    # [B]
-        dec_input_sequence = dec_in_z[starting_seq_indices, ...].detach().clone()   # [B, sample_num, nz + 2]
+        timestep_sequence = catch_up_timestep_sequence[starting_seq_indices].to(dec_in.device)          # [⊆N] == [K]
+        agent_sequence = data['valid_id'][:, starting_seq_indices].detach().clone()                     # [B, K]
+        dec_input_sequence = dec_in_z[:, starting_seq_indices].detach().clone()                         # [B * sample_num, K, nz + 2]
 
-        # print("#" * 100)
-        # print(f"{catch_up_timestep_sequence=}")
-        # print(f"{starting_seq_indices=}")
-        # print(f"{timestep_sequence=}")
-        # print(f"{data['valid_id']=}")
-        # print(f"{agent_sequence=}")
-        # print(f"{dec_input_sequence.shape=}")
+        print(f"{timestep_sequence, timestep_sequence.shape=}")
+        print(f"{agent_sequence, agent_sequence.shape=}")
+        print(f"{dec_input_sequence.shape=}")
+
         # CATCH UP TO t_0
         # print("ENTERING BELIEF GENERATION SEQUENCE:")
         while not torch.all(catch_up_timestep_sequence == torch.zeros_like(catch_up_timestep_sequence)):
-            # print(f"\nBEGINNING LOOP: {catch_up_timestep_sequence=}")
+            print(f"\nBEGINNING LOOP: {catch_up_timestep_sequence=}")
 
             seq_out, dec_input_sequence, agent_sequence, timestep_sequence, attn_weights = self.decode_next_timestep(
-                dec_in_orig=dec_in,
-                z_in_orig=z_in,
-                dec_input_sequence=dec_input_sequence,
-                timestep_sequence=timestep_sequence,
-                agent_sequence=agent_sequence,
+                dec_in_orig=dec_in,                         # [B * sample_num, N, 2]
+                z_in_orig=z,                                # [B * sample_num, N, nz]
+                dec_input_sequence=dec_input_sequence,      # [B * sample_num, K, nz + 2]
+                timestep_sequence=timestep_sequence,        # [K]
+                agent_sequence=agent_sequence,              # [B, K]
                 data=data,
-                context=context,
+                context=context,                            # [B * sample_num, O, model_dim]
                 sample_num=sample_num
-            )
+            )       # [B * sample_num, K, 2], [B * sample_num, K + k + n, nz + 2], [B, K + k + n], [K + k + n], Dict
 
             catch_up_timestep_sequence[catch_up_timestep_sequence == torch.min(catch_up_timestep_sequence)] += 1
 
@@ -629,14 +645,14 @@ class FutureDecoder(nn.Module):
 
             seq_out, dec_input_sequence, agent_sequence, timestep_sequence, attn_weights = self.decode_next_timestep(
                 dec_in_orig=dec_in,
-                z_in_orig=z_in,
+                z_in_orig=z,
                 dec_input_sequence=dec_input_sequence,
                 timestep_sequence=timestep_sequence,
                 agent_sequence=agent_sequence,
                 data=data,
                 context=context,
                 sample_num=sample_num
-            )       # [T_sequence, n_sample, 2]
+            )
 
         # print(f"DONE PREDICTING")
         # print(f"{seq_out.shape=}")
@@ -651,37 +667,35 @@ class FutureDecoder(nn.Module):
         # the actual sequences of predicted timesteps and agents, we need to remove the indices corresponding to the
         # last timestep value present in the *input* timestep sequence.
         keep_indices = (timestep_sequence < torch.max(timestep_sequence))
-        pred_timestep_sequence = (timestep_sequence[keep_indices] + 1).detach().clone()
-        pred_agent_sequence = (agent_sequence[keep_indices]).detach().clone()
+        pred_timestep_sequence = (timestep_sequence[keep_indices] + 1).detach().clone()     # [P]
+        pred_agent_sequence = (agent_sequence[:, keep_indices]).detach().clone()            # [B, P]
 
         past_indices = (pred_timestep_sequence <= 0)
-        # print(f"{pred_timestep_sequence=}")
-        # print(f"{past_indices=}")
-        # print(f"{seq_out.shape=}")
+        print(f"{pred_timestep_sequence=}")
+        print(f"{past_indices=}")
+        print(f"{seq_out.shape=}")
 
-        # print(f"{pred_agent_sequence, pred_timestep_sequence.shape=}")
-        # print(f"{pred_timestep_sequence, pred_timestep_sequence.shape=}")
-        # print(f"{data['fut_agents'], data['fut_agents'].shape=}")
-        # print(f"{data['fut_timesteps'], data['fut_timesteps'].shape=}")
-
-        # seq_out = seq_out.view(-1, agent_num * sample_num, seq_out.shape[-1])
-        # data[f'{mode}_seq_out'] = seq_out
+        print(f"{pred_agent_sequence, pred_timestep_sequence.shape=}")
+        print(f"{pred_timestep_sequence, pred_timestep_sequence.shape=}")
+        print(f"{data['pred_identity_sequence'], data['pred_identity_sequence'].shape=}")
+        print(f"{data['pred_timestep_sequence'], data['pred_timestep_sequence'].shape=}")
 
         if self.pred_type == 'scene_norm':
-            dec_motion = seq_out
-            dec_motion[..., :self.forecast_dim] += data['scene_orig']       # [T_sequence, n_sample, 2]
+            scene_origs = data['scene_orig'].repeat(sample_num, 1).unsqueeze(1)         # [B * sample_num, 1, 2]
+            seq_out += scene_origs                                                      # [B * sample_num, P, 2]
         else:
             raise NotImplementedError
 
-        data[f'{mode}_dec_motion'] = dec_motion                     # [T_sequence, n_sample, 2]
-        data[f'{mode}_dec_agents'] = pred_agent_sequence            # [T_sequence]
-        data[f'{mode}_dec_past_mask'] = past_indices                # [T_sequence]
-        data[f'{mode}_dec_timesteps'] = pred_timestep_sequence      # [T_sequence]
+        data[f'{mode}_dec_motion'] = seq_out                                    # [B * sample_num, P, 2]
+        data[f'{mode}_dec_agents'] = pred_agent_sequence.repeat(sample_num, 1)  # [B * sample_num, P]
+        data[f'{mode}_dec_past_mask'] = past_indices                            # [P]
+        data[f'{mode}_dec_timesteps'] = pred_timestep_sequence                  # [P]
         if self.pred_mode == "gauss":
-            data[f'{mode}_dec_mu'] = dec_motion[..., 0:self.forecast_dim]
-            data[f'{mode}_dec_sig'] = dec_motion[..., self.forecast_dim:2*self.forecast_dim]
-            data[f'{mode}_dec_rho'] = dec_motion[..., 2*self.forecast_dim:]
-            data[f'{mode}_dec_Sig'] = self.out_module[0].covariance_matrix(sig=data[f'{mode}_dec_sig'], rho=data[f'{mode}_dec_rho'])
+            raise NotImplementedError
+            # data[f'{mode}_dec_mu'] = dec_motion[..., 0:self.forecast_dim]
+            # data[f'{mode}_dec_sig'] = dec_motion[..., self.forecast_dim:2*self.forecast_dim]
+            # data[f'{mode}_dec_rho'] = dec_motion[..., 2*self.forecast_dim:]
+            # data[f'{mode}_dec_Sig'] = self.out_module[0].covariance_matrix(sig=data[f'{mode}_dec_sig'], rho=data[f'{mode}_dec_rho'])
         if need_weights:
             data['attn_weights'] = attn_weights
 
@@ -1174,7 +1188,7 @@ class AgentFormer(nn.Module):
             sample_num = 1
             self.future_encoder(self.data)
         self.future_decoder(self.data, mode=mode, sample_num=sample_num, autoregress=True, need_weights=need_weights)
-        return self.data[f'{mode}_dec_motion'], self.data
+        return self.data[f'{mode}_dec_motion'], self.data       # [B * sample_num, P, 2], Dict
 
     def compute_loss(self):
         total_loss = 0
