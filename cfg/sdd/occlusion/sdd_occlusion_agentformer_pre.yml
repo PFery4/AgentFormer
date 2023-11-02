@@ -28,7 +28,7 @@ tf_model_dim: 256
 tf_ff_dim: 512
 tf_nhead: 8
 tf_dropout: 0.1
-input_type: ['scene_norm', 'vel']
+input_type: ['position', 'velocity']
 pred_type: 'scene_norm'
 sn_out_type: 'norm'
 max_train_agent: 32
