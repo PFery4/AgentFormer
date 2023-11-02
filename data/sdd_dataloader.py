@@ -627,11 +627,11 @@ class TorchDataGeneratorSDD(Dataset):
             predict_mask[i, pred_idx:] = True
         return predict_mask
 
-    def agent_mask(self, ids: Tensor) -> Tensor:
+    def agent_grid(self, ids: Tensor) -> Tensor:
         # ids [N]
         return torch.hstack([ids.unsqueeze(1)] * self.T_total)      # [N, T]
 
-    def timestep_mask(self, ids: Tensor) -> Tensor:
+    def timestep_grid(self, ids: Tensor) -> Tensor:
         return torch.vstack([self.timesteps] * ids.shape[0])        # [N, T]
 
     @staticmethod
@@ -649,7 +649,7 @@ class TorchDataGeneratorSDD(Dataset):
         for traj, mask, v in zip(trajs, obs_mask, vel):
             obs_indices = torch.nonzero(mask)                                                   # [Z, 1]
             motion_diff = traj[obs_indices[1:, 0], :] - traj[obs_indices[:-1, 0], :]            # [Z - 1, 2]
-            v[obs_indices[1:], :] = motion_diff / (obs_indices[1:, :] - obs_indices[:-1, :])    # [Z - 1, 2]
+            v[obs_indices[1:].squeeze(), :] = motion_diff / (obs_indices[1:, :] - obs_indices[:-1, :])    # [Z - 1, 2]
         return vel          # [N, T, 2]
 
     @staticmethod
@@ -798,7 +798,7 @@ class TorchDataGeneratorSDD(Dataset):
         probability_map = torch.nn.functional.softmax(clipped_map.view(-1), dim=0).view(clipped_map.shape)
         nlog_probability_map = -torch.nn.functional.log_softmax(clipped_map.view(-1), dim=0).view(clipped_map.shape)
 
-        return trajs, obs_mask, keep_mask, center_agent_idx, occlusion_map, dist_transformed_occlusion_map, probability_map, nlog_probability_map, scene_map.image
+        return trajs, obs_mask, last_obs_indices, keep_mask, center_agent_idx, occlusion_map, dist_transformed_occlusion_map, probability_map, nlog_probability_map, scene_map.image
 
     def __getitem__(self, idx: int) -> Dict:
         # lookup the row in the occlusion_table
@@ -847,6 +847,7 @@ class TorchDataGeneratorSDD(Dataset):
             trajs, obs_mask, center_agent_idx, scene_map_image = self.trajectory_processing_without_occlusion(
                 trajs=trajs, scene_map=scene_map, m_by_px=m_by_px
             )
+            last_obs_indices = torch.full([ids.shape[0]], self.T_obs - 1)
             keep_mask = torch.full([ids.shape[0]], True)
             tgt_idx = center_agent_idx
 
@@ -857,7 +858,7 @@ class TorchDataGeneratorSDD(Dataset):
 
         else:
             tgt_idx = torch.from_numpy(occlusion_case['target_agent_indices']).squeeze()
-            trajs, obs_mask, keep_mask, center_agent_idx,\
+            trajs, obs_mask, last_obs_indices, keep_mask, center_agent_idx,\
                 occlusion_map, dist_transformed_occlusion_map,\
                 probability_map, nlog_probability_map, scene_map_image = self.trajectory_processing_with_occlusion(
                     trajs=trajs,
@@ -886,28 +887,66 @@ class TorchDataGeneratorSDD(Dataset):
             keep_mask[keep_indices] = True
 
         # removing agent surplus
-        ids, trajs, obs_mask = ids[keep_mask], trajs[keep_mask], obs_mask[keep_mask]
+        ids = ids[keep_mask]
+        trajs = trajs[keep_mask]
+        obs_mask = obs_mask[keep_mask]
+        last_obs_indices = last_obs_indices[keep_mask]
+
+        obs_mask = obs_mask.to(torch.bool)
 
         # TODO: Implement simple random occlusion masks
         # TODO: provide velocity estimations, cv extrapolation, imputations, etc
 
+        agent_grid = self.agent_grid(ids=ids)
+        timestep_grid = self.timestep_grid(ids=ids)
+
+        obs_trajs = trajs[obs_mask, ...]
+        obs_vel = self.observed_velocity(trajs=trajs, obs_mask=obs_mask)[obs_mask, ...]
+        obs_ids = agent_grid[obs_mask, ...]
+        obs_timesteps = timestep_grid[obs_mask, ...]
+        last_obs_positions = self.last_observed_positions(trajs=trajs, last_obs_indices=last_obs_indices)
+        last_obs_timesteps = self.last_observed_timesteps(last_obs_indices=last_obs_indices)
+
+        pred_mask = self.predict_mask(last_obs_indices=last_obs_indices)
+        pred_trajs = trajs[pred_mask, ...]
+        pred_vel = self.true_velocity(trajs=trajs)[pred_mask, ...]
+        pred_ids = agent_grid[pred_mask, ...]
+        pred_timesteps = timestep_grid[pred_mask, ...]
+
         data_dict = {
             'trajectories': trajs,
+            'observation_mask': obs_mask,
+
             'identities': ids,
-            'observation_mask': obs_mask.to(torch.bool),
+            'timesteps': self.timesteps,
+
+            'obs_identity_sequence': obs_ids,
+            'obs_position_sequence': obs_trajs,
+            'obs_velocity_sequence': obs_vel,
+            'obs_timestep_sequence': obs_timesteps,
+            'last_obs_positions': last_obs_positions,
+            'last_obs_timesteps': last_obs_timesteps,
+
+            'pred_identity_sequence': pred_ids,
+            'pred_position_sequence': pred_trajs,
+            'pred_velocity_sequence': pred_vel,
+            'pred_timestep_sequence': pred_timesteps,
+
+            'scene_orig': torch.zeros([2]),
+
             'occlusion_map': occlusion_map,
             'dist_transformed_occlusion_map': dist_transformed_occlusion_map,
             'probability_occlusion_map': probability_map,
             'nlog_probability_occlusion_map': nlog_probability_map,
-            'timesteps': self.timesteps,
             'scene_map': scene_map.image,
             'map_homography': self.map_homography,
+
             'seq': f'{scene}_{video}',
             'frame': timestep
         }
 
         # visualization stuff
-        fig, ax = plt.subplots(1, 5)
+        fig, ax = plt.subplots(1, 6)
         visualize.visualize_training_instance(
             draw_ax=ax[0], instance_dict=self.temp_generator.__getitem__(idx)
         )
@@ -915,35 +954,75 @@ class TorchDataGeneratorSDD(Dataset):
         self.visualize(
             data_dict=data_dict,
             draw_ax=ax[1],
-            draw_ax_dist_transformed_map=ax[2],
-            draw_ax_probability_map=ax[3],
-            draw_ax_nlog_probability_map=ax[4]
+            draw_ax_sequences=ax[2],
+            draw_ax_dist_transformed_map=ax[3],
+            draw_ax_probability_map=ax[4],
+            draw_ax_nlog_probability_map=ax[5]
         )
         plt.show()
 
-    def visualize(
-            self,
-            data_dict: Dict,
-            draw_ax: matplotlib.axes.Axes,
-            draw_ax_dist_transformed_map: Optional[matplotlib.axes.Axes] = None,
-            draw_ax_probability_map: Optional[matplotlib.axes.Axes] = None,
-            draw_ax_nlog_probability_map: Optional[matplotlib.axes.Axes] = None
-    ) -> None:
-        scene_map_img = data_dict['scene_map']              # [C, H, W]
-        occlusion_map_img = data_dict['occlusion_map']
+        return data_dict
+
+    def visualize_sequences(self, data_dict: Dict, draw_ax: matplotlib.axes.Axes):
+        ids = data_dict['identities']
+
+        obs_ids = data_dict['obs_identity_sequence']
+        obs_trajs = data_dict['obs_position_sequence']
+        obs_vel = data_dict['obs_velocity_sequence']
+        obs_timesteps = data_dict['obs_timestep_sequence']
+        last_obs_pos = data_dict['last_obs_positions']
+
+        pred_ids = data_dict['pred_identity_sequence']
+        pred_trajs = data_dict['pred_position_sequence']
+        pred_vel = data_dict['pred_velocity_sequence']
+        pred_timesteps = data_dict['pred_timestep_sequence']
+
+        homography = data_dict['map_homography']
+
+        vel_homography = homography.clone()
+        vel_homography[:2, 2] = 0.
+
+        color = plt.cm.rainbow(np.linspace(0, 1, ids.shape[0]))
+
+        homogeneous_last_obs_pos = torch.cat((last_obs_pos, torch.ones([*last_obs_pos.shape[:-1], 1])), dim=-1).transpose(-1, -2)
+        plot_last_obs_pos = (homography @ homogeneous_last_obs_pos).transpose(-1, -2)[..., :-1]
+
+        for i, (ag_id, last_pos) in enumerate(zip(ids, plot_last_obs_pos)):
+            c = color[i].reshape(1, -1)
+            draw_ax.scatter(last_pos[0], last_pos[1], s=70, facecolors='none', edgecolors=c, alpha=0.3)
+
+        homogeneous_obs_trajs = torch.cat((obs_trajs, torch.ones([*obs_trajs.shape[:-1], 1])), dim=-1).transpose(-1, -2)
+        plot_obs_trajs = (homography @ homogeneous_obs_trajs).transpose(-1, -2)[..., :-1]
+
+        homogeneous_obs_vel = torch.cat((obs_vel, torch.ones([*obs_vel.shape[:-1], 1])), dim=-1).transpose(-1, -2)
+        plot_obs_vel = (vel_homography @ homogeneous_obs_vel).transpose(-1, -2)[..., :-1]
+
+        for i, (ag_id, pos, vel, timestep) in enumerate(zip(obs_ids, plot_obs_trajs, plot_obs_vel, obs_timesteps)):
+            c = color[np.nonzero(ids == ag_id).flatten()].reshape(1, -1)
+            s = 5 * (timestep + self.T_obs)
+            draw_ax.scatter(pos[0], pos[1], marker='x', s=5 + s, color=c)
+            old_pos = pos - vel
+            draw_ax.plot([old_pos[0], pos[0]], [old_pos[1], pos[1]], color=c, linestyle='--', alpha=0.8)
+
+        homogeneous_pred_trajs = torch.cat((pred_trajs, torch.ones([*pred_trajs.shape[:-1], 1])), dim=-1).transpose(-1, -2)
+        plot_pred_trajs = (homography @ homogeneous_pred_trajs).transpose(-1, -2)[..., :-1]
+
+        homogeneous_pred_vel = torch.cat((pred_vel, torch.ones([*pred_vel.shape[:-1], 1])), dim=-1).transpose(-1, -2)
+        plot_pred_vel = (vel_homography @ homogeneous_pred_vel).transpose(-1, -2)[..., :-1]
+
+        for i, (ag_id, pos, vel, timestep) in enumerate(zip(pred_ids, plot_pred_trajs, plot_pred_vel, pred_timesteps)):
+            c = color[np.nonzero(ids == ag_id).flatten()].reshape(1, -1)
+            s = 5 * (timestep)
+            draw_ax.scatter(pos[0], pos[1], marker='*', s=5 + s, color=c)
+            old_pos = pos - vel
+            draw_ax.plot([old_pos[0], pos[0]], [old_pos[1], pos[1]], color=c, linestyle=':', alpha=0.8)
+
+    @staticmethod
+    def visualize_trajectories(data_dict: Dict, draw_ax: matplotlib.axes.Axes) -> None:
         ids = data_dict['identities']
         trajs = data_dict['trajectories']
         obs_mask = data_dict['observation_mask']
         homography = data_dict['map_homography']
-
-        draw_ax.set_xlim(0., scene_map_img.shape[2])
-        draw_ax.set_ylim(scene_map_img.shape[1], 0.)
-        draw_ax.imshow(scene_map_img.permute(1, 2, 0))
-
-        occlusion_map_render = np.full(
-            (*occlusion_map_img.shape, 4), (1., 0, 0, 0.3)
-        ) * (~occlusion_map_img)[..., None].numpy()
-        draw_ax.imshow(occlusion_map_render)
 
         homogeneous_trajs = torch.cat((trajs, torch.ones([*trajs.shape[:-1], 1])), dim=-1).transpose(-1, -2)
         plot_trajs = (homography @ homogeneous_trajs).transpose(-1, -2)[..., :-1]
@@ -954,38 +1033,79 @@ class TorchDataGeneratorSDD(Dataset):
             draw_ax.scatter(traj[:, 0][mask], traj[:, 1][mask], marker='x', s=20, color=c)
             draw_ax.scatter(traj[:, 0][~mask], traj[:, 1][~mask], marker='*', s=20, color=c)
 
-        if draw_ax_dist_transformed_map is not None:
-            dt_occlusion_map = data_dict['dist_transformed_occlusion_map']
+    @staticmethod
+    def visualize_map(data_dict: Dict, draw_ax: matplotlib.axes.Axes) -> None:
+        scene_map_img = data_dict['scene_map']              # [C, H, W]
+        occlusion_map_img = data_dict['occlusion_map']      # [H, W]
 
-            divider = mpl_toolkits.axes_grid1.make_axes_locatable(draw_ax_dist_transformed_map)
-            colors_visible = plt.cm.Purples(np.linspace(0.5, 1, 256))
-            colors_occluded = plt.cm.Reds(np.linspace(1, 0.5, 256))
-            all_colors = np.vstack((colors_occluded, colors_visible))
-            color_map = colors.LinearSegmentedColormap.from_list('color_map', all_colors)
-            divnorm = colors.TwoSlopeNorm(
-                vmin=np.min([-1, torch.min(dt_occlusion_map)]),
-                vcenter=0.0,
-                vmax=np.max([1, torch.max(dt_occlusion_map)])
-            )
-            cax = divider.append_axes('right', size='5%', pad=0.05)
-            img = draw_ax_dist_transformed_map.imshow(dt_occlusion_map, norm=divnorm, cmap=color_map)
-            draw_ax.get_figure().colorbar(img, cax=cax, orientation='vertical')
+        draw_ax.set_xlim(0., scene_map_img.shape[2])
+        draw_ax.set_ylim(scene_map_img.shape[1], 0.)
+        draw_ax.imshow(scene_map_img.permute(1, 2, 0))
+
+        occlusion_map_render = np.full(
+            (*occlusion_map_img.shape, 4), (1., 0, 0, 0.3)
+        ) * (~occlusion_map_img)[..., None].numpy()
+        draw_ax.imshow(occlusion_map_render)
+
+    @staticmethod
+    def visualize_dist_transformed_occlusion_map(data_dict: Dict, draw_ax: matplotlib.axes.Axes) -> None:
+        dt_occlusion_map = data_dict['dist_transformed_occlusion_map']
+
+        divider = mpl_toolkits.axes_grid1.make_axes_locatable(draw_ax)
+        colors_visible = plt.cm.Purples(np.linspace(0.5, 1, 256))
+        colors_occluded = plt.cm.Reds(np.linspace(1, 0.5, 256))
+        all_colors = np.vstack((colors_occluded, colors_visible))
+        color_map = colors.LinearSegmentedColormap.from_list('color_map', all_colors)
+        divnorm = colors.TwoSlopeNorm(
+            vmin=np.min([-1, torch.min(dt_occlusion_map)]),
+            vcenter=0.0,
+            vmax=np.max([1, torch.max(dt_occlusion_map)])
+        )
+        cax = divider.append_axes('right', size='5%', pad=0.05)
+        img = draw_ax.imshow(dt_occlusion_map, norm=divnorm, cmap=color_map)
+        draw_ax.get_figure().colorbar(img, cax=cax, orientation='vertical')
+
+    @staticmethod
+    def visualize_probability_map(data_dict: Dict, draw_ax: matplotlib.axes.Axes) -> None:
+        probability_map = data_dict['probability_occlusion_map']
+
+        divider = mpl_toolkits.axes_grid1.make_axes_locatable(draw_ax)
+        cax = divider.append_axes('right', size='5%', pad=0.05)
+        img = draw_ax.imshow(probability_map, cmap='Greys')
+        draw_ax.get_figure().colorbar(img, cax=cax, orientation='vertical')
+
+    @staticmethod
+    def visualize_nlog_probability_map(data_dict: Dict, draw_ax: matplotlib.axes.Axes) -> None:
+        nlog_probability_map = data_dict['nlog_probability_occlusion_map']
+
+        divider = mpl_toolkits.axes_grid1.make_axes_locatable(draw_ax)
+        cax = divider.append_axes('right', size='5%', pad=0.05)
+        img = draw_ax.imshow(nlog_probability_map, cmap='Greys')
+        draw_ax.get_figure().colorbar(img, cax=cax, orientation='vertical')
+
+    def visualize(
+            self,
+            data_dict: Dict,
+            draw_ax: matplotlib.axes.Axes,
+            draw_ax_sequences: Optional[matplotlib.axes.Axes] = None,
+            draw_ax_dist_transformed_map: Optional[matplotlib.axes.Axes] = None,
+            draw_ax_probability_map: Optional[matplotlib.axes.Axes] = None,
+            draw_ax_nlog_probability_map: Optional[matplotlib.axes.Axes] = None
+    ) -> None:
+        self.visualize_map(data_dict=data_dict, draw_ax=draw_ax)
+        self.visualize_trajectories(data_dict=data_dict, draw_ax=draw_ax)
+        if draw_ax_sequences is not None:
+            self.visualize_map(data_dict=data_dict, draw_ax=draw_ax_sequences)
+            self.visualize_sequences(data_dict=data_dict, draw_ax=draw_ax_sequences)
+
+        if draw_ax_dist_transformed_map is not None:
+            self.visualize_dist_transformed_occlusion_map(data_dict=data_dict, draw_ax=draw_ax_dist_transformed_map)
 
         if draw_ax_probability_map is not None:
-            probability_map = data_dict['probability_occlusion_map']
-
-            divider = mpl_toolkits.axes_grid1.make_axes_locatable(draw_ax_probability_map)
-            cax = divider.append_axes('right', size='5%', pad=0.05)
-            img = draw_ax_probability_map.imshow(probability_map, cmap='Greys')
-            draw_ax.get_figure().colorbar(img, cax=cax, orientation='vertical')
+            self.visualize_probability_map(data_dict=data_dict, draw_ax=draw_ax_probability_map)
 
         if draw_ax_nlog_probability_map is not None:
-            nlog_probability_map = data_dict['nlog_probability_occlusion_map']
-
-            divider = mpl_toolkits.axes_grid1.make_axes_locatable(draw_ax_nlog_probability_map)
-            cax = divider.append_axes('right', size='5%', pad=0.05)
-            img = draw_ax_nlog_probability_map.imshow(nlog_probability_map, cmap='Greys')
-            draw_ax.get_figure().colorbar(img, cax=cax, orientation='vertical')
+            self.visualize_nlog_probability_map(data_dict=data_dict, draw_ax=draw_ax_nlog_probability_map)
 
 
 if __name__ == '__main__':
