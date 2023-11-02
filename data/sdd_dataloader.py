@@ -585,6 +585,9 @@ class TorchDataGeneratorSDD(Dataset):
         print_log(f'total num samples: {len(dataset)}', log)
         print_log("------------------------------ done --------------------------------\n", log=log)
 
+        # TODO: REMOVE THIS ONCE READY
+        torch.manual_seed(2737)
+
     def make_padded_scene_images(self):
         os.makedirs(self.padded_images_path, exist_ok=True)
         orig_sdd_dataset_path = os.path.join(self.sdd_config['dataset']['path'], 'annotations')
