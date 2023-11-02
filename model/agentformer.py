@@ -37,7 +37,7 @@ def generate_ar_mask_with_variable_agents_per_timestep(timestep_sequence: torch.
     return mask
 
 
-def generate_mask(tgt_sz: int, src_sz: int) -> torch.Tensor:
+def generate_mask(tgt_sz: int, src_sz: int, batch_size: int = 1) -> torch.Tensor:
     """
     This mask generation process is responsible for the functionality discussed in the paragraph
     "Encoding Agent Connectivity" in the original AgentFormer paper. The function presented here is modified such
@@ -47,7 +47,7 @@ def generate_mask(tgt_sz: int, src_sz: int) -> torch.Tensor:
     If you need to apply some distance thresholding for your own experiments, you will need to change
     the implementation of this function accordingly.
     """
-    return torch.zeros(tgt_sz, src_sz)
+    return torch.zeros(batch_size, tgt_sz, src_sz)
 
 
 class PositionalEncoding(nn.Module):
@@ -85,17 +85,19 @@ class PositionalEncoding(nn.Module):
         return torch.cat([self.pe[(self.timestep_window == t).squeeze(), ...] for t in sequence_timesteps], dim=0)
 
     def forward(self, x: torch.Tensor, time_tensor: torch.Tensor):
-        # x: [T, batch_size, model_dim]
-        # time_tensor: [T]
-        pos_enc = self.time_encode(time_tensor).unsqueeze(1)     # [T, 1, self.d_model]
-        # print(f"{x, x.shape=}")
-        # print(f"{pos_enc, pos_enc.shape=}")
+        # x: [B, T, model_dim]
+        # time_tensor: [B, T]
+        pos_enc = torch.stack(
+            [self.time_encode(time_sequence) for time_sequence in time_tensor], dim=0
+        )    # [B, T, model_dim]
+
         if self.concat:
-            x = torch.cat([x, pos_enc.repeat([1, x.shape[1], 1])], dim=-1)
+            x = torch.cat([x, pos_enc], dim=-1)
             x = self.fc(x)
         else:
             x += pos_enc
-        return self.dropout(x)
+
+        return self.dropout(x)      # [B, T, model_dim]
 
     @staticmethod
     def plot_positional_window(
@@ -150,61 +152,61 @@ class ContextEncoder(nn.Module):
         self.pos_encoder = PositionalEncoding(self.model_dim, dropout=self.dropout, concat=ctx['pos_concat'])
 
     def forward(self, data):
-        seq_in = []
-        for key in self.input_type:
-            if key == 'pos':
-                seq_in.append(data['pre_sequence'])
-            elif key == 'vel':
-                vel_seq = data['pre_vel_seq']
-                if self.vel_heading:
-                    # vel = rotation_2d_torch(vel, -data['heading'])[0]
-                    raise NotImplementedError("if self.vel_heading")
-                seq_in.append(vel_seq)
-            elif key in ['norm', 'heading', 'map']:
-                raise NotImplementedError(f"input type not implemented: {key}")
-            elif key == 'scene_norm':
-                # print(f"{data['pre_sequence_scene_norm'].shape=}")
-                seq_in.append(data['pre_sequence_scene_norm'])
-            else:
-                raise ValueError('unknown input_type!')
-        seq_in = torch.cat(seq_in, dim=-1)                        # [O, Features]
+        # NOTE: THIS FUNCTION IS NOT CAPABLE OF OPERATING ON BATCH SIZES != 1
 
-        tf_seq_in = self.input_fc(seq_in).view(-1, 1, self.model_dim)               # [O, 1, model_dim]
+        seq_in = [data[f'obs_{key}_sequence'] for key in self.input_type]
+        seq_in = torch.cat(seq_in, dim=-1)      # [B, O, Features]
+        tf_seq_in = self.input_fc(seq_in)       # [B, O, model_dim]
+
+        print(f"{tf_seq_in.shape=}")
 
         tf_in_pos = self.pos_encoder(
-            x=tf_seq_in,                            # [O, 1, model_dim]
-            time_tensor=data['pre_timesteps']       # [O]
-        )                                           # [O, 1, model_dim]
+            x=tf_seq_in,
+            time_tensor=data['obs_timestep_sequence']   # [B, O]
+        )                                               # [B, O, model_dim]
 
         src_mask = generate_mask(
-            data['pre_timesteps'].shape[0],
-            data['pre_timesteps'].shape[0]
-        ).to(tf_seq_in.device)        # [O, O]
+            data['obs_timestep_sequence'].shape[1],
+            data['obs_timestep_sequence'].shape[1]
+        ).to(tf_seq_in.device)        # [B, O, O]
 
-        # print(f"{tf_in_pos.shape=}")
-        # print(f"{tf_in_pos.shape=}")
-        # print(f"{type(data['global_map_encoding'])=}")
-        # print(f"{data['global_map_encoding'].shape=}")
         data['context_enc'], data['context_map'] = self.tf_encoder(
-            src=tf_in_pos,                                          # [O, 1, model_dim]
-            src_identities=data['pre_agents'].unsqueeze(1),         # [O, 1]
-            map_feature=data['global_map_encoding'],                # [1, model_dim]
-            src_mask=src_mask                                       # [O, O]
-        )                                                           # [O, 1, model_dim]
-        # print(f"{data['context_enc'].shape=}")
+            src=tf_in_pos,                                          # [B, O, model_dim]
+            src_identities=data['obs_identity_sequence'],           # [B, O]
+            map_feature=data['global_map_encoding'],                # [B, model_dim]
+            src_mask=src_mask                                       # [B, O, O]
+        )                                                           # [B, O, model_dim], [B, model_dim]
+
+        print(f"{data['context_enc'].shape, data['context_map'].shape=}")
 
         # compute per agent context
         # print(f"{self.pooling=}")
         if self.pooling == 'mean':
-            data['agent_context'] = torch.cat(
-                [torch.mean(data['context_enc'][data['pre_agents'] == ag_id, ...], dim=0)
-                 for ag_id in torch.unique(data['pre_agents'])], dim=0
-            )       # [N, model_dim]
+
+            agent_contexts = []
+            for context_seq, identities in zip(data['context_enc'], data['obs_identity_sequence']):
+                print(f"{torch.unique(identities), torch.unique(identities).shape}")
+                agent_contexts.append(
+                    torch.stack(
+                        [torch.mean(context_seq[identities == ag_id, ...], dim=0)
+                         for ag_id in torch.unique(identities)], dim=0
+                    )
+                )
+            data['agent_context'] = torch.stack(agent_contexts)     # [B, N, model_dim]
+            print(f"{data['agent_context'].shape=}")
+
         else:
-            data['agent_context'] = torch.cat(
-                [torch.max(data['context_enc'][data['pre_agents'] == ag_id, :], dim=0)[0]
-                 for ag_id in torch.unique(data['pre_agents'])], dim=0
-            )       # [N, model_dim]
+
+            agent_contexts = []
+            for context_seq, identities in zip(data['context_seq'], data['obs_identity_sequence']):
+                agent_contexts.append(
+                    torch.stack(
+                        [torch.max(context_seq[identities == ag_id, ...])
+                         for ag_id in torch.unique(identities)], dim=0
+                    )
+                )
+            data['agent_context'] = torch.stack(agent_contexts)     # [B, N, model_dim]
+            print(f"{data['agent_context'].shape=}")
 
 
 class FutureEncoder(nn.Module):
@@ -254,66 +256,93 @@ class FutureEncoder(nn.Module):
         initialize_weights(self.q_z_net.modules())
 
     def forward(self, data):
-        seq_in = []
-        for key in self.input_type:
-            if key == 'pos':
-                seq_in.append(data['fut_sequence'])
-            elif key == 'vel':
-                vel_seq = data['fut_vel_seq']
-                if self.vel_heading:
-                    # vel = rotation_2d_torch(vel, -data['heading'])[0]
-                    raise NotImplementedError("if self.vel_heading")
-                seq_in.append(vel_seq)
-            elif key in ['norm', 'heading', 'map']:
-                raise NotImplementedError(f"input type not implemented: {key}")
-            elif key == 'scene_norm':
-                seq_in.append(data['fut_sequence_scene_norm'])
-            else:
-                raise ValueError('unknown input_type!')
-        seq_in = torch.cat(seq_in, dim=-1)      # [P, Features]
+        # NOTE: THIS FUNCTION IS NOT CAPABLE OF OPERATING ON BATCH SIZES != 1
 
-        tf_seq_in = self.input_fc(seq_in).view(-1, 1, self.model_dim)       # [P, 1, model_dim]
+        seq_in = [data[f'pred_{key}_sequence'] for key in self.input_type]
+        seq_in = torch.cat(seq_in, dim=-1)      # [B, P, Features]
+        tf_seq_in = self.input_fc(seq_in)       # [B, P, model_dim]
+        print(f"{tf_seq_in.shape=}")
 
         tf_in_pos = self.pos_encoder(
-            x=tf_seq_in,                            # [P, 1, model_dim]
-            time_tensor=data['fut_timesteps']       # [P]
-        )                                           # [P, 1, model_dim]
+            x=tf_seq_in,
+            time_tensor=data['pred_timestep_sequence']      # [B, P]
+        )                                                   # [B, P, model_dim]
+        print(f"{tf_in_pos.shape=}")
 
-        mem_mask = generate_mask(data['fut_timesteps'].shape[0], data['pre_timesteps'].shape[0]).to(tf_seq_in.device)
-        tgt_mask = generate_mask(data['fut_timesteps'].shape[0], data['fut_timesteps'].shape[0]).to(tf_seq_in.device)
+        mem_mask = generate_mask(
+            data['pred_timestep_sequence'].shape[1],
+            data['obs_timestep_sequence'].shape[1]
+        ).to(tf_seq_in.device)          # [B, P, O]
+        tgt_mask = generate_mask(
+            data['pred_timestep_sequence'].shape[1],
+            data['pred_timestep_sequence'].shape[1]
+        ).to(tf_seq_in.device)          # [B, P, P]
 
-        # print(f"{data['global_map_encoding'].shape=}")
-        # print(f"{data['context_map'].shape=}")
+        print(f"{mem_mask.shape, tgt_mask.shape=}")
+        print(f"{data['global_map_encoding'].shape=}")
+        print(f"{data['context_map'].shape=}")
+
         tf_out, map_out, _ = self.tf_decoder(
-            tgt=tf_in_pos,                                          # [P, 1, model_dim]
-            memory=data['context_enc'],                             # [O, 1, model_dim]
-            tgt_identities=data['fut_agents'].unsqueeze(1),         # [P, 1]
-            mem_identities=data['pre_agents'].unsqueeze(1),         # [O, 1]
-            tgt_map=data['global_map_encoding'],                    # [1, model_dim]
-            mem_map=data['context_map'],                            # [1, model_dim]
-            tgt_mask=tgt_mask,                                      # [P, P]
-            memory_mask=mem_mask,                                   # [P, O]
-        )                                                           # [P, 1, model_dim]
-        # TODO: EVALUATE WHAT TO DO / WHAT IS DONE WITH MAP_OUT
+            tgt=tf_in_pos,                                          # [B, P, model_dim]
+            memory=data['context_enc'],                             # [B, O, model_dim]
+            tgt_identities=data['pred_identity_sequence'],          # [B, P]
+            mem_identities=data['obs_identity_sequence'],           # [B, O]
+            tgt_map=data['global_map_encoding'],                    # [B, model_dim]
+            mem_map=data['context_map'],                            # [B, model_dim]
+            tgt_mask=tgt_mask,                                      # [B, P, P]
+            memory_mask=mem_mask,                                   # [B, P, O]
+        )                                                           # [B, P, model_dim], [B, model_dim]
 
+        print(f"{tf_out.shape, map_out.shape=}")
+        print(f"{self.pooling=}")
         if self.pooling == 'mean':
-            h = torch.cat(
-                [torch.mean(tf_out[data['fut_agents'] == ag_id, :], dim=0)
-                 for ag_id in torch.unique(data['fut_agents'])], dim=0
-            )       # [N, model_dim]
+
+            h = []
+            for feature_seq, identities in zip(tf_out, data['pred_identity_sequence']):
+                print(f"{torch.unique(identities), torch.unique(identities).shape=}")
+                h.append(
+                    torch.stack(
+                        [torch.mean(feature_seq[identities == ag_id, ...], dim=0)
+                         for ag_id in torch.unique(identities)], dim=0
+                    )
+                )
+            h = torch.stack(h)      # [B, N, model_dim]
+
+            print(f"{h.shape=}")
+
+            # h = torch.cat(
+            #     [torch.mean(tf_out[data['fut_agents'] == ag_id, :], dim=0)
+            #      for ag_id in torch.unique(data['fut_agents'])], dim=0
+            # )       # [N, model_dim]
         else:
-            h = torch.cat(
-                [torch.max(tf_out[data['fut_agents'] == ag_id, :], dim=0)[0]
-                 for ag_id in torch.unique(data['fut_agents'])], dim=0
-            )       # [N, model_dim]
+
+            h = []
+            for feature_seq, identities in zip(tf_out, data['pred_identity_sequence']):
+                print(f"{torch.unique(identities), torch.unique(identities).shape=}")
+                h.append(
+                    torch.stack(
+                        [torch.mean(feature_seq[identities == ag_id, ...])
+                         for ag_id in torch.unique(identities)], dim=0
+                    )
+                )
+            h = torch.stack(h)      # [B, N, model_dim]
+
+            print(f"{h.shape=}")
+            # h = torch.cat(
+            #     [torch.max(tf_out[data['fut_agents'] == ag_id, :], dim=0)[0]
+            #      for ag_id in torch.unique(data['fut_agents'])], dim=0
+            # )       # [N, model_dim]
         if self.out_mlp_dim is not None:
             h = self.out_mlp(h)
-        q_z_params = self.q_z_net(h)
+        q_z_params = self.q_z_net(h)        # [B, N, nz (*2 if self.z_type == gaussian)]
+
+        print(f"{q_z_params.shape=}")
+        print(f"{self.z_type=}")
         if self.z_type == 'gaussian':
             data['q_z_dist'] = Normal(params=q_z_params)
         else:
             data['q_z_dist'] = Categorical(logits=q_z_params, temp=self.z_tau_annealer.val())
-        data['q_z_samp'] = data['q_z_dist'].rsample()
+        data['q_z_samp'] = data['q_z_dist'].rsample()       # [B, N, nz]
 
 
 class FutureDecoder(nn.Module):
@@ -518,22 +547,10 @@ class FutureDecoder(nn.Module):
 
     def decode_traj_ar(self, data, mode, context, z, sample_num, need_weights=False):
         # retrieving the most recent observation for each agent
-        # print(f"{self.pred_type=}")
-        if self.pred_type == 'scene_norm':
-            # dec_in = pre_motion_scene_norm[[-1]]  # [1, sample_num * N, 2]
-            # print(f"{pre_motion_scene_norm.shape=}")
-            # print(f"{pre_motion_scene_norm[[0]], pre_motion_scene_norm[[0]].shape=}")
-            # print(f"{pre_motion_scene_norm[[-1]], pre_motion_scene_norm[[-1]].shape=}")
-            # print(f"{data['cur_motion_scene_norm'], data['cur_motion_scene_norm'].shape=}")
-            dec_in = data['cur_motion_scene_norm'].repeat_interleave(sample_num, dim=1)     # [1, sample_num * N, 2]
-        else:
-            # dec_in = torch.zeros_like(pre_motion[[-1]])
-            raise NotImplementedError
-        # print(f"{dec_in, dec_in.shape=}")
-        dec_in = dec_in.view(-1, sample_num, dec_in.shape[-1])      # [N, sample_num, 2]
-        # print(f"{dec_in, dec_in.shape=}")
-        # print(f"{dec_in[:, 0, :]=}")
-        # print(f"{self.pred_mode=}")
+        dec_in = data['last_obs_positions'].repeat(sample_num, 1, 1)     # [B * sample_num, N, 2]
+        print(f"{dec_in.shape=}")
+
+        print(f"{self.pred_mode=}")
         if self.pred_mode == "gauss":
             dist_params = torch.zeros([*dec_in.shape[:-1], self.out_module[0].N_params]).to(dec_in.device)
             dist_params[..., :self.forecast_dim] = dec_in
@@ -543,28 +560,33 @@ class FutureDecoder(nn.Module):
         # print(f"{data['pre_timesteps']=}")
         # print(f"{data['last_observed_timesteps']=}")
 
-        z_in = z.view(-1, sample_num, z.shape[-1])          # [N, sample_num, nz]
-        in_arr = [dec_in, z_in]
-        for key in self.input_type:
-            if key == 'heading':
-                # heading = data['heading_vec'].unsqueeze(1).repeat((1, sample_num, 1))
-                # in_arr.append(heading)
-                raise NotImplementedError("if key == 'heading'")
-            elif key == 'map':
-                # map_enc = data['map_enc'].unsqueeze(1).repeat((1, sample_num, 1))
-                # in_arr.append(map_enc)
-                raise NotImplementedError("if key == 'map'")
-            else:
-                raise ValueError('wrong decode input type!')
-        dec_in_z = torch.cat(in_arr, dim=-1)        # [N, sample_num, nz + 2]
-        # print(f"{dec_in_z.shape=}")
+        # z: [B * sample_num, N, nz]
+        in_arr = [dec_in, z]
+        # print(f"{self.input_type=}")
+        # for key in self.input_type:
+        #     if key == 'heading':
+        #         # heading = data['heading_vec'].unsqueeze(1).repeat((1, sample_num, 1))
+        #         # in_arr.append(heading)
+        #         raise NotImplementedError("if key == 'heading'")
+        #     elif key == 'map':
+        #         # map_enc = data['map_enc'].unsqueeze(1).repeat((1, sample_num, 1))
+        #         # in_arr.append(map_enc)
+        #         raise NotImplementedError("if key == 'map'")
+        #     else:
+        #         raise ValueError('wrong decode input type!')
+        dec_in_z = torch.cat(in_arr, dim=-1)        # [B * sample_num, N, nz + 2]
+        print(f"{dec_in_z.shape=}")
 
-        # print(f"{data['last_observed_timesteps']=}")
 
-        catch_up_timestep_sequence = data['last_observed_timesteps'].detach().clone()                   # [N]
-        starting_seq_indices = (catch_up_timestep_sequence == torch.min(catch_up_timestep_sequence))    # [*~N] (subset)
+        print(f"{data['last_obs_timesteps'].shape=}")
+        catch_up_timestep_sequence = data['last_observed_timesteps'].detach().clone()                           # [B, N]
+        starting_seq_indices = (catch_up_timestep_sequence == torch.min(catch_up_timestep_sequence, dim=1)[0])  # [B, N]
 
-        timestep_sequence = catch_up_timestep_sequence[starting_seq_indices].to(dec_in.device)          # [*~N] == [B]
+        print(f"{starting_seq_indices, starting_seq_indices.shape=}")
+
+        # TODO: HERE HERE
+        raise NotImplementedError
+        timestep_sequence = catch_up_timestep_sequence[starting_seq_indices].to(dec_in.device)          # [⊆N] == [B]
         agent_sequence = data['valid_id'][starting_seq_indices].detach().clone()    # [B]
         dec_input_sequence = dec_in_z[starting_seq_indices, ...].detach().clone()   # [B, sample_num, nz + 2]
 
@@ -664,13 +686,17 @@ class FutureDecoder(nn.Module):
             data['attn_weights'] = attn_weights
 
     def forward(self, data, mode, sample_num=1, autoregress=True, z=None, need_weights=False):
-        context = data['context_enc'].repeat_interleave(sample_num, dim=1)       # [O, sample_num * model_dim]
+        context = data['context_enc'].repeat(sample_num, 1, 1)       # [B * sample_num, O, model_dim]
+
+        print(f"{context.shape=}")
 
         # p(z)
         prior_key = 'p_z_dist' + ('_infer' if mode == 'infer' else '')
+        print(f"{self.learn_prior, self.z_type=}")
         if self.learn_prior:
-            h = data['agent_context'].repeat_interleave(sample_num, dim=0)
-            p_z_params = self.p_z_net(h)
+            h = data['agent_context'].repeat(sample_num, 1, 1)      # [B * sample_num, N, model_dim]
+            p_z_params = self.p_z_net(h)                            # [B * sample_num, N, nz (*2 if self.z_type == gaussian)]
+            print(f"{p_z_params.shape=}")
             if self.z_type == 'gaussian':
                 data[prior_key] = Normal(params=p_z_params)
             else:
@@ -678,21 +704,25 @@ class FutureDecoder(nn.Module):
         else:
             if self.z_type == 'gaussian':
                 data[prior_key] = Normal(
-                    mu=torch.zeros(sample_num * data['agent_num'], self.nz).to(data['context_enc'].device),
-                    logvar=torch.zeros(sample_num * data['agent_num'], self.nz).to(data['context_enc'].device)
+                    mu=torch.zeros(context.shape[0], data['agent_num'], self.nz).to(data['context_enc'].device),
+                    logvar=torch.zeros(context.shape[0], data['agent_num'], self.nz).to(data['context_enc'].device)
                 )
             else:
                 data[prior_key] = Categorical(
-                    logits=torch.zeros(sample_num * data['agent_num'], self.nz).to(data['context_enc'].device)
+                    logits=torch.zeros(context.shape[0], data['agent_num'], self.nz).to(data['context_enc'].device)
                 )
 
+        print(f"{z is None=}")
+        print(f"{mode=}")
         if z is None:
             if mode in {'train', 'recon'}:
-                z = data['q_z_samp'] if mode == 'train' else data['q_z_dist'].mode()
+                z = data['q_z_samp'] if mode == 'train' else data['q_z_dist'].mode()    # [B, N, nz]
             elif mode == 'infer':
-                z = data['p_z_dist_infer'].sample()
+                z = data['p_z_dist_infer'].sample()         # [B * sample_num, N, nz]
             else:
                 raise ValueError('Unknown Mode!')
+
+        print(f"{z.shape=}")
 
         # print(f"{z.shape=}")
         if autoregress:
@@ -787,94 +817,143 @@ class AgentFormer(nn.Module):
         self.to(device)
 
     def set_data(self, data: dict) -> None:
-        # TODO: DO NOT RECENTER, USE ONLY THE TRAJ DATA AS IT IS PROVIDED BY THE DATALOADER
-        # TODO: MOVE ALL PREPROCESSING TO THE DATALOADER CLASS
+        # NOTE: in our case, batch size B is always 1
 
         self.data = defaultdict(lambda: None)
-        self.data['valid_id'] = data['valid_id'].detach().clone().to(self.device).to(int)       # [N]
-        self.data['T_total'] = len(data['timesteps'])                                           # int: T_total
-        self.data['batch_size'] = len(self.data['valid_id'])                                    # int: N
-        self.data['agent_num'] = len(self.data['valid_id'])                                     # int: N
-        self.data['timesteps'] = data['timesteps'].detach().clone().to(self.device)             # [T_total]
-        full_motion = data['full_motion_3D'].\
-            to(self.device).to(dtype=torch.float32).transpose(0, 1).contiguous()                # [T_total, N, 2]
 
-        obs_mask = data['obs_mask'].\
-            to(self.device).to(dtype=torch.bool).transpose(0, 1).contiguous()                   # [T_total, N]
-        last_observed_timestep_indices = torch.stack(
-            [mask.nonzero().flatten()[-1] for mask in data['obs_mask']]
-        ).to(self.device)                                                                       # [N]
-        last_observed_pos = full_motion[last_observed_timestep_indices, torch.arange(full_motion.size(1))]  # [N, 2]
-        timesteps_to_predict = torch.stack(
-            [torch.cat(
-                (torch.full([int(last_obs + 1)], False),
-                 torch.full([int(self.data['T_total'] - (last_obs + 1))], True))
-            ) for last_obs in last_observed_timestep_indices], dim=0
-        ).transpose(0, 1)                                                           # [T_total, N]
+        self.data['valid_id'] = data['identities'].detach().clone().to(self.device)     # [B, N]
+        self.data['T_total'] = data['timesteps'].shape[0]
+        self.data['agent_num'] = self.data['valid_id'].shape[0]
+        self.data['timesteps'] = data['timesteps'].detach().clone().to(self.device)     # [B, T]
+        self.data['scene_orig'] = data['scene_orig'].detach().clone().to(self.device)   # [B, 2]
 
-        full_agent_mask = self.data['valid_id'].repeat(self.data['T_total'], 1)                         # [T_total, N]
-        full_timestep_mask = self.data['timesteps'].view(-1, 1).repeat(1, self.data['agent_num'])       # [T_total, N]
+        self.data['obs_position_sequence'] = data['obs_position_sequence'].detach().clone().to(self.device)     # [B, O, 2]
+        self.data['obs_velocity_sequence'] = data['obs_velocity_sequence'].detach().clone().to(self.device)     # [B, O, 2]
+        self.data['obs_timestep_sequence'] = data['obs_timestep_sequence'].detach().clone().to(self.device)     # [B, O]
+        self.data['obs_identity_sequence'] = data['obs_identity_sequence'].detach().clone().to(self.device)     # [B, O]
+        self.data['last_obs_positions'] = data['last_obs_positions'].detach().clone().to(self.device)               # [B, N, 2]
+        self.data['last_obs_timesteps'] = data['last_obs_timesteps'].detach().clone().to(self.device)               # [B, N]
+        self.data['agent_mask'] = torch.zeros([1, self.data['agent_num'], self.data['agent_num']]).to(self.device)  # [B, N, N]
 
-        self.data['last_observed_timesteps'] = torch.stack(
-            [self.data['timesteps'][last_obs] for last_obs in last_observed_timestep_indices], dim=0
-        ).to(self.device)        # [N]
-        # print(f"{self.data['timesteps']=}")
-        # print(f"{self.data['last_observed_timesteps']=}")
+        self.data['pred_position_sequence'] = data['pred_position_sequence'].detach().clone().to(self.device)       # [B, P, 2]
+        self.data['pred_velocity_sequence'] = data['pred_velocity_sequence'].detach().clone().to(self.device)       # [B, P, 2]
+        self.data['pred_timestep_sequence'] = data['pred_timestep_sequence'].detach().clone().to(self.device)       # [B, P]
+        self.data['pred_identity_sequence'] = data['pred_identity_sequence'].detach().clone().to(self.device)       # [B, P]
+
+        self.data['scene_map'] = data['scene_map'].detach().clone().to(self.device)             # [B, C, H, W]
+        self.data['occlusion_map'] = data['dist_transformed_occlusion_map'].detach().clone().to(self.device)    # [B, H, W]
+
+        self.data['nlog_probability_occlusion_map'] = data['nlog_probability_occlusion_map'].detach().clone().to(self.device)   # [B, H, W]
+        self.data['combined_map'] = torch.cat((self.data['scene_map'], self.data['occlusion_map'].unsqueeze(1)), dim=1)     # [B, C + 1, H, W]
+        self.data['map_homography'] = data['map_homography'].detach().clone().to(self.device)        # [B, 3, 3]
+
+        # print(f"{self.data['valid_id'], self.data['valid_id'].shape=}")
+        # print(f"{self.data['timesteps'], self.data['timesteps'].shape=}")
+        # print(f"{self.data['scene_orig'], self.data['scene_orig'].shape=}")
+        # print(f"{self.data['obs_position_sequence'].shape, self.data['obs_position_sequence'].dtype=}")
+        # print(f"{self.data['obs_velocity_sequence'].shape, self.data['obs_velocity_sequence'].dtype=}")
+        # print(f"{self.data['obs_timestep_sequence'].shape, self.data['obs_timestep_sequence'].dtype=}")
+        # print(f"{self.data['obs_identity_sequence'].shape, self.data['obs_identity_sequence'].dtype=}")
+        # print(f"{self.data['last_obs_positions'].shape, self.data['last_obs_positions'].dtype=}")
+        # print(f"{self.data['agent_mask'].shape, self.data['agent_mask'].dtype=}")
+        # print(f"{self.data['pred_position_sequence'].shape, self.data['pred_position_sequence'].dtype=}")
+        # print(f"{self.data['pred_velocity_sequence'].shape, self.data['pred_velocity_sequence'].dtype=}")
+        # print(f"{self.data['pred_timestep_sequence'].shape, self.data['pred_timestep_sequence'].dtype=}")
+        # print(f"{self.data['pred_identity_sequence'].shape, self.data['pred_identity_sequence'].dtype=}")
+        # print(f"{self.data['scene_map'].shape, self.data['scene_map'].dtype=}")
+        # print(f"{self.data['occlusion_map'].shape, self.data['occlusion_map'].dtype=}")
+        # print(f"{self.data['nlog_probability_occlusion_map'].shape, self.data['nlog_probability_occlusion_map'].dtype=}")
+        # print(f"{self.data['combined_map'].shape, self.data['combined_map'].dtype, self.data['combined_map'].device=}")
+        # print(f"{self.data['map_homography'].shape, self.data['map_homography'].dtype=}")
+
+        # REWORK LINE #####################################################
+        # self.data['valid_id'] = data['valid_id'].detach().clone().to(self.device).to(int)       # [N]
+        # self.data['T_total'] = len(data['timesteps'])                                           # int: T_total
+        # self.data['batch_size'] = len(self.data['valid_id'])                                    # int: N
+        # self.data['agent_num'] = len(self.data['valid_id'])                                     # int: N
+        # self.data['timesteps'] = data['timesteps'].detach().clone().to(self.device)             # [T_total]
+        # full_motion = data['trajectories'].\
+        #     to(self.device).to(dtype=torch.float32).transpose(0, 1).contiguous()                # [T_total, N, 2]
+        #
+        # obs_mask = data['observation_mask'].\
+        #     to(self.device).to(dtype=torch.bool).transpose(0, 1).contiguous()                   # [T_total, N]
+        #
+        # print(f"{full_motion.shape=}")
+        # print(f"{obs_mask.shape=}")
+        #
+        # last_observed_timestep_indices = torch.stack(
+        #     [mask.nonzero().flatten()[-1] for mask in data['observation_mask']]
+        # ).to(self.device)                                                                       # [N]
+        # last_observed_pos = full_motion[last_observed_timestep_indices, torch.arange(full_motion.size(1))]  # [N, 2]
+        # timesteps_to_predict = torch.stack(
+        #     [torch.cat(
+        #         (torch.full([int(last_obs + 1)], False),
+        #          torch.full([int(self.data['T_total'] - (last_obs + 1))], True))
+        #     ) for last_obs in last_observed_timestep_indices], dim=0
+        # ).transpose(0, 1)                                                           # [T_total, N]
+        #
+        # full_agent_mask = self.data['valid_id'].repeat(self.data['T_total'], 1)                         # [T_total, N]
+        # full_timestep_mask = self.data['timesteps'].view(-1, 1).repeat(1, self.data['agent_num'])       # [T_total, N]
+        #
+        # self.data['last_observed_timesteps'] = torch.stack(
+        #     [self.data['timesteps'][last_obs] for last_obs in last_observed_timestep_indices], dim=0
+        # ).to(self.device)        # [N]
+        #
         # print(f"{timesteps_to_predict=}")
         # print(f"{full_agent_mask=}")
         # print(f"{full_timestep_mask=}")
-
-        # define the scene origin
-        if self.scene_orig_all_past:
-            scene_orig = full_motion[obs_mask].mean(dim=0).contiguous()           # [2]
-        else:
-            scene_orig = last_observed_pos.mean(dim=0).contiguous()               # [2]
-
-        self.data['scene_orig'] = scene_orig.to(self.device)
-
-        full_motion_scene_norm = full_motion - scene_orig
-
-        # print(f"{torch.max(torch.linalg.norm(full_motion_scene_norm, dim=-1))=}")
-
-        # create past and future tensors
-        self.data['pre_sequence'] = full_motion[obs_mask, ...].clone().detach()          # [O, 2], where O is equal to sum(obs_mask)
-        self.data['pre_sequence_scene_norm'] = full_motion_scene_norm[obs_mask, ...].clone().detach()        # [O, 2]
-        self.data['pre_agents'] = full_agent_mask[obs_mask].clone().detach()                                 # [O]
-        self.data['pre_timesteps'] = full_timestep_mask[obs_mask].clone().detach()                           # [O]
-
-        self.data['fut_sequence'] = full_motion[timesteps_to_predict, ...].clone().detach()          # [P, 2], where P equals sum(timesteps_to_predict)
-        self.data['fut_sequence_scene_norm'] = full_motion_scene_norm[timesteps_to_predict, ...].clone().detach()        # [P, 2]
-        self.data['fut_agents'] = full_agent_mask[timesteps_to_predict].clone().detach()                                 # [P]
-        self.data['fut_timesteps'] = full_timestep_mask[timesteps_to_predict].clone().detach()                           # [P]
-
-        pre_vel_seq = torch.full_like(full_motion, float('nan')).to(self.device)                    # [T_total, N, 2]
-        for agent_i in range(self.data['agent_num']):
-            obs_indices = torch.nonzero(obs_mask[:, agent_i]).squeeze()
-
-            # no information about velocity for the first observation: assume zero velocity
-            pre_vel_seq[obs_indices[0], agent_i, :] = 0
-
-            # impute velocities for subsequent timesteps by position differentiation
-            # (normalizing by timestep gap for cases of occlusion)
-            motion_diff = full_motion[obs_indices[1:], agent_i, :] - full_motion[obs_indices[:-1], agent_i, :]
-            pre_vel_seq[obs_indices[1:], agent_i, :] = motion_diff / (obs_indices[1:] - obs_indices[:-1]).unsqueeze(1)
-
-        self.data['pre_vel_seq'] = pre_vel_seq[obs_mask, ...]                       # [O, 2]
-        assert not torch.any(torch.isnan(self.data['pre_vel_seq']))
-
-        full_vel = torch.full_like(full_motion, float('nan')).to(self.device)                        # [T_total, N, 2]
-        full_vel[1:, ...] = full_motion[1:, ...] - full_motion[:-1, ...]
-        self.data['fut_vel_seq'] = full_vel[timesteps_to_predict, ...]              # [P, 2]
-        assert not torch.any(torch.isnan(self.data['fut_vel_seq']))
-
-        # create tensors for the last observed position of each agent
-        cur_motion = full_motion[last_observed_timestep_indices, torch.arange(self.data['agent_num'])].unsqueeze(0)      # [1, N, 2]
-        self.data['cur_motion'] = cur_motion.to(self.device)
-        cur_motion_scene_norm = full_motion_scene_norm[last_observed_timestep_indices, torch.arange(self.data['agent_num'])].unsqueeze(0)
-        self.data['cur_motion_scene_norm'] = cur_motion_scene_norm.to(self.device)                   # [1, N, 2]
-
-        print(f"{self.data['cur_motion'], self.data['cur_motion_scene_norm']=}")
-        raise NotImplementedError
+        #
+        # # define the scene origin
+        # if self.scene_orig_all_past:
+        #     scene_orig = full_motion[obs_mask].mean(dim=0).contiguous()           # [2]
+        # else:
+        #     scene_orig = last_observed_pos.mean(dim=0).contiguous()               # [2]
+        #
+        # self.data['scene_orig'] = scene_orig.to(self.device)
+        #
+        # full_motion_scene_norm = full_motion - scene_orig
+        #
+        # # print(f"{torch.max(torch.linalg.norm(full_motion_scene_norm, dim=-1))=}")
+        #
+        # # create past and future tensors
+        # self.data['pre_sequence'] = full_motion[obs_mask, ...].clone().detach()          # [O, 2], where O is equal to sum(obs_mask)
+        # self.data['pre_sequence_scene_norm'] = full_motion_scene_norm[obs_mask, ...].clone().detach()        # [O, 2]
+        # self.data['pre_agents'] = full_agent_mask[obs_mask].clone().detach()                                 # [O]
+        # self.data['pre_timesteps'] = full_timestep_mask[obs_mask].clone().detach()                           # [O]
+        #
+        # self.data['fut_sequence'] = full_motion[timesteps_to_predict, ...].clone().detach()          # [P, 2], where P equals sum(timesteps_to_predict)
+        # self.data['fut_sequence_scene_norm'] = full_motion_scene_norm[timesteps_to_predict, ...].clone().detach()        # [P, 2]
+        # self.data['fut_agents'] = full_agent_mask[timesteps_to_predict].clone().detach()                                 # [P]
+        # self.data['fut_timesteps'] = full_timestep_mask[timesteps_to_predict].clone().detach()                           # [P]
+        #
+        # pre_vel_seq = torch.full_like(full_motion, float('nan')).to(self.device)                    # [T_total, N, 2]
+        # for agent_i in range(self.data['agent_num']):
+        #     obs_indices = torch.nonzero(obs_mask[:, agent_i]).squeeze()
+        #
+        #     # no information about velocity for the first observation: assume zero velocity
+        #     pre_vel_seq[obs_indices[0], agent_i, :] = 0
+        #
+        #     # impute velocities for subsequent timesteps by position differentiation
+        #     # (normalizing by timestep gap for cases of occlusion)
+        #     motion_diff = full_motion[obs_indices[1:], agent_i, :] - full_motion[obs_indices[:-1], agent_i, :]
+        #     pre_vel_seq[obs_indices[1:], agent_i, :] = motion_diff / (obs_indices[1:] - obs_indices[:-1]).unsqueeze(1)
+        #
+        # self.data['pre_vel_seq'] = pre_vel_seq[obs_mask, ...]                       # [O, 2]
+        # assert not torch.any(torch.isnan(self.data['pre_vel_seq']))
+        #
+        # full_vel = torch.full_like(full_motion, float('nan')).to(self.device)                        # [T_total, N, 2]
+        # full_vel[1:, ...] = full_motion[1:, ...] - full_motion[:-1, ...]
+        # self.data['fut_vel_seq'] = full_vel[timesteps_to_predict, ...]              # [P, 2]
+        # assert not torch.any(torch.isnan(self.data['fut_vel_seq']))
+        #
+        # # create tensors for the last observed position of each agent
+        # cur_motion = full_motion[last_observed_timestep_indices, torch.arange(self.data['agent_num'])].unsqueeze(0)      # [1, N, 2]
+        # self.data['cur_motion'] = cur_motion.to(self.device)
+        # cur_motion_scene_norm = full_motion_scene_norm[last_observed_timestep_indices, torch.arange(self.data['agent_num'])].unsqueeze(0)
+        # self.data['cur_motion_scene_norm'] = cur_motion_scene_norm.to(self.device)                   # [1, N, 2]
+        #
+        # print(f"{self.data['cur_motion'], self.data['cur_motion_scene_norm']=}")
+        # raise NotImplementedError
 
         # # NOTE: heading does not follow the occlusion pattern
         # if in_data['heading'] is not None:
@@ -897,167 +976,167 @@ class AgentFormer(nn.Module):
         #         rot = -np.array(in_data['heading']) * (180 / np.pi)
         #     self.data['agent_maps'] = scene_map.get_cropped_maps(scene_points, patch_size, rot).to(self.device)      # [N, 3, 100, 100]
 
-        # global scene map
-        # self.data['global_map'] = torch.from_numpy(data['scene_map'].data).to(self.device)
-        self.data['scene_map'] = data['scene_map']
-        self.data['global_map'] = torch.from_numpy(data['scene_map'].data.transpose(0, 2, 1)).to(self.device)
-        # occlusion map
-        self.data['occlusion_map'] = data['occlusion_map'].detach().clone().to(self.device)
-        self.data['min_log_p_occl_map'] = data['min_log_p_occl_map'].detach().clone().to(self.device)
+        # # global scene map
+        # # self.data['global_map'] = torch.from_numpy(data['scene_map'].data).to(self.device)
+        # self.data['scene_map'] = data['scene_map']
+        # self.data['global_map'] = torch.from_numpy(data['scene_map'].data.transpose(0, 2, 1)).to(self.device)
+        # # occlusion map
+        # self.data['occlusion_map'] = data['occlusion_map'].detach().clone().to(self.device)
+        # self.data['min_log_p_occl_map'] = data['min_log_p_occl_map'].detach().clone().to(self.device)
+        #
+        # self.data['combined_map'] = torch.cat((self.data['global_map'], self.data['occlusion_map'].unsqueeze(0))).to(torch.float32)
+        # print(f"{self.data['combined_map'], self.data['combined_map'].shape=}")
+        #
+        # self.data['dt_occlusion_map'] = data['dt_occlusion_map'].detach().clone().to(self.device)
+        # self.data['p_occl_map'] = data['p_occl_map'].detach().clone().to(self.device)
+        #
+        # mask = torch.zeros([self.data['agent_num'], self.data['agent_num']]).to(self.device)
+        # self.data['agent_mask'] = mask          # [N, N]
+        #
+        # self.visualize_data_dict()
 
-        self.data['combined_map'] = torch.cat((self.data['global_map'], self.data['occlusion_map'].unsqueeze(0))).to(torch.float32)
-        print(f"{self.data['combined_map'], self.data['combined_map'].shape=}")
-
-        self.data['dt_occlusion_map'] = data['dt_occlusion_map'].detach().clone().to(self.device)
-        self.data['p_occl_map'] = data['p_occl_map'].detach().clone().to(self.device)
-
-        mask = torch.zeros([self.data['agent_num'], self.data['agent_num']]).to(self.device)
-        self.data['agent_mask'] = mask          # [N, N]
-
-        self.visualize_data_dict()
-
-    def visualize_data_dict(self, show: bool = True):
-        # TODO: there are a few things to fix in this data visualization function
-
-        [print(f"{k}: {type(v)}") for k, v in self.data.items()]
-        print()
-
-        # High level metadata
-        print(f"{self.data['T_total']=}")
-        print(f"{self.data['batch_size']=}")
-        print(f"{self.data['agent_num']=}")
-        print()
-
-        # Multi-Agent sequence relevant data
-        print(f"{self.data['timesteps']=}")
-        print(f"{self.data['valid_id']=}")
-        print()
-
-        # Geometric data
-        print(f"{self.data['scene_orig']=}")
-        print(f"{self.data['scene_map']=}")
-
-        # Trajectory data
-        # print(f"{self.data['pre_sequence']=}")
-        # print(f"{self.data['pre_sequence_scene_norm']=}")
-        # print(f"{self.data['pre_agents']=}")
-        # print(f"{self.data['pre_timesteps']=}")
-        # print(f"{self.data['pre_vel_seq']=}")
-        # print()
-        # print(f"{self.data['fut_sequence']=}")
-        # print(f"{self.data['fut_sequence_scene_norm']=}")
-        # print(f"{self.data['fut_agents']=}")
-        # print(f"{self.data['fut_timesteps']=}")
-        # print(f"{self.data['fut_vel_seq']=}")
-        # print()
-
-        # extra Traj relevant data
-        print(f"{self.data['last_observed_timesteps']=}")
-        print(f"{self.data['cur_motion']=}")
-        print(f"{self.data['cur_motion_scene_norm']=}")
-        print(f"{self.data['agent_mask']=}")
-
-        fig = plt.figure()
-        ax0 = fig.add_subplot(131, projection='3d')
-        ax1 = fig.add_subplot(132, projection='3d')
-        ax2 = fig.add_subplot(133)
-
-        scene_map = self.data['scene_map']
-
-        if scene_map is not None:
-            ax0.set_xlim(0., scene_map.get_map_dimensions()[0])
-            ax0.set_ylim(scene_map.get_map_dimensions()[1], 0.)
-        ax0.view_init(90, -90)
-
-        scene_orig = scene_map.to_map_points(self.data['scene_orig'].detach().cpu().numpy())
-        ax0.scatter(scene_orig[0], scene_orig[1], 0.0, marker='D', s=30, c='red', label='scene_orig')
-
-        if scene_map is not None:
-            ax1.set_xlim(0. - scene_orig[0], scene_map.get_map_dimensions()[0] - scene_orig[0])
-            ax1.set_ylim(scene_map.get_map_dimensions()[1] - scene_orig[1], 0. - scene_orig[1])
-        ax1.view_init(90, -90)
-
-        valid_ids = self.data['valid_id'].detach().cpu().numpy()
-
-        pre_timesteps = self.data['pre_timesteps'].detach().cpu().numpy()
-        pre_agents = self.data['pre_agents'].detach().cpu().numpy()
-        pre_seq = scene_map.to_map_points(self.data['pre_sequence'].detach().cpu().numpy())
-        pre_seq_scene_norm = scene_map.to_map_points(self.data['pre_sequence_scene_norm'].detach().cpu().numpy())
-
-        fut_timesteps = self.data['fut_timesteps'].detach().cpu().numpy()
-        fut_agents = self.data['fut_agents'].detach().cpu().numpy()
-        fut_seq = scene_map.to_map_points(self.data['fut_sequence'].detach().cpu().numpy())
-        fut_seq_scene_norm = scene_map.to_map_points(self.data['fut_sequence_scene_norm'].detach().cpu().numpy())
-
-        cmap = plt.cm.get_cmap('hsv', len(valid_ids))
-
-        for i, agent in enumerate(valid_ids):
-            pre_mask = (pre_agents == agent)
-            ag_pre_seq = pre_seq[pre_mask]
-            ag_pre_seq_scene_norm = pre_seq_scene_norm[pre_mask]
-            ag_pre_timesteps = pre_timesteps[pre_mask]
-            fut_mask = (fut_agents == agent)
-            ag_fut_seq = fut_seq[fut_mask]
-            ag_fut_seq_scene_norm = fut_seq_scene_norm[fut_mask]
-            ag_fut_timesteps = fut_timesteps[fut_mask]
-
-            marker_line, stem_lines, base_line = ax0.stem(
-                ag_pre_seq[..., 0], ag_pre_seq[..., 1], ag_pre_timesteps,
-                linefmt='grey'
-            )
-            marker_line.set(markeredgecolor=cmap(i), markerfacecolor=cmap(i), alpha=0.7, markersize=5, marker='X')
-            stem_lines.set(alpha=0.0)
-            base_line.set(alpha=0.6, c=cmap(i))
-
-            marker_line, stem_lines, base_line = ax0.stem(
-                ag_fut_seq[..., 0], ag_fut_seq[..., 1], ag_fut_timesteps,
-                linefmt='grey'
-            )
-            marker_line.set(markeredgecolor=cmap(i), markerfacecolor=cmap(i), alpha=0.7, markersize=5)
-            stem_lines.set(alpha=0.0)
-            base_line.set(alpha=0.5, c=cmap(i))
-
-            marker_line, stem_lines, base_line = ax1.stem(
-                ag_pre_seq_scene_norm[..., 0], ag_pre_seq_scene_norm[..., 1], ag_pre_timesteps,
-                linefmt='grey'
-            )
-            marker_line.set(markeredgecolor=cmap(i), markerfacecolor=cmap(i), alpha=0.7, markersize=5, marker='X')
-            stem_lines.set(alpha=0.0)
-            base_line.set(alpha=0.6, c=cmap(i))
-
-            marker_line, stem_lines, base_line = ax1.stem(
-                ag_fut_seq_scene_norm[..., 0], ag_fut_seq_scene_norm[..., 1], ag_fut_timesteps,
-                linefmt='grey'
-            )
-            marker_line.set(markeredgecolor=cmap(i), markerfacecolor=cmap(i), alpha=0.7, markersize=5)
-            stem_lines.set(alpha=0.0)
-            base_line.set(alpha=0.5, c=cmap(i))
-
-        if scene_map is not None:
-            ax2.set_xlim(0., scene_map.get_map_dimensions()[0])
-            ax2.set_ylim(scene_map.get_map_dimensions()[1], 0.)
-            ax2.imshow(scene_map.as_image())
-
-        fig_2, axes_2 = plt.subplots(1, 6)
-        divider_1 = make_axes_locatable(axes_2[4])
-        divider_2 = make_axes_locatable(axes_2[5])
-        cax_1 = divider_1.append_axes('right', size='5%', pad=0.05)
-        cax_2 = divider_2.append_axes('right', size='5%', pad=0.05)
-
-        for dim in range(self.data['combined_map'].shape[0]):
-            img = self.data['combined_map'][dim, ...].cpu().numpy()
-            axes_2[dim].imshow(img)
-
-        dist_t_occl_map = self.data['dt_occlusion_map'].cpu().numpy()
-        im = axes_2[4].imshow(dist_t_occl_map)
-        fig_2.colorbar(im, cax=cax_1, orientation='vertical')
-
-        p_occl_map = self.data['p_occl_map'].cpu().numpy()
-        im2 = axes_2[5].imshow(p_occl_map, cmap='Greys')
-        fig_2.colorbar(im2, cax=cax_2, orientation='vertical')
-
-        if show:
-            plt.show()
+    # def visualize_data_dict(self, show: bool = True):
+    #     # TODO: there are a few things to fix in this data visualization function
+    #
+    #     [print(f"{k}: {type(v)}") for k, v in self.data.items()]
+    #     print()
+    #
+    #     # High level metadata
+    #     print(f"{self.data['T_total']=}")
+    #     print(f"{self.data['batch_size']=}")
+    #     print(f"{self.data['agent_num']=}")
+    #     print()
+    #
+    #     # Multi-Agent sequence relevant data
+    #     print(f"{self.data['timesteps']=}")
+    #     print(f"{self.data['valid_id']=}")
+    #     print()
+    #
+    #     # Geometric data
+    #     print(f"{self.data['scene_orig']=}")
+    #     print(f"{self.data['scene_map']=}")
+    #
+    #     # Trajectory data
+    #     # print(f"{self.data['pre_sequence']=}")
+    #     # print(f"{self.data['pre_sequence_scene_norm']=}")
+    #     # print(f"{self.data['pre_agents']=}")
+    #     # print(f"{self.data['pre_timesteps']=}")
+    #     # print(f"{self.data['pre_vel_seq']=}")
+    #     # print()
+    #     # print(f"{self.data['fut_sequence']=}")
+    #     # print(f"{self.data['fut_sequence_scene_norm']=}")
+    #     # print(f"{self.data['fut_agents']=}")
+    #     # print(f"{self.data['fut_timesteps']=}")
+    #     # print(f"{self.data['fut_vel_seq']=}")
+    #     # print()
+    #
+    #     # extra Traj relevant data
+    #     print(f"{self.data['last_observed_timesteps']=}")
+    #     print(f"{self.data['cur_motion']=}")
+    #     print(f"{self.data['cur_motion_scene_norm']=}")
+    #     print(f"{self.data['agent_mask']=}")
+    #
+    #     fig = plt.figure()
+    #     ax0 = fig.add_subplot(131, projection='3d')
+    #     ax1 = fig.add_subplot(132, projection='3d')
+    #     ax2 = fig.add_subplot(133)
+    #
+    #     scene_map = self.data['scene_map']
+    #
+    #     if scene_map is not None:
+    #         ax0.set_xlim(0., scene_map.get_map_dimensions()[0])
+    #         ax0.set_ylim(scene_map.get_map_dimensions()[1], 0.)
+    #     ax0.view_init(90, -90)
+    #
+    #     scene_orig = scene_map.to_map_points(self.data['scene_orig'].detach().cpu().numpy())
+    #     ax0.scatter(scene_orig[0], scene_orig[1], 0.0, marker='D', s=30, c='red', label='scene_orig')
+    #
+    #     if scene_map is not None:
+    #         ax1.set_xlim(0. - scene_orig[0], scene_map.get_map_dimensions()[0] - scene_orig[0])
+    #         ax1.set_ylim(scene_map.get_map_dimensions()[1] - scene_orig[1], 0. - scene_orig[1])
+    #     ax1.view_init(90, -90)
+    #
+    #     valid_ids = self.data['valid_id'].detach().cpu().numpy()
+    #
+    #     pre_timesteps = self.data['pre_timesteps'].detach().cpu().numpy()
+    #     pre_agents = self.data['pre_agents'].detach().cpu().numpy()
+    #     pre_seq = scene_map.to_map_points(self.data['pre_sequence'].detach().cpu().numpy())
+    #     pre_seq_scene_norm = scene_map.to_map_points(self.data['pre_sequence_scene_norm'].detach().cpu().numpy())
+    #
+    #     fut_timesteps = self.data['fut_timesteps'].detach().cpu().numpy()
+    #     fut_agents = self.data['fut_agents'].detach().cpu().numpy()
+    #     fut_seq = scene_map.to_map_points(self.data['fut_sequence'].detach().cpu().numpy())
+    #     fut_seq_scene_norm = scene_map.to_map_points(self.data['fut_sequence_scene_norm'].detach().cpu().numpy())
+    #
+    #     cmap = plt.cm.get_cmap('hsv', len(valid_ids))
+    #
+    #     for i, agent in enumerate(valid_ids):
+    #         pre_mask = (pre_agents == agent)
+    #         ag_pre_seq = pre_seq[pre_mask]
+    #         ag_pre_seq_scene_norm = pre_seq_scene_norm[pre_mask]
+    #         ag_pre_timesteps = pre_timesteps[pre_mask]
+    #         fut_mask = (fut_agents == agent)
+    #         ag_fut_seq = fut_seq[fut_mask]
+    #         ag_fut_seq_scene_norm = fut_seq_scene_norm[fut_mask]
+    #         ag_fut_timesteps = fut_timesteps[fut_mask]
+    #
+    #         marker_line, stem_lines, base_line = ax0.stem(
+    #             ag_pre_seq[..., 0], ag_pre_seq[..., 1], ag_pre_timesteps,
+    #             linefmt='grey'
+    #         )
+    #         marker_line.set(markeredgecolor=cmap(i), markerfacecolor=cmap(i), alpha=0.7, markersize=5, marker='X')
+    #         stem_lines.set(alpha=0.0)
+    #         base_line.set(alpha=0.6, c=cmap(i))
+    #
+    #         marker_line, stem_lines, base_line = ax0.stem(
+    #             ag_fut_seq[..., 0], ag_fut_seq[..., 1], ag_fut_timesteps,
+    #             linefmt='grey'
+    #         )
+    #         marker_line.set(markeredgecolor=cmap(i), markerfacecolor=cmap(i), alpha=0.7, markersize=5)
+    #         stem_lines.set(alpha=0.0)
+    #         base_line.set(alpha=0.5, c=cmap(i))
+    #
+    #         marker_line, stem_lines, base_line = ax1.stem(
+    #             ag_pre_seq_scene_norm[..., 0], ag_pre_seq_scene_norm[..., 1], ag_pre_timesteps,
+    #             linefmt='grey'
+    #         )
+    #         marker_line.set(markeredgecolor=cmap(i), markerfacecolor=cmap(i), alpha=0.7, markersize=5, marker='X')
+    #         stem_lines.set(alpha=0.0)
+    #         base_line.set(alpha=0.6, c=cmap(i))
+    #
+    #         marker_line, stem_lines, base_line = ax1.stem(
+    #             ag_fut_seq_scene_norm[..., 0], ag_fut_seq_scene_norm[..., 1], ag_fut_timesteps,
+    #             linefmt='grey'
+    #         )
+    #         marker_line.set(markeredgecolor=cmap(i), markerfacecolor=cmap(i), alpha=0.7, markersize=5)
+    #         stem_lines.set(alpha=0.0)
+    #         base_line.set(alpha=0.5, c=cmap(i))
+    #
+    #     if scene_map is not None:
+    #         ax2.set_xlim(0., scene_map.get_map_dimensions()[0])
+    #         ax2.set_ylim(scene_map.get_map_dimensions()[1], 0.)
+    #         ax2.imshow(scene_map.as_image())
+    #
+    #     fig_2, axes_2 = plt.subplots(1, 6)
+    #     divider_1 = make_axes_locatable(axes_2[4])
+    #     divider_2 = make_axes_locatable(axes_2[5])
+    #     cax_1 = divider_1.append_axes('right', size='5%', pad=0.05)
+    #     cax_2 = divider_2.append_axes('right', size='5%', pad=0.05)
+    #
+    #     for dim in range(self.data['combined_map'].shape[0]):
+    #         img = self.data['combined_map'][dim, ...].cpu().numpy()
+    #         axes_2[dim].imshow(img)
+    #
+    #     dist_t_occl_map = self.data['dt_occlusion_map'].cpu().numpy()
+    #     im = axes_2[4].imshow(dist_t_occl_map)
+    #     fig_2.colorbar(im, cax=cax_1, orientation='vertical')
+    #
+    #     p_occl_map = self.data['p_occl_map'].cpu().numpy()
+    #     im2 = axes_2[5].imshow(p_occl_map, cmap='Greys')
+    #     fig_2.colorbar(im2, cax=cax_2, orientation='vertical')
+    #
+    #     if show:
+    #         plt.show()
 
     def step_annealer(self):
         for anl in self.param_annealers:
@@ -1065,8 +1144,8 @@ class AgentFormer(nn.Module):
 
     def forward(self):
         if self.global_map_attention:
-            self.data['global_map_encoding'] = self.global_map_encoder(self.data['combined_map'].unsqueeze(0))
-            print(f"{self.data['global_map_encoding'].shape=}")
+            self.data['global_map_encoding'] = self.global_map_encoder(self.data['combined_map'])
+            # print(f"{self.data['global_map_encoding'].shape=}")
 
         if self.use_map:
             # self.data['map_enc'] = self.map_encoder(self.data['agent_maps'])
