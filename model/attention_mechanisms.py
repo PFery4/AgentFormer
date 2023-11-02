@@ -100,8 +100,8 @@ class AgentAwareAttentionV2(Module):
 
         agent_aware_mask = torch.stack(
             [self.agent_aware_mask(q_id, k_id) for q_id, k_id in zip(q_identities, k_identities)]
-        ).unsqueeze(1)    # [B, L, S]
-        # print(f"5. {agent_aware_mask.shape=}")
+        ).unsqueeze(1)    # [B, 1, L, S]
+        print(f"5. {agent_aware_mask.shape=}")
 
         attention = attention_other * (~agent_aware_mask) + attention_self * agent_aware_mask        # [B, H, L, S]
         print(f"6. {attention.shape=}")
