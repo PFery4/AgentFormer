@@ -106,9 +106,6 @@ class MapAwareAgentFormerEncoderLayer(AgentFormerEncoderLayer):
             num_heads=nhead,
             dropout=dropout
         )
-        # TODO: Question: should the feed forward matrices be specialized too? (separate ones for map/agent)?
-        #   - FOR NOW YES, CHECK LATER WHAT MAKES MOST SENSE
-        #   (ESPECIALLY IN TERMS OF MODEL COMPLEXITY INCREASE / OVERFITTING)
 
         self.map_linear1 = torch.nn.Linear(d_model, dim_feedforward)
         self.map_dropout = torch.nn.Dropout(dropout)
