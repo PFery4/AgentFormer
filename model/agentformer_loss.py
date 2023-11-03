@@ -8,38 +8,15 @@ def compute_motion_mse(
         data: Dict,
         cfg: Dict
 ):
+    # checking that the predicted sequence and the ground truth have the same timestep / agent order
+    assert torch.all(data['train_dec_agents'] == data['pred_identity_sequence'])
+    assert torch.all(data['train_dec_timesteps'] == data['pred_timestep_sequence'])
 
-    # print(f"INDEX MAPPING")
-    idx_map = index_mapping_gt_seq_pred_seq(
-        ag_gt=data['fut_agents'],
-        tsteps_gt=data['fut_timesteps'],
-        ag_pred=data['train_dec_agents'],
-        tsteps_pred=data['train_dec_timesteps']
-    )
-    # print(f"{idx_map=}")
-
-    # modded_ag_gt = data['fut_agents'][idx_map]
-    # modded_t_gt = data['fut_timesteps'][idx_map]
-    # print(f"{data['fut_agents']=}")
-    # print(f"{data['fut_timesteps']=}")
-    # print(f"{modded_ag_gt=}")
-    # print(f"{modded_t_gt=}")
-    # print(f"{data['train_dec_agents']=}")
-    # print(f"{data['train_dec_timesteps']=}")
-
-    # assert torch.all(modded_t_gt == data['train_dec_timesteps'])
-    # assert torch.all(modded_ag_gt == data['train_dec_agents'])
-    # assert torch.all(data['fut_timesteps'] == data['train_dec_timesteps'])
-    # assert torch.all(data['fut_agents'] == data['train_dec_agents'])
-
-    # print(f"{data['fut_sequence'][idx_map].shape=}")
-    # print(f"{data['train_dec_motion'].squeeze(1).shape=}")
-
-    diff = data['fut_sequence'][idx_map] - data['train_dec_motion'].squeeze(1)
+    diff = data['pred_position_sequence'] - data['train_dec_motion']
 
     loss_unweighted = diff.pow(2).sum()
     if cfg.get('normalize', True):
-        loss_unweighted /= data['fut_sequence'].shape[0]        # normalize wrt prediction sequence length
+        loss_unweighted /= data['pred_timestep_sequence'].shape[1]        # normalize wrt prediction sequence length
     loss = loss_unweighted * cfg['weight']
     return loss, loss_unweighted
 
@@ -53,6 +30,7 @@ def gaussian_twodee_nll(mu, sig, rho, targets, eps: float = 1e-20):
     targets.shape -> (*, 2)
     reduction -> ["mean", "sum", "tensor"]
     """
+    raise NotImplementedError
     mux, muy = mu[..., 0].unsqueeze(-1), mu[..., 1].unsqueeze(-1)  # shape [*, 1]
     sigx, sigy = sig[..., 0].unsqueeze(-1), sig[..., 1].unsqueeze(-1)  # shape [*, 1]
     gt_x, gt_y = targets[..., 0].unsqueeze(-1), targets[..., 1].unsqueeze(-1)  # shape [*, 1]
@@ -80,6 +58,7 @@ def gaussian_twodee_nll_2(mu, sig, rho, targets, eps: float = 1e-20):
     rho.shape -> (*, 1)
     targets.shape -> (*, 2)
     """
+    raise NotImplementedError
     mux, muy = mu[..., 0].unsqueeze(-1), mu[..., 1].unsqueeze(-1)  # shape [*, 1]
     sigx, sigy = sig[..., 0].unsqueeze(-1), sig[..., 1].unsqueeze(-1)  # shape [*, 1]
     gt_x, gt_y = targets[..., 0].unsqueeze(-1), targets[..., 1].unsqueeze(-1)  # shape [*, 1]
@@ -104,6 +83,7 @@ def multivariate_gaussian_nll(mu, Sig, targets, eps: float = 1e-20):
     Sig.shape -> (*, N, N)
     targets.shape -> (*, N)
     """
+    raise NotImplementedError
     norm = (targets - mu).unsqueeze(-1)     # [*, N, 1]
 
     t1 = (norm.transpose(-2, -1) @ torch.linalg.inv(torch.clamp(Sig, min=eps)) @ norm).view(mu.shape[:-1])      # [*]
@@ -119,6 +99,7 @@ def compute_gauss_nll(data: Dict, cfg: Dict):
     loss_unweighted = multivariate_gaussian_nll(mu=data['train_dec_mu'],
                                                 Sig=data['train_dec_Sig'],
                                                 targets=data['fut_motion_orig'])
+    raise NotImplementedError
     if cfg.get('mask', True):
         mask = data['fut_mask']
         loss_unweighted *= mask
@@ -139,6 +120,7 @@ def index_mapping_gt_seq_pred_seq(
     returns a tensor of indices that provides the mapping between ground truth (agent, timestep) pairs and predicted
     (agent, timestep) pairs.
     """
+    raise NotImplementedError
     gt_seq = torch.stack([tsteps_gt.detach().clone(), ag_gt.detach().clone()], dim=1)
     pred_seq = torch.stack([tsteps_pred.detach().clone(), ag_pred.detach().clone()], dim=1)
     return torch.cat([torch.nonzero(torch.all(gt_seq == elem, dim=1)) for elem in pred_seq]).squeeze()
@@ -147,7 +129,7 @@ def index_mapping_gt_seq_pred_seq(
 def compute_z_kld(data: Dict, cfg: Dict):
     loss_unweighted = data['q_z_dist'].kl(data['p_z_dist']).sum()
     if cfg.get('normalize', True):
-        loss_unweighted /= data['batch_size']
+        loss_unweighted /= data['agent_num']
     loss_unweighted = loss_unweighted.clamp_min_(cfg.min_clip)
     loss = loss_unweighted * cfg['weight']
     return loss, loss_unweighted
@@ -157,23 +139,24 @@ def compute_sample_loss(data: Dict, cfg: Dict):
     # print(f"{data['fut_sequence'].shape=}")
     # print(f"{data['fut_sequence'].unsqueeze(1).shape=}")
     # print(f"{data['train_dec_motion'].shape=}")
-    # print(f"{data['infer_dec_motion'].shape=}")
-    # print(f"{data['infer_dec_agents'].shape=}")
-    # print(f"{data['infer_dec_timesteps'].shape=}")
+    print(f"{data['infer_dec_motion'].shape=}")
+    print(f"{data['infer_dec_agents'].shape=}")
+    print(f"{data['infer_dec_timesteps'].shape=}")
+    print(f"{data['pred_position_sequence'].shape=}")
+    print(f"{data['pred_identity_sequence'].shape=}")
+    print(f"{data['pred_timestep_sequence'].shape=}")
 
-    idx_map = index_mapping_gt_seq_pred_seq(
-        ag_gt=data['fut_agents'],
-        tsteps_gt=data['fut_timesteps'],
-        ag_pred=data['infer_dec_agents'],
-        tsteps_pred=data['infer_dec_timesteps']
-    )
+    assert torch.all(data['infer_dec_agents'] == data['pred_identity_sequence'])
+    assert torch.all(data['infer_dec_timesteps'] == data['pred_timestep_sequence'])
 
     # print("diff = data['infer_dec_motion'] - data['fut_sequence'].unsqueeze(1)")
-    diff = data['infer_dec_motion'] - data['fut_sequence'][idx_map].unsqueeze(1)
-    # print(f"{diff.shape=}")
+    diff = data['infer_dec_motion'] - data['pred_position_sequence']
+    print(f"{diff.shape=}")
 
     dist = diff.pow(2).sum(-1)
-    # print(f"{dist.shape=}")
+    print(f"{dist.shape=}")
+
+    raise NotImplementedError("CONTINUE HERE")
 
     dist = torch.stack(
         [(dist[data['infer_dec_agents'] == ag_id]).sum(0)/torch.sum(data['infer_dec_agents'] == ag_id)
