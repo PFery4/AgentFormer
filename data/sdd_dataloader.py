@@ -910,11 +910,11 @@ class TorchDataGeneratorSDD(Dataset):
         last_obs_positions = self.last_observed_positions(trajs=trajs, last_obs_indices=last_obs_indices)
         last_obs_timesteps = self.last_observed_timesteps(last_obs_indices=last_obs_indices)
 
-        pred_mask = self.predict_mask(last_obs_indices=last_obs_indices)
-        pred_trajs = trajs[pred_mask, ...]
-        pred_vel = self.true_velocity(trajs=trajs)[pred_mask, ...]
-        pred_ids = agent_grid[pred_mask, ...]
-        pred_timesteps = timestep_grid[pred_mask, ...]
+        pred_mask = self.predict_mask(last_obs_indices=last_obs_indices).T
+        pred_trajs = trajs.transpose(0, 1)[pred_mask, ...]
+        pred_vel = self.true_velocity(trajs=trajs).transpose(0, 1)[pred_mask, ...]
+        pred_ids = agent_grid.T[pred_mask, ...]
+        pred_timesteps = timestep_grid.T[pred_mask, ...]
 
         data_dict = {
             'trajectories': trajs,
