@@ -136,113 +136,50 @@ def compute_z_kld(data: Dict, cfg: Dict):
 
 
 def compute_sample_loss(data: Dict, cfg: Dict):
-    # print(f"{data['fut_sequence'].shape=}")
-    # print(f"{data['fut_sequence'].unsqueeze(1).shape=}")
-    # print(f"{data['train_dec_motion'].shape=}")
-    print(f"{data['infer_dec_motion'].shape=}")
-    print(f"{data['infer_dec_agents'].shape=}")
-    print(f"{data['infer_dec_timesteps'].shape=}")
-    print(f"{data['pred_position_sequence'].shape=}")
-    print(f"{data['pred_identity_sequence'].shape=}")
-    print(f"{data['pred_timestep_sequence'].shape=}")
+    # 'infer_dec_motion' [K, P, 2]       (K modes, sequence length P)
 
+    # checking that the predicted sequence and the ground truth have the same timestep / agent order
     assert torch.all(data['infer_dec_agents'] == data['pred_identity_sequence'])
     assert torch.all(data['infer_dec_timesteps'] == data['pred_timestep_sequence'])
 
-    # print("diff = data['infer_dec_motion'] - data['fut_sequence'].unsqueeze(1)")
     diff = data['infer_dec_motion'] - data['pred_position_sequence']
-    print(f"{diff.shape=}")
 
     dist = diff.pow(2).sum(-1)
-    print(f"{dist.shape=}")
-
-    raise NotImplementedError("CONTINUE HERE")
-
     dist = torch.stack(
-        [(dist[data['infer_dec_agents'] == ag_id]).sum(0)/torch.sum(data['infer_dec_agents'] == ag_id)
-         for ag_id in torch.unique(data['infer_dec_agents'])], dim=0
-    )
-    # print(f"{dist.shape=}")
+        [dist[:, data['pred_identity_sequence'].squeeze() == ag_id].sum(dim=-1) /
+         torch.sum(data['pred_identity_sequence'].squeeze() == ag_id)
+         for ag_id in torch.unique(data['pred_identity_sequence'])]
+    )       # [N, K]        N agents, K modes
 
-    loss_unweighted = dist.min(dim=1)[0]
-    # print(f"{loss_unweighted.shape=}")
-
+    loss_unweighted, _ = dist.min(dim=1)     # [N]
     if cfg.get('normalize', True):
         loss_unweighted = loss_unweighted.mean()
     else:
         loss_unweighted = loss_unweighted.sum()
     loss = loss_unweighted * cfg['weight']
-
-    # print(f"{loss.shape=}")
-    # print(f"{loss_unweighted.shape=}")
     return loss, loss_unweighted
 
 
 def compute_occlusion_map_loss(data: Dict, cfg: Dict):
-
-    # points = torch.Tensor([[10, 10],
-    #                        [12.5, 12.5],
-    #                        [13.6, 12.6],
-    #                        [14.2, 12.8],
-    #                        [14.7, 12.8],
-    #                        [-12, -13],
-    #                        [-300, 44],
-    #                        [455, 63],
-    #                        [47, 969],
-    #                        [47, -20]]).unsqueeze(1).repeat(1, 1, 1)
-    # mask = torch.Tensor([True, True, False, False, False, False, False, False, False, False]).to(bool)
-    # print(mask)
-    # print(f"{points, points.shape=}")
-
-    # print(f"\n\n\n\nLOSS REPORT:")
-    points = data['train_dec_motion']
-    mask = data['train_dec_past_mask']
-
-    # print(f"{points.shape, mask.shape=}")
-
-    nlog_p_map = data['min_log_p_occl_map']
-    H, W = nlog_p_map.shape
-
-    # print(f"{nlog_p_map.shape, H, W=}")
-    # H = W = 400
-    # nlog_p_map = torch.rand([H, W])
-    # nlog_p_map = torch.arange(0, H).unsqueeze(1).repeat(1, W)
-    # nlog_p_map = torch.arange(0, W).unsqueeze(0).repeat(H, 1)
-    # print(f"{nlog_p_map, nlog_p_map.shape=}")
-
-    homography_matrix = torch.from_numpy(data['scene_map'].homography).to(torch.float32).to(points.device)
-    # homography_matrix = torch.Tensor([[2, 0., 0.],
-    #                                   [0., 2, 0.],
-    #                                   [0., 0., 1]])
-
-    # print(f"{homography_matrix, homography_matrix.shape=}")
+    points = data['train_dec_motion']                       # [B, P, 2]
+    mask = data['train_dec_past_mask']                      # [P]
+    nlog_p_map = data['nlog_probability_occlusion_map']     # [B, H, W]
+    homography_matrix = data['map_homography']              # [B, 3, 3]
+    H, W = nlog_p_map.shape[-2:]
 
     # transforming points to scene coordinate system
     points = torch.cat([points, torch.ones((*points.shape[:-1], 1)).to(points.device)], dim=-1).transpose(-1, -2)
-    points = (homography_matrix @ points).transpose(-1, -2)
-    # print(f"{points, points.shape=}")
+    points = (homography_matrix @ points).transpose(-1, -2)[:, mask, :]     # [B, ⊆P, 3] <==> [B, p, 3]
 
     x = points[..., 0]
     y = points[..., 1]
-
-    # print(f"{x, x.shape=}")
-    # print(f"{x[7, 0]=}")
-    # print(f"{y, y.shape=}")
-
     x = x.clamp(1e-4, W - (1 + 1e-4))
     y = y.clamp(1e-4, H - (1 + 1e-4))
-
-    # print(f"{x, x.shape=}")
-    # print(f"{x[7, 0]=}")
-    # print(f"{y, y.shape=}")
 
     x0 = torch.floor(x).long()
     x1 = x0+1
     y0 = torch.floor(y).long()
     y1 = y0+1
-
-    # print(f"{x0, x1=}")
-    # print(f"{y0, y1=}")
 
     Ia = nlog_p_map[y0, x0]
     Ib = nlog_p_map[y1, x0]
@@ -254,17 +191,12 @@ def compute_occlusion_map_loss(data: Dict, cfg: Dict):
     wc = (x - x0) * (y1 - y)
     wd = (x - x0) * (y - y0)
 
-    interp_vals = (wa * Ia + wb * Ib + wc * Ic + wd * Id) * mask.unsqueeze(1)
-
-    # print(f"{interp_vals, interp_vals.shape=}")
+    interp_vals = (wa * Ia + wb * Ib + wc * Ic + wd * Id)
 
     loss_unweighted = interp_vals.sum()
     if cfg.get('normalize', True) and mask.sum() != 0:
-        # print(f"we are doing things normally, {mask.sum()=}")
         loss_unweighted /= mask.sum()
     loss = loss_unweighted * cfg['weight']
-
-    # print(f"\n\n\n\n{loss, loss_unweighted=}\n\n\n\n")
 
     return loss, loss_unweighted
 
@@ -280,5 +212,5 @@ loss_func = {
 if __name__ == '__main__':
     # cfg = {'normalize': True, 'weight': 3.0}
     # compute_occlusion_map_loss(data=None, cfg=cfg)
-    print(f'Hello')
+    print(f'Hello World!')
 
