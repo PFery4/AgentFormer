@@ -1194,7 +1194,6 @@ class AgentFormer(nn.Module):
         total_loss = 0
         loss_dict = {}
         loss_unweighted_dict = {}
-        # print(f"{self.loss_names=}")
         for loss_name in self.loss_names:
             loss, loss_unweighted = loss_func[loss_name](self.data, self.loss_cfg[loss_name])
             total_loss += loss
