@@ -27,7 +27,7 @@ class Normal:
         if p is None:
             kl = -0.5 * (1 + self.logvar - self.mu.pow(2) - self.logvar.exp())
         else:
-            term1 = (self.mu - p.mu) / (p.sigma + 1e-8)
+            term1 = (p.mu - self.mu) / (p.sigma + 1e-8)
             term2 = self.sigma / (p.sigma + 1e-8)
             kl = 0.5 * (term1 * term1 + term2 * term2) - 0.5 - torch.log(term2)
         return kl
