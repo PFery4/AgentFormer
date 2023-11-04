@@ -7,7 +7,6 @@ import matplotlib.axes
 import matplotlib.pyplot as plt
 import mpl_toolkits.axes_grid1
 import matplotlib.colors as colors
-import numpy
 from matplotlib.path import Path
 import torch
 import torch.nn.functional as F
@@ -16,6 +15,7 @@ import torchvision.transforms as transforms
 import sys
 import numpy as np
 import skgeom as sg
+from scipy.interpolate import interp1d
 from scipy.ndimage import distance_transform_edt
 from scipy.special import log_softmax, softmax
 
@@ -428,24 +428,8 @@ class AgentFormerDataGeneratorForSDD:
             m_per_px=extracted_data['m/px'],
         )
 
-        # TODO: Cleanup this bit of code
-        # TODO: Remove preprocessing from AgentFormer.
-        # try_time = np.arange(-7, 13)
-        # try_traj = np.hstack([np.sin(try_time)[:, np.newaxis], np.cos(try_time)[:, np.newaxis]])[np.newaxis, :]
-        # try_mask = np.full([1, 20], True)
-        # try_mask[:, 8:] = False
-        # try_mask[:, 2:5] = False
-        #
-        # print(f"{try_traj, try_traj.shape=}")
-        # print(f"{try_mask=}")
-        # try_vel = self.observed_velocity(try_traj, try_mask)
-        # try_last = self.last_observed_indices(try_mask)
-        # print(f"{try_vel=}")
-        # print(f"{try_last=}")
-        # print(f"{self.cv_extrapolate(try_traj, try_vel, try_last)=}")
-        # print(zblu)
-        # print(f"{self.cv_extrapolate(trajs=, obs_vel=, last_obs_indices=)=}")
-        # print(f"{self.impute_interpolate(trajs=, obs_mask=)=}")
+        raise NotImplementedError("Data dictionary creation needs to be overhauled,"
+                                  "to comply with formatting structure that the model follows.")
 
         data['full_motion_3D'] = torch.from_numpy(processed_data['trajs'])
         data['valid_id'] = torch.from_numpy(processed_data['ids'])
@@ -668,16 +652,18 @@ class TorchDataGeneratorSDD(Dataset):
             traj[obs_idx:] = extra_seq
         return xtrpl_trajs
 
-    @staticmethod
-    def impute_interpolate(trajs: Tensor, obs_mask: Tensor) -> Tensor:
+    def impute_and_cv_predict(self, trajs: Tensor, obs_mask: Tensor) -> Tensor:
         # trajs [N, T, 2]
         # obs_mask [N, T]
         imputed_trajs = torch.zeros_like(trajs)
-        for imputed_traj, traj, mask in zip(imputed_trajs, trajs, obs_mask):
-            obs_indices = torch.nonzero(mask)       # [Z, 1]
-            traj_points = traj[mask]                # [Z, 2]
-            # TODO: figure this out using the interp function
-        raise NotImplementedError
+        for i, (traj, mask) in enumerate(zip(trajs, obs_mask)):
+            print(f"{self.timesteps[mask]=}")
+            print(f"{traj[mask]=}")
+            f = interp1d(self.timesteps[mask], traj[mask], axis=0, fill_value='extrapolate')
+            interptraj = f(self.timesteps)
+            print(f"{interptraj=}")
+            imputed_trajs[i, ...] = torch.from_numpy(interptraj)
+        return imputed_trajs
 
     @staticmethod
     def random_index(bool_mask: Tensor) -> Tensor:
@@ -896,10 +882,6 @@ class TorchDataGeneratorSDD(Dataset):
         last_obs_indices = last_obs_indices[keep_mask]
 
         obs_mask = obs_mask.to(torch.bool)
-
-        # TODO: Implement simple random occlusion masks
-        # TODO: provide velocity estimations, cv extrapolation, imputations, etc
-
         agent_grid = self.agent_grid(ids=ids)
         timestep_grid = self.timestep_grid(ids=ids)
 
