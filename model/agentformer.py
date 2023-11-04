@@ -456,8 +456,8 @@ class FutureDecoder(nn.Module):
             context.shape[1],
             batch_size=tf_in.shape[0]
         ).to(tf_in.device)      # [B * sample_num, K, O]
-        print(f"{tgt_mask, tgt_mask.shape=}")
-        print(f"{mem_mask, mem_mask.shape=}")
+        print(f"{tgt_mask[0], tgt_mask.shape=}")
+        print(f"{mem_mask[0], mem_mask.shape=}")
 
         # Go through the attention mechanism
         # print(f"{data['global_map_encoding'].shape=}")
@@ -495,11 +495,10 @@ class FutureDecoder(nn.Module):
 
             # defining origins for each element in the sequence, using agent_sequence, dec_in and data['valid_id']
             # NOTE: current implementation cannot handle batched data
-            # TODO: VERIFY THIS IS CORRECT
             seq_origins = torch.cat(
                 [dec_in_orig[:, data['valid_id'][0] == ag_id, :] for ag_id in agent_sequence[0]], dim=1
             )       # [B * sample_num, K, 2]
-            print(f"{seq_origins, seq_origins.shape=}")
+            print(f"{seq_origins[0], seq_origins.shape=}")
 
             seq_out = seq_out + seq_origins  # [B * sample_num, K, 2]
 
@@ -599,7 +598,6 @@ class FutureDecoder(nn.Module):
 
 
         print(f"{data['last_obs_timesteps'].shape=}")
-        # TODO: CAREFULLY CHECK HOW THIS WORKS ON MULTIPLE AGENTS
         catch_up_timestep_sequence = data['last_obs_timesteps'][0, ...].detach().clone()                        # [N]
         starting_seq_indices = (catch_up_timestep_sequence == torch.min(catch_up_timestep_sequence, dim=0)[0])  # [N]
 
