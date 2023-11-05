@@ -657,11 +657,11 @@ class TorchDataGeneratorSDD(Dataset):
         # obs_mask [N, T]
         imputed_trajs = torch.zeros_like(trajs)
         for i, (traj, mask) in enumerate(zip(trajs, obs_mask)):
-            print(f"{self.timesteps[mask]=}")
-            print(f"{traj[mask]=}")
+            # print(f"{self.timesteps[mask]=}")
+            # print(f"{traj[mask]=}")
             f = interp1d(self.timesteps[mask], traj[mask], axis=0, fill_value='extrapolate')
             interptraj = f(self.timesteps)
-            print(f"{interptraj=}")
+            # print(f"{interptraj=}")
             imputed_trajs[i, ...] = torch.from_numpy(interptraj)
         return imputed_trajs
 
@@ -691,7 +691,7 @@ class TorchDataGeneratorSDD(Dataset):
     def trajectory_processing_without_occlusion(self, trajs: Tensor, scene_map: TorchGeometricMap, m_by_px: float):
         trajs = scene_map.to_map_points(trajs)
         obs_mask = torch.ones(trajs.shape[:-1])
-        obs_mask[..., self.T_obs] = False
+        obs_mask[..., self.T_obs:] = False
         scene_map.set_homography(torch.eye(3))
 
         last_obs_positions = trajs[:, self.T_obs-1, :]
