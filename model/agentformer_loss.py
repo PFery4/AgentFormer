@@ -194,8 +194,8 @@ def compute_occlusion_map_loss(data: Dict, cfg: Dict):
     points = torch.cat([points, torch.ones((*points.shape[:-1], 1)).to(points.device)], dim=-1).transpose(-1, -2)
     points = (homography_matrix @ points).transpose(-1, -2)[:, mask, :]     # [B, ⊆P, 3] <==> [B, p, 3]
 
-    x = points[..., 0]
-    y = points[..., 1]
+    x = points[..., 0]          # [B, p]
+    y = points[..., 1]          # [B, p]
     x = x.clamp(1e-4, W - (1 + 1e-4))
     y = y.clamp(1e-4, H - (1 + 1e-4))
 
@@ -204,10 +204,10 @@ def compute_occlusion_map_loss(data: Dict, cfg: Dict):
     y0 = torch.floor(y).long()
     y1 = y0+1
 
-    Ia = nlog_p_map[y0, x0]
-    Ib = nlog_p_map[y1, x0]
-    Ic = nlog_p_map[y0, x1]
-    Id = nlog_p_map[y1, x1]
+    Ia = nlog_p_map[:, y0[-1], x0[-1]]
+    Ib = nlog_p_map[:, y1[-1], x0[-1]]
+    Ic = nlog_p_map[:, y0[-1], x1[-1]]
+    Id = nlog_p_map[:, y1[-1], x1[-1]]
 
     wa = (x1 - x) * (y1 - y)
     wb = (x1 - x) * (y - y0)
