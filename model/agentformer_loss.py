@@ -9,14 +9,26 @@ def compute_motion_mse(
         cfg: Dict
 ):
     # checking that the predicted sequence and the ground truth have the same timestep / agent order
-    assert torch.all(data['train_dec_agents'] == data['pred_identity_sequence'])
-    assert torch.all(data['train_dec_timesteps'] == data['pred_timestep_sequence'])
+    idx_map = index_mapping_gt_seq_pred_seq(
+        ag_gt=data['pred_identity_sequence'][0],
+        tsteps_gt=data['pred_timestep_sequence'][0],
+        ag_pred=data['train_dec_agents'][0],
+        tsteps_pred=data['train_dec_timesteps']
+    )
+    gt_identities = data['pred_identity_sequence'][:, idx_map]      # [B, P]
+    gt_timesteps = data['pred_timestep_sequence'][:, idx_map]       # [B, P]
+    gt_positions = data['pred_position_sequence'][:, idx_map, :]    # [B, P, 2]
 
-    diff = data['pred_position_sequence'] - data['train_dec_motion']
+    assert torch.all(data['train_dec_agents'] == gt_identities),\
+        f"{data['train_dec_agents']=}\n\n{gt_identities=}"
+    assert torch.all(data['train_dec_timesteps'] == gt_timesteps),\
+        f"{data['train_dec_timesteps']=}\n\n{gt_timesteps=}"
+
+    diff = gt_positions - data['train_dec_motion']
 
     loss_unweighted = diff.pow(2).sum()
     if cfg.get('normalize', True):
-        loss_unweighted /= data['pred_timestep_sequence'].shape[1]        # normalize wrt prediction sequence length
+        loss_unweighted /= gt_timesteps.shape[1]        # normalize wrt prediction sequence length
     loss = loss_unweighted * cfg['weight']
     return loss, loss_unweighted
 
@@ -120,7 +132,6 @@ def index_mapping_gt_seq_pred_seq(
     returns a tensor of indices that provides the mapping between ground truth (agent, timestep) pairs and predicted
     (agent, timestep) pairs.
     """
-    raise NotImplementedError
     gt_seq = torch.stack([tsteps_gt.detach().clone(), ag_gt.detach().clone()], dim=1)
     pred_seq = torch.stack([tsteps_pred.detach().clone(), ag_pred.detach().clone()], dim=1)
     return torch.cat([torch.nonzero(torch.all(gt_seq == elem, dim=1)) for elem in pred_seq]).squeeze()
@@ -137,18 +148,30 @@ def compute_z_kld(data: Dict, cfg: Dict):
 
 def compute_sample_loss(data: Dict, cfg: Dict):
     # 'infer_dec_motion' [K, P, 2]       (K modes, sequence length P)
+    idx_map = index_mapping_gt_seq_pred_seq(
+        ag_gt=data['pred_identity_sequence'][0],
+        tsteps_gt=data['pred_timestep_sequence'][0],
+        ag_pred=data['train_dec_agents'][0],
+        tsteps_pred=data['train_dec_timesteps']
+    )
+    gt_identities = data['pred_identity_sequence'][:, idx_map]      # [B, P]
+    gt_timesteps = data['pred_timestep_sequence'][:, idx_map]       # [B, P]
+    gt_positions = data['pred_position_sequence'][:, idx_map, :]    # [B, P, 2]
+
 
     # checking that the predicted sequence and the ground truth have the same timestep / agent order
-    assert torch.all(data['infer_dec_agents'] == data['pred_identity_sequence'])
-    assert torch.all(data['infer_dec_timesteps'] == data['pred_timestep_sequence'])
+    assert torch.all(data['infer_dec_agents'] == gt_identities),\
+        f"{data['infer_dec_agents']=}\n\n{gt_identities=}"
+    assert torch.all(data['infer_dec_timesteps'] == gt_timesteps),\
+        f"{data['infer_dec_timesteps']=}\n\n{gt_timesteps=}"
 
-    diff = data['infer_dec_motion'] - data['pred_position_sequence']
+    diff = data['infer_dec_motion'] - gt_positions
 
     dist = diff.pow(2).sum(-1)
     dist = torch.stack(
-        [dist[:, data['pred_identity_sequence'].squeeze() == ag_id].sum(dim=-1) /
-         torch.sum(data['pred_identity_sequence'].squeeze() == ag_id)
-         for ag_id in torch.unique(data['pred_identity_sequence'])]
+        [dist[:, gt_identities.squeeze() == ag_id].sum(dim=-1) /
+         torch.sum(gt_identities.squeeze() == ag_id)
+         for ag_id in torch.unique(gt_identities)]
     )       # [N, K]        N agents, K modes
 
     loss_unweighted, _ = dist.min(dim=1)     # [N]
