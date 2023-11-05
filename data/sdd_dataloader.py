@@ -930,21 +930,21 @@ class TorchDataGeneratorSDD(Dataset):
             'frame': timestep
         }
 
-        # visualization stuff
-        fig, ax = plt.subplots(1, 6)
-        visualize.visualize_training_instance(
-            draw_ax=ax[0], instance_dict=self.temp_generator.__getitem__(idx)
-        )
-
-        self.visualize(
-            data_dict=data_dict,
-            draw_ax=ax[1],
-            draw_ax_sequences=ax[2],
-            draw_ax_dist_transformed_map=ax[3],
-            draw_ax_probability_map=ax[4],
-            draw_ax_nlog_probability_map=ax[5]
-        )
-        plt.show()
+        # # visualization stuff
+        # fig, ax = plt.subplots(1, 6)
+        # visualize.visualize_training_instance(
+        #     draw_ax=ax[0], instance_dict=self.temp_generator.__getitem__(idx)
+        # )
+        #
+        # self.visualize(
+        #     data_dict=data_dict,
+        #     draw_ax=ax[1],
+        #     draw_ax_sequences=ax[2],
+        #     draw_ax_dist_transformed_map=ax[3],
+        #     draw_ax_probability_map=ax[4],
+        #     draw_ax_nlog_probability_map=ax[5]
+        # )
+        # plt.show()
 
         return data_dict
 
