@@ -1152,11 +1152,11 @@ class AgentFormer(nn.Module):
             # self.data['map_encoding'] = self.map_encoder(self.data['combined_map'].unsqueeze(0)).squeeze()
             # print(f"{self.data['map_encoding'], self.data['map_encoding'].shape=}")
             raise NotImplementedError
-        print(f"\nCALLING:  CONTEXT ENCODER\n")
+        # print(f"\nCALLING:  CONTEXT ENCODER\n")
         self.context_encoder(self.data)
-        print(f"\nCALLING:  FUTURE ENCODER\n")
+        # print(f"\nCALLING:  FUTURE ENCODER\n")
         self.future_encoder(self.data)
-        print(f"\nCALLING:  FUTURE DECODER\n")
+        # print(f"\nCALLING:  FUTURE DECODER\n")
         self.future_decoder(self.data, mode='train', autoregress=self.ar_train)
         if self.compute_sample:
             # print(f"\nCALLING:  INFERENCE\n")
