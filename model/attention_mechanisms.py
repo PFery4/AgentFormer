@@ -101,13 +101,13 @@ class AgentAwareAttentionV2(Module):
         agent_aware_mask = torch.stack(
             [self.agent_aware_mask(q_id, k_id) for q_id, k_id in zip(q_identities, k_identities)]
         ).unsqueeze(1)    # [B, 1, L, S]
-        print(f"5. {agent_aware_mask.shape=}")
+        # print(f"5. {agent_aware_mask.shape=}")
 
         attention = attention_other * (~agent_aware_mask) + attention_self * agent_aware_mask        # [B, H, L, S]
-        print(f"6. {attention.shape=}")
+        # print(f"6. {attention.shape=}")
 
         attention += mask.unsqueeze(1)                                                               # [B, H, L, S]
-        print(f"7. {attention.shape=}")
+        # print(f"7. {attention.shape=}")
 
         return attention
 
@@ -257,62 +257,51 @@ class MapAgentAwareAttention(AgentAwareAttentionV2):
         cross_agent_attention = self.agent_scaled_dot_product(
             q=q, k=k, q_identities=q_identities, k_identities=k_identities, mask=mask
         )       # [B, H, L, S]
-
-        print(f"8. {cross_agent_attention.shape=}")
+        # print(f"8. {cross_agent_attention.shape=}")
 
         # cross map attention
         map_map_attention = q_map_self @ k_map_self         # [B, H, 1, m] @ [B, H, m, 1] = [B, H, 1, 1]
-
-        print(f"9. {map_map_attention.shape=}")
+        # print(f"9. {map_map_attention.shape=}")
 
         # agent map attention, agents query the map
         agent_map_attention = q_traj_map @ k_map_agents     # [B, H, L, t] @ [B, H, t, 1] = [B, H, L, 1]
-
-        print(f"10. {agent_map_attention.shape=}")
+        # print(f"10. {agent_map_attention.shape=}")
 
         # map agent attention, the map queries the agents
         map_agent_attention = q_map_agents @ k_traj_map     # [B, H, 1, m] @ [B, H, m, S] = [B, H, 1, S]
-
-        print(f"11. {map_agent_attention.shape=}")
+        # print(f"11. {map_agent_attention.shape=}")
 
         # Combine attention scores
         traj_attention = torch.cat([agent_map_attention, cross_agent_attention], dim=-1)    # [B, H, L, S+1]
         map_attention = torch.cat([map_map_attention, map_agent_attention], dim=-1)         # [B, H, 1, S+1]
         combined_attention = torch.cat([map_attention, traj_attention], dim=-2)             # [B, H, L+1, S+1]
-
-        print(f"12. {traj_attention.shape, map_attention.shape, combined_attention.shape=}")
+        # print(f"12. {traj_attention.shape, map_attention.shape, combined_attention.shape=}")
 
         # softmax
         combined_attention = F.softmax(combined_attention, dim=-1)
-
-        print(f"13. {combined_attention.shape=}")
+        # print(f"13. {combined_attention.shape=}")
 
         # dropout       # TODO: CAREFUL: ARE WE IN DANGER IF WE DROPOUT THE MAP ENTIRELY? --> Should we dropout only the trajectory data?
         combined_attention = self.dropout(combined_attention)
-
-        print(f"14. {combined_attention.shape=}")
+        # print(f"14. {combined_attention.shape=}")
 
         # score multiply values
         combined_v = torch.cat([v_map_, v_traj], dim=-2)             # [B, H, S+1, v]
-
-        print(f"15. {combined_v.shape=}")
+        # print(f"15. {combined_v.shape=}")
 
         attention_output = combined_attention @ combined_v          # [B, H, L+1, S+1] @ [B, H, S+1, v] = [B, H, L+1, v]
-
-        print(f"16. {attention_output.shape=}")
+        # print(f"16. {attention_output.shape=}")
 
         # return output
         attention_output = attention_output.transpose(1, 2).reshape(B, L+1, self.vdim)      # [B, L+1, V]
         traj_output = attention_output[:, 1:, :]                     # [B, L, V]
         map_output = attention_output[:, 0, :]                       # [B, V]
-
-        print(f"17. {attention_output.shape, traj_output.shape, map_output.shape=}")
+        # print(f"17. {attention_output.shape, traj_output.shape, map_output.shape=}")
 
         # separate MLP for map and traj
         traj_output = self.fc_traj(traj_output)                     # [B, L, V]
         map_output = self.fc_map(map_output)                        # [B, V]
-
-        print(f"18. {traj_output.shape, map_output.shape, (combined_attention.sum(dim=1) / self.num_heads).shape=}")
+        # print(f"18. {traj_output.shape, map_output.shape, (combined_attention.sum(dim=1) / self.num_heads).shape=}")
 
         # [B, L, V], [B, V], [B, L+1, S+1]
         return traj_output, map_output, combined_attention.sum(dim=1) / self.num_heads
