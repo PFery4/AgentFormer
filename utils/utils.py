@@ -3,6 +3,7 @@ Code borrowed from Xinshuo_PyToolbox: https://github.com/xinshuoweng/Xinshuo_PyT
 """
 
 import os
+import psutil
 import shutil
 import torch
 import numpy as np
@@ -34,27 +35,27 @@ class AverageMeter(object):
 
 
 def isnparray(nparray_test):
-	return isinstance(nparray_test, np.ndarray)
+    return isinstance(nparray_test, np.ndarray)
 
 
 def isinteger(integer_test):
-	if isnparray(integer_test): return False
-	try: return isinstance(integer_test, int) or int(integer_test) == integer_test
-	except ValueError: return False
-	except TypeError: return False
+    if isnparray(integer_test): return False
+    try: return isinstance(integer_test, int) or int(integer_test) == integer_test
+    except ValueError: return False
+    except TypeError: return False
 
 
 def isfloat(float_test):
-	return isinstance(float_test, float)
+    return isinstance(float_test, float)
 
 
 def isscalar(scalar_test):
-	try: return isinteger(scalar_test) or isfloat(scalar_test)
-	except TypeError: return False
+    try: return isinteger(scalar_test) or isfloat(scalar_test)
+    except TypeError: return False
 
 
 def islogical(logical_test):
-	return isinstance(logical_test, bool)
+    return isinstance(logical_test, bool)
 
     
 def isstring(string_test):
@@ -62,7 +63,7 @@ def isstring(string_test):
 
 
 def islist(list_test):
-	return isinstance(list_test, list)
+    return isinstance(list_test, list)
 
 
 def convert_secs2time(seconds):
@@ -87,59 +88,59 @@ def recreate_dirs(*dirs):
 
 
 def is_path_valid(pathname):
-	try:  
-		if not isstring(pathname) or not pathname: return False
-	except TypeError: return False
-	else: return True
+    try:
+        if not isstring(pathname) or not pathname: return False
+    except TypeError: return False
+    else: return True
 
 
 def is_path_creatable(pathname):
-	'''
-	if any previous level of parent folder exists, returns true
-	'''
-	if not is_path_valid(pathname): return False
-	pathname = os.path.normpath(pathname)
-	pathname = os.path.dirname(os.path.abspath(pathname))
+    '''
+    if any previous level of parent folder exists, returns true
+    '''
+    if not is_path_valid(pathname): return False
+    pathname = os.path.normpath(pathname)
+    pathname = os.path.dirname(os.path.abspath(pathname))
 
-	# recursively to find the previous level of parent folder existing
-	while not is_path_exists(pathname):     
-		pathname_new = os.path.dirname(os.path.abspath(pathname))
-		if pathname_new == pathname: return False
-		pathname = pathname_new
-	return os.access(pathname, os.W_OK)
+    # recursively to find the previous level of parent folder existing
+    while not is_path_exists(pathname):
+        pathname_new = os.path.dirname(os.path.abspath(pathname))
+        if pathname_new == pathname: return False
+        pathname = pathname_new
+    return os.access(pathname, os.W_OK)
 
 
 def is_path_exists(pathname):
-	try: return is_path_valid(pathname) and os.path.exists(pathname)
-	except OSError: return False
+    try: return is_path_valid(pathname) and os.path.exists(pathname)
+    except OSError: return False
 
 
 def is_path_exists_or_creatable(pathname):
-	try: return is_path_exists(pathname) or is_path_creatable(pathname)
-	except OSError: return False
+    try: return is_path_exists(pathname) or is_path_creatable(pathname)
+    except OSError: return False
 
 
 def isfile(pathname):
-	if is_path_valid(pathname):
-		pathname = os.path.normpath(pathname)
-		name = os.path.splitext(os.path.basename(pathname))[0]
-		ext = os.path.splitext(pathname)[1]
-		return len(name) > 0 and len(ext) > 0
-	else: return False
+    if is_path_valid(pathname):
+        pathname = os.path.normpath(pathname)
+        name = os.path.splitext(os.path.basename(pathname))[0]
+        ext = os.path.splitext(pathname)[1]
+        return len(name) > 0 and len(ext) > 0
+    else: return False
 
 
 def isfolder(pathname):
-	'''
-	if '.' exists in the subfolder, the function still justifies it as a folder. e.g., /mnt/dome/adhoc_0.5x/abc is a folder
-	if '.' exists after all slashes, the function will not justify is as a folder. e.g., /mnt/dome/adhoc_0.5x is NOT a folder
-	'''
-	if is_path_valid(pathname):
-		pathname = os.path.normpath(pathname)
-		if pathname == './': return True
-		name = os.path.splitext(os.path.basename(pathname))[0]
-		ext = os.path.splitext(pathname)[1]
-		return len(name) > 0 and len(ext) == 0
-	else: return False
+    '''
+    if '.' exists in the subfolder, the function still justifies it as a folder. e.g., /mnt/dome/adhoc_0.5x/abc is a folder
+    if '.' exists after all slashes, the function will not justify is as a folder. e.g., /mnt/dome/adhoc_0.5x is NOT a folder
+    '''
+    if is_path_valid(pathname):
+        pathname = os.path.normpath(pathname)
+        if pathname == './': return True
+        name = os.path.splitext(os.path.basename(pathname))[0]
+        ext = os.path.splitext(pathname)[1]
+        return len(name) > 0 and len(ext) == 0
+    else: return False
 
 
 def mkdir_if_missing(input_path):
@@ -148,25 +149,25 @@ def mkdir_if_missing(input_path):
 
 
 def safe_list(input_data, warning=True, debug=True):
-	'''
-	copy a list to the buffer for use
-	parameters:
-		input_data:		a list
-	outputs:
-		safe_data:		a copy of input data
-	'''
-	if debug: assert islist(input_data), 'the input data is not a list'
-	safe_data = copy.copy(input_data)
-	return safe_data
+    '''
+    copy a list to the buffer for use
+    parameters:
+        input_data:		a list
+    outputs:
+        safe_data:		a copy of input data
+    '''
+    if debug: assert islist(input_data), 'the input data is not a list'
+    safe_data = copy.copy(input_data)
+    return safe_data
 
 
 def safe_path(input_path, warning=True, debug=True):
     '''
     convert path to a valid OS format, e.g., empty string '' to '.', remove redundant '/' at the end from 'aa/' to 'aa'
     parameters:
-    	input_path:		a string
+        input_path:		a string
     outputs:
-    	safe_data:		a valid path in OS format
+        safe_data:		a valid path in OS format
     '''
     if debug: assert isstring(input_path), 'path is not a string: %s' % input_path
     safe_data = copy.copy(input_path)
@@ -175,10 +176,10 @@ def safe_path(input_path, warning=True, debug=True):
 
 
 def prepare_seed(rand_seed):
-	np.random.seed(rand_seed)
-	random.seed(rand_seed)
-	torch.manual_seed(rand_seed)
-	torch.cuda.manual_seed_all(rand_seed)
+    np.random.seed(rand_seed)
+    random.seed(rand_seed)
+    torch.manual_seed(rand_seed)
+    torch.cuda.manual_seed_all(rand_seed)
 
 
 def initialize_weights(modules):
@@ -195,56 +196,76 @@ def initialize_weights(modules):
 
 
 def print_log(print_str, log, same_line=False, display=True):
-	'''
-	print a string to a log file
+    '''
+    print a string to a log file
 
-	parameters:
-		print_str:          a string to print
-		log:                a opened file to save the log
-		same_line:          True if we want to print the string without a new next line
-		display:            False if we want to disable to print the string onto the terminal
-	'''
-	if display:
-		if same_line: print('{}'.format(print_str), end='')
-		else: print('{}'.format(print_str))
+    parameters:
+        print_str:          a string to print
+        log:                a opened file to save the log
+        same_line:          True if we want to print the string without a new next line
+        display:            False if we want to disable to print the string onto the terminal
+    '''
+    if display:
+        if same_line: print('{}'.format(print_str), end='')
+        else: print('{}'.format(print_str))
 
-	if same_line: log.write('{}'.format(print_str))
-	else: log.write('{}\n'.format(print_str))
-	log.flush()
+    if same_line: log.write('{}'.format(print_str))
+    else: log.write('{}\n'.format(print_str))
+    log.flush()
+
+
+def memory_report(message: str, msg_len: int = 50):
+    print(f"{message.ljust(msg_len)} | ", end="")
+    # CPU
+    CPU_mem = psutil.virtual_memory()
+    cpu_total = CPU_mem.total / 2 ** 30
+    cpu_used = CPU_mem.used / 2 ** 30
+    print('\tCPU: {:5.2f}/{:5.2f} GB are available'.format(cpu_total - cpu_used, cpu_total), end="")
+
+    # GPU
+    if not torch.cuda.is_available():
+        print("\tGPU: not available")
+    else:
+        device = torch.device('cuda:0')
+        torch.cuda.empty_cache()
+        gpu_total = torch.cuda.get_device_properties(device=device).total_memory / 2 ** 30
+        gpu_reserved = torch.cuda.memory_reserved(device=device) / 2 ** 30
+        torch.cuda.reset_peak_memory_stats()
+        print('\tGPU: {:5.2f}/{:5.2f} GB are available'.format(gpu_total - gpu_reserved, gpu_total))
 
 
 def find_unique_common_from_lists(input_list1, input_list2, warning=True, debug=True):
-	'''
-	find common items from 2 lists, the returned elements are unique. repetitive items will be ignored
-	if the common items in two elements are not in the same order, the outputs follows the order in the first list
+    '''
+    find common items from 2 lists, the returned elements are unique. repetitive items will be ignored
+    if the common items in two elements are not in the same order, the outputs follows the order in the first list
 
-	parameters:
-		input_list1, input_list2:		two input lists
+    parameters:
+        input_list1, input_list2:		two input lists
 
-	outputs:
-		list_common:	a list of elements existing both in list_src1 and list_src2	
-		index_list1:	a list of index that list 1 has common items
-		index_list2:	a list of index that list 2 has common items
-	'''
-	input_list1 = safe_list(input_list1, warning=warning, debug=debug)
-	input_list2 = safe_list(input_list2, warning=warning, debug=debug)
+    outputs:
+        list_common:	a list of elements existing both in list_src1 and list_src2
+        index_list1:	a list of index that list 1 has common items
+        index_list2:	a list of index that list 2 has common items
+    '''
+    input_list1 = safe_list(input_list1, warning=warning, debug=debug)
+    input_list2 = safe_list(input_list2, warning=warning, debug=debug)
 
-	common_list = list(set(input_list1).intersection(input_list2))
-	
-	# find index
-	index_list1 = []
-	for index in range(len(input_list1)):
-		item = input_list1[index]
-		if item in common_list:
-			index_list1.append(index)
+    common_list = list(set(input_list1).intersection(input_list2))
 
-	index_list2 = []
-	for index in range(len(input_list2)):
-		item = input_list2[index]
-		if item in common_list:
-			index_list2.append(index)
+    # find index
+    index_list1 = []
+    for index in range(len(input_list1)):
+        item = input_list1[index]
+        if item in common_list:
+            index_list1.append(index)
 
-	return common_list, index_list1, index_list2
+    index_list2 = []
+    for index in range(len(input_list2)):
+        item = input_list2[index]
+        if item in common_list:
+            index_list2.append(index)
+
+    return common_list, index_list1, index_list2
 
 
 def load_txt_file(file_path, debug=True):
