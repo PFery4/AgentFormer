@@ -1094,7 +1094,7 @@ class TorchDataGeneratorSDD(Dataset):
 
 
 if __name__ == '__main__':
-    from utils.utils import prepare_seed
+    from utils.utils import prepare_seed, memory_report
     from tqdm import tqdm
     print(sdd_conf.REPO_ROOT)
 
@@ -1147,12 +1147,12 @@ if __name__ == '__main__':
     print_log("torch version : {}".format(torch.__version__), log)
     print_log("cudnn version : {}".format(torch.backends.cudnn.version()), log)
 
-
     generator = TorchDataGeneratorSDD(parser=config, log=log, split='train')
 
-    for idx in range(10):
+    for idx in range(len(generator)):
+
+        memory_report('BEFORE')
+
         generator.__getitem__(idx)
 
-
-
-
+        memory_report('AFTER')
