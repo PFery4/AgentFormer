@@ -688,6 +688,33 @@ class TorchDataGeneratorSDD(Dataset):
         scene_map.crop(crop_coords=scene_map.to_map_points(self.map_crop_coords), resolution=self.map_resolution)
         scene_map.set_homography(matrix=self.map_homography)
 
+    def random_agent_removal(self, keep_mask: Tensor, tgt_idx: int, center_agent_idx: int):
+        keep_indices = torch.Tensor([tgt_idx, center_agent_idx]).to(torch.int64).unique()
+        candidate_indices = torch.nonzero(keep_mask).squeeze()
+        candidate_indices = candidate_indices[(candidate_indices[:, None] != keep_indices).all(dim=1)]
+
+        kps = torch.randperm(candidate_indices.shape[0])[:self.max_train_agent - keep_indices.shape[0]]
+
+        keep_indices = torch.cat((keep_indices, candidate_indices[kps]))
+        keep_mask[:] = False
+        keep_mask[keep_indices] = True
+        return keep_mask
+
+    def remove_agents_far_from(self, keep_mask: Tensor, target_point: Tensor, points: Tensor):
+        # keep_mask [N]
+        # target_point [2]
+        # points [N, 2]
+        distances = torch.linalg.norm(points - target_point, dim=1)
+
+        idx_sort = torch.argsort(distances, dim=-1)
+        sorted_mask = keep_mask[idx_sort]
+        agent_mask = (torch.cumsum(sorted_mask, dim=-1) <= self.max_train_agent)
+        final_mask = torch.logical_and(sorted_mask, agent_mask)
+
+        keep_mask[:] = False
+        keep_mask[idx_sort[final_mask]] = True
+        return keep_mask
+
     def trajectory_processing_without_occlusion(self, trajs: Tensor, scene_map: TorchGeometricMap, m_by_px: float):
         trajs = scene_map.to_map_points(trajs)
         obs_mask = torch.ones(trajs.shape[:-1])
@@ -865,15 +892,12 @@ class TorchDataGeneratorSDD(Dataset):
         # further cutting down of agents if we have too many. We make sure not to remove the center of the instance
         # nor the agent who was the subject of the occlusion
         if torch.sum(keep_mask) > self.max_train_agent:
-            keep_indices = torch.Tensor([tgt_idx, center_agent_idx]).to(torch.int64).unique()
-            candidate_indices = torch.nonzero(keep_mask).squeeze()
-            candidate_indices = candidate_indices[(candidate_indices[:, None] != keep_indices).all(dim=1)]
-
-            kps = torch.randperm(candidate_indices.shape[0])[:self.max_train_agent - keep_indices.shape[0]]
-
-            keep_indices = torch.cat((keep_indices, candidate_indices[kps]))
-            keep_mask[:] = False
-            keep_mask[keep_indices] = True
+            last_obs_pos = self.last_observed_positions(trajs=trajs, last_obs_indices=last_obs_indices)
+            keep_mask = self.remove_agents_far_from(
+                keep_mask=keep_mask,
+                target_point=last_obs_pos[center_agent_idx],
+                points=last_obs_pos
+            )
 
         # removing agent surplus
         ids = ids[keep_mask]
@@ -1151,8 +1175,15 @@ if __name__ == '__main__':
 
     for idx in range(len(generator)):
 
-        memory_report('BEFORE')
+        # memory_report('BEFORE')
 
-        generator.__getitem__(idx)
+        # 225, 615, 735
+        # (run this on the v3 simulators, with max_train_agent 16 to
+        # observe preprocessing of cases with too many agents)
+        if idx < 735:
+            continue
 
-        memory_report('AFTER')
+        data_dict = generator.__getitem__(idx)
+        print(f"{idx, len(data_dict['identities'])=}")
+
+        # memory_report('AFTER')
