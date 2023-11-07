@@ -15,19 +15,7 @@ from utils.torch import ExpParamAnnealer
 from utils.utils import initialize_weights, memory_report
 
 
-def generate_ar_mask(sz: int, agent_num: int, agent_mask: torch.Tensor) -> torch.Tensor:
-    assert sz % agent_num == 0
-    T = sz // agent_num
-    mask = agent_mask.repeat(T, T)
-    for t in range(T-1):
-        i1 = t * agent_num
-        i2 = (t+1) * agent_num
-        mask[i1:i2, i2:] = float('-inf')
-    raise NotImplementedError
-    return mask
-
-
-def generate_ar_mask_with_variable_agents_per_timestep(
+def causal_attention_mask(
         timestep_sequence: torch.Tensor,
         batch_size: int = 1
 ) -> torch.Tensor:
@@ -37,10 +25,10 @@ def generate_ar_mask_with_variable_agents_per_timestep(
     for idx in range(stop_at):
         mask_seq = (timestep_sequence > timestep_sequence[idx])
         mask[idx, mask_seq] = float('-inf')
-    return mask.unsqueeze(0).repeat(batch_size, 1, 1)
+    return mask.unsqueeze(0).repeat(batch_size, 1, 1)       # [batch_size, T, T]
 
 
-def generate_mask(tgt_sz: int, src_sz: int, batch_size: int = 1) -> torch.Tensor:
+def zeros_mask(tgt_sz: int, src_sz: int, batch_size: int = 1) -> torch.Tensor:
     """
     This mask generation process is responsible for the functionality discussed in the paragraph
     "Encoding Agent Connectivity" in the original AgentFormer paper. The function presented here is modified such
@@ -51,6 +39,14 @@ def generate_mask(tgt_sz: int, src_sz: int, batch_size: int = 1) -> torch.Tensor
     the implementation of this function accordingly.
     """
     return torch.zeros(batch_size, tgt_sz, src_sz)
+
+
+def non_causal_attention_mask(
+        timestep_sequence: torch.Tensor,
+        batch_size: int = 1
+) -> torch.Tensor:
+    # timestep_sequence [T]
+    return zeros_mask(timestep_sequence.shape[0], timestep_sequence.shape[0], batch_size)       # [batch_size, T, T]
 
 
 class PositionalEncoding(nn.Module):
@@ -134,6 +130,7 @@ class ContextEncoder(nn.Module):
         self.pooling = ctx['context_encoder'].get('pooling', 'mean')
         self.vel_heading = ctx['vel_heading']
         self.global_map_attention = ctx['global_map_attention']
+        self.causal_attention = ctx['causal_attention']
 
         ctx['context_dim'] = self.model_dim
         in_dim = self.motion_dim * len(self.input_type)
@@ -152,6 +149,11 @@ class ContextEncoder(nn.Module):
 
         self.pos_encoder = PositionalEncoding(self.model_dim, dropout=self.dropout, concat=ctx['pos_concat'])
 
+        if self.causal_attention:
+            self.attention_mask = causal_attention_mask
+        else:
+            self.attention_mask = non_causal_attention_mask
+
     def forward(self, data):
         # NOTE: THIS FUNCTION IS NOT CAPABLE OF OPERATING ON BATCH SIZES != 1
 
@@ -165,10 +167,12 @@ class ContextEncoder(nn.Module):
             time_tensor=data['obs_timestep_sequence']   # [B, O]
         )                                               # [B, O, model_dim]
 
-        src_mask = generate_mask(
-            data['obs_timestep_sequence'].shape[1],
-            data['obs_timestep_sequence'].shape[1]
-        ).to(tf_seq_in.device)        # [B, O, O]
+        src_mask = self.attention_mask(
+            timestep_sequence=data['obs_timestep_sequence'][0, ...],     # [O]
+            batch_size=1
+        ).to(tf_seq_in.device)       # [B, O, O]
+        # print(f"{data['obs_timestep_sequence'][0, ...]=}")
+        # print(f"{src_mask, src_mask.shape=}")
 
         data['context_enc'], data['context_map'] = self.tf_encoder(
             src=tf_in_pos,                                          # [B, O, model_dim]
@@ -226,6 +230,7 @@ class FutureEncoder(nn.Module):
         self.pooling = ctx['future_encoder'].get('pooling', 'mean')
         self.vel_heading = ctx['vel_heading']
         self.global_map_attention = ctx['global_map_attention']
+        self.causal_attention = ctx['causal_attention']
 
         # networks
         in_dim = forecast_dim * len(self.input_type)
@@ -251,6 +256,11 @@ class FutureEncoder(nn.Module):
         # initialize
         initialize_weights(self.q_z_net.modules())
 
+        if self.causal_attention:
+            self.attention_mask = causal_attention_mask
+        else:
+            self.attention_mask = non_causal_attention_mask
+
     def forward(self, data):
         # NOTE: THIS FUNCTION IS NOT CAPABLE OF OPERATING ON BATCH SIZES != 1
 
@@ -265,15 +275,18 @@ class FutureEncoder(nn.Module):
         )                                                   # [B, P, model_dim]
         # print(f"{tf_in_pos.shape=}")
 
-        mem_mask = generate_mask(
-            data['pred_timestep_sequence'].shape[1],
-            data['obs_timestep_sequence'].shape[1]
+        mem_mask = zeros_mask(
+            tgt_sz=data['pred_timestep_sequence'].shape[1],
+            src_sz=data['obs_timestep_sequence'].shape[1],
+            batch_size=1
         ).to(tf_seq_in.device)          # [B, P, O]
-        tgt_mask = generate_mask(
-            data['pred_timestep_sequence'].shape[1],
-            data['pred_timestep_sequence'].shape[1]
+        tgt_mask = self.attention_mask(
+            timestep_sequence=data['pred_timestep_sequence'][0, ...],       # [P]
+            batch_size=1
         ).to(tf_seq_in.device)          # [B, P, P]
         # print(f"{mem_mask.shape, tgt_mask.shape=}")
+        # print(f"{data['pred_timestep_sequence'][0, ...]=}")
+        # print(f"{tgt_mask, tgt_mask.shape=}")
         # print(f"{data['global_map_encoding'].shape=}")
         # print(f"{data['context_map'].shape=}")
 
@@ -415,13 +428,13 @@ class FutureDecoder(nn.Module):
         # Generate attention masks (tgt_mask ensures proper autoregressive attention, such that predictions which
         # were originally made at loop iteration nr t cannot attend from sequence elements which have been added
         # at loop iterations >t)
-        tgt_mask = generate_ar_mask_with_variable_agents_per_timestep(
+        tgt_mask = causal_attention_mask(
             timestep_sequence=timestep_sequence,
             batch_size=tf_in.shape[0]
         ).to(tf_in.device)      # [B * sample_num, K, K]
-        mem_mask = generate_mask(
-            timestep_sequence.shape[0],
-            context.shape[1],
+        mem_mask = zeros_mask(
+            tgt_sz=timestep_sequence.shape[0],
+            src_sz=context.shape[1],
             batch_size=tf_in.shape[0]
         ).to(tf_in.device)      # [B * sample_num, K, O]
         # print(f"{tgt_mask[0], tgt_mask.shape=}")
@@ -720,6 +733,7 @@ class AgentFormer(nn.Module):
             'vel_heading': cfg.get('vel_heading', False),
             'learn_prior': cfg.get('learn_prior', False),
             'global_map_attention': cfg.get('global_map_attention', False),
+            'causal_attention': cfg.get('causal_attention', False),
             'context_encoder': cfg.context_encoder,
             'future_encoder': cfg.future_encoder,
             'future_decoder': cfg.future_decoder
