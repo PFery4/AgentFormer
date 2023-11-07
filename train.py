@@ -9,11 +9,11 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
 from data.dataloader import data_generator
-from data.sdd_dataloader import AgentFormerDataGeneratorForSDD, TorchDataGeneratorSDD
+from data.sdd_dataloader import TorchDataGeneratorSDD
 from model.model_lib import model_dict
 from utils.torch import get_scheduler
 from utils.config import Config
-from utils.utils import prepare_seed, print_log, AverageMeter, convert_secs2time, get_timestring
+from utils.utils import prepare_seed, print_log, AverageMeter, convert_secs2time, get_timestring, memory_report
 
 torch.backends.cudnn.enabled = True
 torch.backends.cudnn.deterministic = True
@@ -21,12 +21,14 @@ torch.backends.cudnn.benchmark = True
 
 
 def logging(cfg, epoch, total_epoch, iter, total_iter, ep, seq, frame, losses_str, log):
-    print_log('{} | Epo: {:02d}/{:02d}, '
-              'It: {:04d}/{:04d}, '
-              'EP: {:s}, ETA: {:s}, seq {:s}, frame {:05d}, {}'
-              .format(cfg, epoch, total_epoch, iter, total_iter, \
-                      convert_secs2time(ep), convert_secs2time(ep / iter * (total_iter * (total_epoch - epoch) - iter)),
-                      seq, frame, losses_str), log)
+    ep_time_str = convert_secs2time(ep)
+    eta_time_str = convert_secs2time(ep / (iter + 1) * (total_iter * (total_epoch - epoch) - (iter + 1)))
+    prnt_str = f"{cfg} |Epo: {epoch:02d}/{total_epoch:02d}, " \
+               f"It: {iter:04d}/{total_iter:04d}, " \
+               f"Ep: {ep_time_str:s}, ETA: {eta_time_str}," \
+               f"seq: {seq:s}, frame: {frame}," \
+               f"{losses_str}"
+    print_log(prnt_str, log)
 
 
 def train(epoch_index: int):
@@ -34,15 +36,7 @@ def train(epoch_index: int):
     train_loss_meter = {x: AverageMeter() for x in cfg.loss_cfg.keys()}
     train_loss_meter['total_loss'] = AverageMeter()
 
-    # # RESOURCE TEST ##################################################################################################
-    # stop_counter = 500
-    # cnt = 0
-    # # RESOURCE TEST ##################################################################################################
-
-    # TODO: CHECK IF THE NEW TRAINING LOOP WORKS (SPOILER IT DOESN'T, BUT YOU'LL GET THERE)
-
     for i, data in enumerate(training_loader):
-
         # providing the data dictionary to the model
         model.set_data(data=data)
 
@@ -57,13 +51,15 @@ def train(epoch_index: int):
         total_loss.backward()
         optimizer.step()
 
+        # memory_report('BEFORE UPDATING LOSS METERS')
         train_loss_meter['total_loss'].update(total_loss.item())
         for key in loss_unweighted_dict.keys():
             train_loss_meter[key].update(loss_unweighted_dict[key])
+        # memory_report('AFTER UPDATING LOSS METERS')
 
         if i % cfg.print_freq == 0:
             ep = time.time() - since_train
-            losses_str = ' '.join([f'{x}: {y.avg:.3f} ({y.val:3.f})' for x, y in train_loss_meter.items()])
+            losses_str = ' '.join([f'{x}: {y.avg:.3f} ({y.val:.3f})' for x, y in train_loss_meter.items()])
             logging(
                 cfg=args.cfg,
                 epoch=epoch_index,
@@ -71,8 +67,8 @@ def train(epoch_index: int):
                 iter=i,
                 total_iter=len(training_loader),
                 ep=ep,
-                seq=data['seq'],
-                frame=data['frame'],
+                seq=data['seq'][0],
+                frame=data['frame'][0],
                 losses_str=losses_str,
                 log=log
             )
@@ -149,12 +145,10 @@ if __name__ == '__main__':
 
     """ data """
     if cfg.dataset == "sdd":
-        # generator = AgentFormerDataGeneratorForSDD(cfg, log, split="train", phase="training")
         sdd_dataset = TorchDataGeneratorSDD(parser=cfg, log=log, split='train')
         training_loader = DataLoader(dataset=sdd_dataset, shuffle=True)
     else:
         generator = data_generator(cfg, log, split='train', phase='training')
-    # print(f"{type(generator)=}")
 
     """ model """
     model_id = cfg.get('model_id', 'agentformer')
