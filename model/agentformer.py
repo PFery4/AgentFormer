@@ -137,8 +137,6 @@ class ContextEncoder(nn.Module):
 
         ctx['context_dim'] = self.model_dim
         in_dim = self.motion_dim * len(self.input_type)
-        # if 'map' in self.input_type:
-        #     in_dim += ctx['map_enc_dim'] - self.motion_dim
         self.input_fc = nn.Linear(in_dim, self.model_dim)
 
         encoder_config = {
@@ -231,8 +229,6 @@ class FutureEncoder(nn.Module):
 
         # networks
         in_dim = forecast_dim * len(self.input_type)
-        if 'map' in self.input_type:
-            in_dim += ctx['map_enc_dim'] - forecast_dim
         self.input_fc = nn.Linear(in_dim, self.model_dim)
 
         decoder_config = {
@@ -308,10 +304,6 @@ class FutureEncoder(nn.Module):
             h = torch.stack(h)      # [B, N, model_dim]
             # print(f"{h.shape=}")
 
-            # h = torch.cat(
-            #     [torch.mean(tf_out[data['fut_agents'] == ag_id, :], dim=0)
-            #      for ag_id in torch.unique(data['fut_agents'])], dim=0
-            # )       # [N, model_dim]
         else:
 
             h = []
@@ -325,11 +317,6 @@ class FutureEncoder(nn.Module):
                 )
             h = torch.stack(h)      # [B, N, model_dim]
             # print(f"{h.shape=}")
-
-            # h = torch.cat(
-            #     [torch.max(tf_out[data['fut_agents'] == ag_id, :], dim=0)[0]
-            #      for ag_id in torch.unique(data['fut_agents'])], dim=0
-            # )       # [N, model_dim]
         if self.out_mlp_dim is not None:
             h = self.out_mlp(h)
         q_z_params = self.q_z_net(h)        # [B, N, nz (*2 if self.z_type == gaussian)]
@@ -371,14 +358,10 @@ class FutureDecoder(nn.Module):
         self.global_map_attention = ctx['global_map_attention']
 
         # sanity check
-        assert self.pred_mode in ["point", "gauss"]
+        assert self.pred_mode in ["point"]      # future work, adding functionality for "gauss"
 
         # networks
         in_dim = forecast_dim + len(self.input_type) * forecast_dim + self.nz
-        if 'map' in self.input_type:
-            in_dim += ctx['map_enc_dim'] - forecast_dim
-        if self.pred_mode == "gauss":
-            in_dim += 3     # adding three extra input dimensions: for the variance terms and correlation term of the distribution
         self.input_fc = nn.Linear(in_dim, self.model_dim)
 
         decoder_config = {
@@ -416,15 +399,6 @@ class FutureDecoder(nn.Module):
             context: torch.Tensor,                  # [B * sample_num, O, model_dim]
             sample_num: int
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        # old shapes
-        # dec_in_orig: torch.Tensor,  # [N, n_sample, 2]
-        # z_in_orig: torch.Tensor,  # [N, n_sample, nz]
-        # dec_input_sequence: torch.Tensor,  # [B, n_sample, nz + 2]
-        # timestep_sequence: torch.Tensor,  # [B]
-        # agent_sequence: torch.Tensor,  # [B]
-        # data: dict,
-        # context: torch.Tensor,  # [O, n_sample, model_dim]
-        # sample_num: int  # n_sample
 
         # Embed input sequence in high-dim space
         tf_in = self.input_fc(dec_input_sequence)   # [B * sample_num, K, model_dim]
@@ -558,31 +532,11 @@ class FutureDecoder(nn.Module):
         # retrieving the most recent observation for each agent
         dec_in = data['last_obs_positions'].repeat(sample_num, 1, 1)     # [B * sample_num, N, 2]
         # print(f"{dec_in.shape=}")
-
-        # print(f"{self.pred_mode=}")
-        if self.pred_mode == "gauss":
-            dist_params = torch.zeros([*dec_in.shape[:-1], self.out_module[0].N_params]).to(dec_in.device)
-            dist_params[..., :self.forecast_dim] = dec_in
-            dec_in = dist_params
-
-        # print(f"AFTER GAUSS{dec_in, dec_in.shape=}")
         # print(f"{data['pre_timesteps']=}")
         # print(f"{data['last_observed_timesteps']=}")
 
         # z: [B * sample_num, N, nz]
         in_arr = [dec_in, z]
-        # print(f"{self.input_type=}")
-        # for key in self.input_type:
-        #     if key == 'heading':
-        #         # heading = data['heading_vec'].unsqueeze(1).repeat((1, sample_num, 1))
-        #         # in_arr.append(heading)
-        #         raise NotImplementedError("if key == 'heading'")
-        #     elif key == 'map':
-        #         # map_enc = data['map_enc'].unsqueeze(1).repeat((1, sample_num, 1))
-        #         # in_arr.append(map_enc)
-        #         raise NotImplementedError("if key == 'map'")
-        #     else:
-        #         raise ValueError('wrong decode input type!')
         dec_in_z = torch.cat(in_arr, dim=-1)        # [B * sample_num, N, nz + 2]
         # print(f"{dec_in_z.shape=}")
 
@@ -675,12 +629,6 @@ class FutureDecoder(nn.Module):
         data[f'{mode}_dec_agents'] = pred_agent_sequence.repeat(sample_num, 1)  # [B * sample_num, P]
         data[f'{mode}_dec_past_mask'] = past_indices                            # [P]
         data[f'{mode}_dec_timesteps'] = pred_timestep_sequence                  # [P]
-        if self.pred_mode == "gauss":
-            raise NotImplementedError
-            # data[f'{mode}_dec_mu'] = dec_motion[..., 0:self.forecast_dim]
-            # data[f'{mode}_dec_sig'] = dec_motion[..., self.forecast_dim:2*self.forecast_dim]
-            # data[f'{mode}_dec_rho'] = dec_motion[..., 2*self.forecast_dim:]
-            # data[f'{mode}_dec_Sig'] = self.out_module[0].covariance_matrix(sig=data[f'{mode}_dec_sig'], rho=data[f'{mode}_dec_rho'])
         if need_weights:
             data['attn_weights'] = attn_weights
 
@@ -771,13 +719,11 @@ class AgentFormer(nn.Module):
             'sn_out_heading': cfg.get('sn_out_heading', False),
             'vel_heading': cfg.get('vel_heading', False),
             'learn_prior': cfg.get('learn_prior', False),
-            'use_map': cfg.get('use_map', False),
             'global_map_attention': cfg.get('global_map_attention', False),
             'context_encoder': cfg.context_encoder,
             'future_encoder': cfg.future_encoder,
             'future_decoder': cfg.future_decoder
         }
-        self.use_map = cfg.get('use_map', False)
         self.global_map_attention = cfg.get('global_map_attention', False)
         self.map_global_rot = cfg.get('map_global_rot', False)
         self.ar_train = cfg.get('ar_train', True)
@@ -792,11 +738,6 @@ class AgentFormer(nn.Module):
 
         # save all computed variables
         self.data = None
-
-        # map encoder
-        if self.use_map:
-            self.map_encoder = MapEncoder(cfg.map_encoder)
-            ctx['map_enc_dim'] = self.map_encoder.out_dim
 
         if self.global_map_attention:
             self.global_map_encoder = MapEncoder(cfg.global_map_encoder)
@@ -855,12 +796,6 @@ class AgentFormer(nn.Module):
             # print(f"{self.data['global_map_encoding'].shape=}")
         # memory_report('AFTER GLOBAL MAP ENCODING')
 
-        if self.use_map:
-            # self.data['map_enc'] = self.map_encoder(self.data['agent_maps'])
-            # print(f"{self.data['combined_map'], self.data['combined_map'].shape=}")
-            # self.data['map_encoding'] = self.map_encoder(self.data['combined_map'].unsqueeze(0)).squeeze()
-            # print(f"{self.data['map_encoding'], self.data['map_encoding'].shape=}")
-            raise NotImplementedError
         # print(f"\nCALLING:  CONTEXT ENCODER\n")
         self.context_encoder(self.data)
         # memory_report('AFTER CONTEXT ENCODING')
@@ -881,9 +816,6 @@ class AgentFormer(nn.Module):
         return self.data
 
     def inference(self, mode='infer', sample_num=20, need_weights=False):
-        if self.use_map and self.data['map_enc'] is None:
-            # self.data['map_enc'] = self.map_encoder(self.data['agent_maps'])
-            raise NotImplementedError("self.use_map and self.data['map_enc'] is None")
         if self.data['context_enc'] is None:
             self.context_encoder(self.data)
         if mode == 'recon':
