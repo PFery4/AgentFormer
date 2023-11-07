@@ -281,7 +281,7 @@ class MapAgentAwareAttention(AgentAwareAttentionV2):
         combined_attention = F.softmax(combined_attention, dim=-1)
         # print(f"13. {combined_attention.shape=}")
 
-        # dropout       # TODO: CAREFUL: ARE WE IN DANGER IF WE DROPOUT THE MAP ENTIRELY? --> Should we dropout only the trajectory data?
+        # dropout
         combined_attention = self.dropout(combined_attention)
         # print(f"14. {combined_attention.shape=}")
 
