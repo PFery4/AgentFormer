@@ -1,5 +1,4 @@
 import matplotlib.axes
-from mpl_toolkits.axes_grid1 import make_axes_locatable
 import torch
 import numpy as np
 from torch import nn
@@ -13,7 +12,7 @@ from model.common.dist import Normal, Categorical
 from model.attention_modules import AgentFormerEncoder, AgentFormerDecoder
 from model.map_encoder import MapEncoder
 from utils.torch import ExpParamAnnealer
-from utils.utils import initialize_weights
+from utils.utils import initialize_weights, memory_report
 
 
 def generate_ar_mask(sz: int, agent_num: int, agent_mask: torch.Tensor) -> torch.Tensor:
@@ -187,7 +186,6 @@ class ContextEncoder(nn.Module):
 
             agent_contexts = []
             for context_seq, identities in zip(data['context_enc'], data['obs_identity_sequence']):
-                print(f"{torch.unique(identities), torch.unique(identities).shape}")
                 agent_contexts.append(
                     torch.stack(
                         [torch.mean(context_seq[identities == ag_id, ...], dim=0)
@@ -379,7 +377,7 @@ class FutureDecoder(nn.Module):
         in_dim = forecast_dim + len(self.input_type) * forecast_dim + self.nz
         if 'map' in self.input_type:
             in_dim += ctx['map_enc_dim'] - forecast_dim
-        if self.pred_mode == "gauss":            # TODO: Maybe this can be integrated in a better way
+        if self.pred_mode == "gauss":
             in_dim += 3     # adding three extra input dimensions: for the variance terms and correlation term of the distribution
         self.input_fc = nn.Linear(in_dim, self.model_dim)
 
@@ -783,7 +781,6 @@ class AgentFormer(nn.Module):
         self.global_map_attention = cfg.get('global_map_attention', False)
         self.map_global_rot = cfg.get('map_global_rot', False)
         self.ar_train = cfg.get('ar_train', True)
-        # self.max_train_agent = cfg.get('max_train_agent', 100)        # this has been moved to preprocessor
         self.loss_cfg = cfg.get('loss_cfg')
         self.loss_names = list(self.loss_cfg.keys())
         self.compute_sample = 'sample' in self.loss_names
@@ -817,6 +814,7 @@ class AgentFormer(nn.Module):
     def set_data(self, data: dict) -> None:
         # NOTE: in our case, batch size B is always 1
 
+        # memory_report('BEFORE PUPOLATING DATA DICT')
         self.data = defaultdict(lambda: None)
 
         self.data['valid_id'] = data['identities'].detach().clone().to(self.device)     # [B, N]
@@ -844,158 +842,18 @@ class AgentFormer(nn.Module):
         self.data['nlog_probability_occlusion_map'] = data['nlog_probability_occlusion_map'].detach().clone().to(self.device)   # [B, H, W]
         self.data['combined_map'] = torch.cat((self.data['scene_map'], self.data['occlusion_map'].unsqueeze(1)), dim=1)     # [B, C + 1, H, W]
         self.data['map_homography'] = data['map_homography'].detach().clone().to(self.device)        # [B, 3, 3]
-
-    # def visualize_data_dict(self, show: bool = True):
-    #     # TODO: there are a few things to fix in this data visualization function
-    #
-    #     [print(f"{k}: {type(v)}") for k, v in self.data.items()]
-    #     print()
-    #
-    #     # High level metadata
-    #     print(f"{self.data['T_total']=}")
-    #     print(f"{self.data['batch_size']=}")
-    #     print(f"{self.data['agent_num']=}")
-    #     print()
-    #
-    #     # Multi-Agent sequence relevant data
-    #     print(f"{self.data['timesteps']=}")
-    #     print(f"{self.data['valid_id']=}")
-    #     print()
-    #
-    #     # Geometric data
-    #     print(f"{self.data['scene_orig']=}")
-    #     print(f"{self.data['scene_map']=}")
-    #
-    #     # Trajectory data
-    #     # print(f"{self.data['pre_sequence']=}")
-    #     # print(f"{self.data['pre_sequence_scene_norm']=}")
-    #     # print(f"{self.data['pre_agents']=}")
-    #     # print(f"{self.data['pre_timesteps']=}")
-    #     # print(f"{self.data['pre_vel_seq']=}")
-    #     # print()
-    #     # print(f"{self.data['fut_sequence']=}")
-    #     # print(f"{self.data['fut_sequence_scene_norm']=}")
-    #     # print(f"{self.data['fut_agents']=}")
-    #     # print(f"{self.data['fut_timesteps']=}")
-    #     # print(f"{self.data['fut_vel_seq']=}")
-    #     # print()
-    #
-    #     # extra Traj relevant data
-    #     print(f"{self.data['last_observed_timesteps']=}")
-    #     print(f"{self.data['cur_motion']=}")
-    #     print(f"{self.data['cur_motion_scene_norm']=}")
-    #     print(f"{self.data['agent_mask']=}")
-    #
-    #     fig = plt.figure()
-    #     ax0 = fig.add_subplot(131, projection='3d')
-    #     ax1 = fig.add_subplot(132, projection='3d')
-    #     ax2 = fig.add_subplot(133)
-    #
-    #     scene_map = self.data['scene_map']
-    #
-    #     if scene_map is not None:
-    #         ax0.set_xlim(0., scene_map.get_map_dimensions()[0])
-    #         ax0.set_ylim(scene_map.get_map_dimensions()[1], 0.)
-    #     ax0.view_init(90, -90)
-    #
-    #     scene_orig = scene_map.to_map_points(self.data['scene_orig'].detach().cpu().numpy())
-    #     ax0.scatter(scene_orig[0], scene_orig[1], 0.0, marker='D', s=30, c='red', label='scene_orig')
-    #
-    #     if scene_map is not None:
-    #         ax1.set_xlim(0. - scene_orig[0], scene_map.get_map_dimensions()[0] - scene_orig[0])
-    #         ax1.set_ylim(scene_map.get_map_dimensions()[1] - scene_orig[1], 0. - scene_orig[1])
-    #     ax1.view_init(90, -90)
-    #
-    #     valid_ids = self.data['valid_id'].detach().cpu().numpy()
-    #
-    #     pre_timesteps = self.data['pre_timesteps'].detach().cpu().numpy()
-    #     pre_agents = self.data['pre_agents'].detach().cpu().numpy()
-    #     pre_seq = scene_map.to_map_points(self.data['pre_sequence'].detach().cpu().numpy())
-    #     pre_seq_scene_norm = scene_map.to_map_points(self.data['pre_sequence_scene_norm'].detach().cpu().numpy())
-    #
-    #     fut_timesteps = self.data['fut_timesteps'].detach().cpu().numpy()
-    #     fut_agents = self.data['fut_agents'].detach().cpu().numpy()
-    #     fut_seq = scene_map.to_map_points(self.data['fut_sequence'].detach().cpu().numpy())
-    #     fut_seq_scene_norm = scene_map.to_map_points(self.data['fut_sequence_scene_norm'].detach().cpu().numpy())
-    #
-    #     cmap = plt.cm.get_cmap('hsv', len(valid_ids))
-    #
-    #     for i, agent in enumerate(valid_ids):
-    #         pre_mask = (pre_agents == agent)
-    #         ag_pre_seq = pre_seq[pre_mask]
-    #         ag_pre_seq_scene_norm = pre_seq_scene_norm[pre_mask]
-    #         ag_pre_timesteps = pre_timesteps[pre_mask]
-    #         fut_mask = (fut_agents == agent)
-    #         ag_fut_seq = fut_seq[fut_mask]
-    #         ag_fut_seq_scene_norm = fut_seq_scene_norm[fut_mask]
-    #         ag_fut_timesteps = fut_timesteps[fut_mask]
-    #
-    #         marker_line, stem_lines, base_line = ax0.stem(
-    #             ag_pre_seq[..., 0], ag_pre_seq[..., 1], ag_pre_timesteps,
-    #             linefmt='grey'
-    #         )
-    #         marker_line.set(markeredgecolor=cmap(i), markerfacecolor=cmap(i), alpha=0.7, markersize=5, marker='X')
-    #         stem_lines.set(alpha=0.0)
-    #         base_line.set(alpha=0.6, c=cmap(i))
-    #
-    #         marker_line, stem_lines, base_line = ax0.stem(
-    #             ag_fut_seq[..., 0], ag_fut_seq[..., 1], ag_fut_timesteps,
-    #             linefmt='grey'
-    #         )
-    #         marker_line.set(markeredgecolor=cmap(i), markerfacecolor=cmap(i), alpha=0.7, markersize=5)
-    #         stem_lines.set(alpha=0.0)
-    #         base_line.set(alpha=0.5, c=cmap(i))
-    #
-    #         marker_line, stem_lines, base_line = ax1.stem(
-    #             ag_pre_seq_scene_norm[..., 0], ag_pre_seq_scene_norm[..., 1], ag_pre_timesteps,
-    #             linefmt='grey'
-    #         )
-    #         marker_line.set(markeredgecolor=cmap(i), markerfacecolor=cmap(i), alpha=0.7, markersize=5, marker='X')
-    #         stem_lines.set(alpha=0.0)
-    #         base_line.set(alpha=0.6, c=cmap(i))
-    #
-    #         marker_line, stem_lines, base_line = ax1.stem(
-    #             ag_fut_seq_scene_norm[..., 0], ag_fut_seq_scene_norm[..., 1], ag_fut_timesteps,
-    #             linefmt='grey'
-    #         )
-    #         marker_line.set(markeredgecolor=cmap(i), markerfacecolor=cmap(i), alpha=0.7, markersize=5)
-    #         stem_lines.set(alpha=0.0)
-    #         base_line.set(alpha=0.5, c=cmap(i))
-    #
-    #     if scene_map is not None:
-    #         ax2.set_xlim(0., scene_map.get_map_dimensions()[0])
-    #         ax2.set_ylim(scene_map.get_map_dimensions()[1], 0.)
-    #         ax2.imshow(scene_map.as_image())
-    #
-    #     fig_2, axes_2 = plt.subplots(1, 6)
-    #     divider_1 = make_axes_locatable(axes_2[4])
-    #     divider_2 = make_axes_locatable(axes_2[5])
-    #     cax_1 = divider_1.append_axes('right', size='5%', pad=0.05)
-    #     cax_2 = divider_2.append_axes('right', size='5%', pad=0.05)
-    #
-    #     for dim in range(self.data['combined_map'].shape[0]):
-    #         img = self.data['combined_map'][dim, ...].cpu().numpy()
-    #         axes_2[dim].imshow(img)
-    #
-    #     dist_t_occl_map = self.data['dt_occlusion_map'].cpu().numpy()
-    #     im = axes_2[4].imshow(dist_t_occl_map)
-    #     fig_2.colorbar(im, cax=cax_1, orientation='vertical')
-    #
-    #     p_occl_map = self.data['p_occl_map'].cpu().numpy()
-    #     im2 = axes_2[5].imshow(p_occl_map, cmap='Greys')
-    #     fig_2.colorbar(im2, cax=cax_2, orientation='vertical')
-    #
-    #     if show:
-    #         plt.show()
+        # memory_report('AFTER PUPOLATING DATA DICT')
 
     def step_annealer(self):
         for anl in self.param_annealers:
             anl.step()
 
     def forward(self):
+        # memory_report('BEFORE FORWARD')
         if self.global_map_attention:
             self.data['global_map_encoding'] = self.global_map_encoder(self.data['combined_map'])
             # print(f"{self.data['global_map_encoding'].shape=}")
+        # memory_report('AFTER GLOBAL MAP ENCODING')
 
         if self.use_map:
             # self.data['map_enc'] = self.map_encoder(self.data['agent_maps'])
@@ -1005,13 +863,21 @@ class AgentFormer(nn.Module):
             raise NotImplementedError
         # print(f"\nCALLING:  CONTEXT ENCODER\n")
         self.context_encoder(self.data)
+        # memory_report('AFTER CONTEXT ENCODING')
+
         # print(f"\nCALLING:  FUTURE ENCODER\n")
         self.future_encoder(self.data)
+        # memory_report('AFTER FUTURE ENCODING')
+
         # print(f"\nCALLING:  FUTURE DECODER\n")
         self.future_decoder(self.data, mode='train', autoregress=self.ar_train)
+        # memory_report('AFTER FUTURE DECODING')
+
         if self.compute_sample:
             # print(f"\nCALLING:  INFERENCE\n")
             self.inference(sample_num=self.loss_cfg['sample']['k'])
+            # memory_report('AFTER INFERENCE')
+
         return self.data
 
     def inference(self, mode='infer', sample_num=20, need_weights=False):
@@ -1030,9 +896,13 @@ class AgentFormer(nn.Module):
         total_loss = 0
         loss_dict = {}
         loss_unweighted_dict = {}
+
+        # memory_report('BEFORE COMPUTING LOSSES')
         for loss_name in self.loss_names:
             loss, loss_unweighted = loss_func[loss_name](self.data, self.loss_cfg[loss_name])
             total_loss += loss
             loss_dict[loss_name] = loss.item()
             loss_unweighted_dict[loss_name] = loss_unweighted.item()
+
+        # memory_report('AFTER COMPUTING LOSSES')
         return total_loss, loss_dict, loss_unweighted_dict
