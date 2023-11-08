@@ -155,7 +155,7 @@ if __name__ == '__main__':
     """ data """
     if cfg.dataset == "sdd":
         sdd_dataset = TorchDataGeneratorSDD(parser=cfg, log=log, split='train')
-        training_loader = DataLoader(dataset=sdd_dataset, shuffle=True)
+        training_loader = DataLoader(dataset=sdd_dataset, shuffle=True, num_workers=2)
     else:
         generator = data_generator(cfg, log, split='train', phase='training')
 
