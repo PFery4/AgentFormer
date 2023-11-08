@@ -751,7 +751,9 @@ class AgentFormer(nn.Module):
         self.data = None
 
         if self.global_map_attention:
-            self.global_map_encoder = MapEncoder(cfg.global_map_encoder)
+            map_enc_cfg = cfg.global_map_encoder
+            map_enc_cfg['map_resolution'] = cfg['global_map_resolution']
+            self.global_map_encoder = MapEncoder(map_enc_cfg)
             ctx['global_map_enc_dim'] = self.global_map_encoder.out_dim
 
         # models
