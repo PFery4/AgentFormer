@@ -78,14 +78,15 @@ def train(epoch_index: int):
 
         """ save model """
         if cfg.model_save_freq > 0 and (i + 1) % cfg.model_save_freq == 0:
+
+            scheduler.step()
+            model.step_annealer()
+
             save_name = f"epoch_{epoch_index + 1}_batch_{i + 1}"
             cp_path = cfg.model_path % save_name
             model_cp = {'model_dict': model.state_dict(), 'opt_dict': optimizer.state_dict(),
                         'scheduler_dict': scheduler.state_dict(), 'epoch': epoch_index + 1, 'batch': i + 1}
             torch.save(model_cp, cp_path)
-
-            scheduler.step()
-            model.step_annealer()
 
 
 if __name__ == '__main__':
