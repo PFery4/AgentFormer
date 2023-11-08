@@ -84,8 +84,8 @@ def train(epoch_index: int):
                         'scheduler_dict': scheduler.state_dict(), 'epoch': epoch_index + 1, 'batch': i + 1}
             torch.save(model_cp, cp_path)
 
-    scheduler.step()
-    model.step_annealer()
+            scheduler.step()
+            model.step_annealer()
 
 
 if __name__ == '__main__':
