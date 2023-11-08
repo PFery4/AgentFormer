@@ -211,6 +211,18 @@ def prepare_seed(rand_seed):
     torch.cuda.manual_seed_all(rand_seed)
 
 
+def get_rand_states():
+    return {'numpy': np.random.get_state(),
+            'random': random.getstate(),
+            'torch': torch.get_rng_state()}
+
+
+def set_rand_states(state_dict):
+    np.random.set_state(state_dict['numpy'])
+    random.setstate(state_dict['random'])
+    torch.set_rng_state(state_dict['torch'])
+
+
 def initialize_weights(modules):
     for m in modules:
         if isinstance(m, nn.Conv2d):
