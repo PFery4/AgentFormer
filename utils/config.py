@@ -29,7 +29,7 @@ class Config:
         self.result_dir = os.path.join(self.cfg_dir, 'results')
         self.log_dir = os.path.join(self.cfg_dir, 'log')
         self.tb_dir = os.path.join(self.cfg_dir, 'tb')
-        self.model_path = os.path.join(self.model_dir, 'model_%04d.p')
+        self.model_path = os.path.join(self.model_dir, 'model_%s.p')
         os.makedirs(self.model_dir, exist_ok=True)
         os.makedirs(self.result_dir, exist_ok=True)
         os.makedirs(self.log_dir, exist_ok=True)
@@ -37,6 +37,7 @@ class Config:
             recreate_dirs(self.tb_dir)
 
     def get_last_epoch(self) -> Union[int, None]:
+        # TODO: THIS NEEDS FIXING
         model_files = sorted(glob.glob(os.path.join(self.model_dir, 'model_*.p')))
         if len(model_files) == 0:
             return None
