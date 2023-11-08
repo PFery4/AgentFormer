@@ -708,7 +708,6 @@ class AgentFormer(nn.Module):
         fut_input_type = cfg.get('fut_input_type', input_type)
         dec_input_type = cfg.get('dec_input_type', [])
         ctx = {
-            'tf_cfg': cfg.get('tf_cfg', {}),
             'nz': cfg.nz,
             'z_type': cfg.get('z_type', 'gaussian'),
             'future_frames': cfg.future_frames,
