@@ -443,6 +443,10 @@ class FutureDecoder(nn.Module):
         # Go through the attention mechanism
         # print(f"{data['global_map_encoding'].shape=}")
         # print(f"{data['context_map'].shape=}")
+
+        data['global_map_encoding'] = torch.full([1, 2], np.nan)
+        data['context_map'] = torch.full([1, 2], np.nan)
+
         tf_out, map_out, attn_weights = self.tf_decoder(
             tgt=tf_in_pos,                                                          # [B * sample_num, K, model_dim]
             memory=context,                                                         # [B * sample_num, O, model_dim]
