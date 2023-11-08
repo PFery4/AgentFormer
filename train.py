@@ -76,6 +76,14 @@ def train(epoch_index: int):
             for name, meter in train_loss_meter.items():
                 tb_logger.add_scalar(f'model_{name}', meter.avg, tb_x)
 
+        """ save model """
+        if cfg.model_save_freq > 0 and (i + 1) % cfg.model_save_freq == 0:
+            save_name = f"epoch_{epoch_index + 1}_batch_{i + 1}"
+            cp_path = cfg.model_path % save_name
+            model_cp = {'model_dict': model.state_dict(), 'opt_dict': optimizer.state_dict(),
+                        'scheduler_dict': scheduler.state_dict(), 'epoch': epoch_index + 1, 'batch': i + 1}
+            torch.save(model_cp, cp_path)
+
     scheduler.step()
     model.step_annealer()
 
@@ -177,9 +185,9 @@ if __name__ == '__main__':
     model.train()
     for i in range(args.start_epoch, cfg.num_epochs):
         train(i)
-        """ save model """
-        if cfg.model_save_freq > 0 and (i + 1) % cfg.model_save_freq == 0:
-            cp_path = cfg.model_path % (i + 1)
-            model_cp = {'model_dict': model.state_dict(), 'opt_dict': optimizer.state_dict(),
-                        'scheduler_dict': scheduler.state_dict(), 'epoch': i + 1}
-            torch.save(model_cp, cp_path)
+        # """ save model """
+        # if cfg.model_save_freq > 0 and (i + 1) % cfg.model_save_freq == 0:
+        #     cp_path = cfg.model_path % (i + 1)
+        #     model_cp = {'model_dict': model.state_dict(), 'opt_dict': optimizer.state_dict(),
+        #                 'scheduler_dict': scheduler.state_dict(), 'epoch': i + 1}
+        #     torch.save(model_cp, cp_path)
