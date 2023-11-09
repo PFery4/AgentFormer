@@ -9,10 +9,14 @@ import model.decoder_out_submodels as decoder_out_submodels
 from model.common.mlp import MLP
 from model.agentformer_loss import loss_func
 from model.common.dist import Normal, Categorical
-from model.attention_modules import AgentFormerEncoder, AgentFormerDecoder
+from model.attention_modules import \
+    AgentFormerEncoder, AgentFormerDecoder, OcclusionFormerEncoder, OcclusionFormerDecoder
 from model.map_encoder import MapEncoder
 from utils.torch import ExpParamAnnealer
 from utils.utils import initialize_weights, memory_report
+
+from typing import Dict
+Tensor = torch.Tensor
 
 
 def causal_attention_mask(
@@ -47,6 +51,42 @@ def non_causal_attention_mask(
 ) -> torch.Tensor:
     # timestep_sequence [T]
     return zeros_mask(timestep_sequence.shape[0], timestep_sequence.shape[0], batch_size)       # [batch_size, T, T]
+
+
+def mean_pooling(sequences: Tensor, identities: Tensor) -> Tensor:
+    # feature_sequence [B, N, *]
+    # identities [B, N]
+    out = []
+    for feature_sequence, identity_sequence in zip(sequences, identities):
+        out.append(
+            torch.stack(
+                [torch.mean(feature_sequence[identity_sequence == ag_id, ...], dim=0)
+                 for ag_id in torch.unique(identities)], dim=0
+            )
+        )
+    out = torch.stack(out)
+    return out
+
+
+def max_pooling(sequences: Tensor, identities: Tensor) -> Tensor:
+    # feature_sequence [B, N, *]
+    # identities [B, N]
+    out = []
+    for feature_sequence, identity_sequence in zip(sequences, identities):
+        out.append(
+            torch.stack(
+                [torch.max(feature_sequence[identity_sequence == ag_id, ...])
+                 for ag_id in torch.unique(identities)], dim=0
+            )
+        )
+    out = torch.stack(out)
+    return out
+
+
+POOLING_FUNCTIONS = {
+    'mean': mean_pooling,
+    'max': max_pooling
+}
 
 
 class PositionalEncoding(nn.Module):
@@ -123,29 +163,30 @@ class ContextEncoder(nn.Module):
         self.motion_dim = ctx['motion_dim']
         self.model_dim = ctx['tf_model_dim']
         self.ff_dim = ctx['tf_ff_dim']
-        self.nhead = ctx['tf_nhead']
+        self.n_head = ctx['tf_n_head']
         self.dropout = ctx['tf_dropout']
-        self.nlayer = ctx['context_encoder'].get('nlayer', 6)
+        self.n_layer = ctx['context_encoder'].get('n_layer', 6)
         self.input_type = ctx['input_type']
         self.pooling = ctx['context_encoder'].get('pooling', 'mean')
-        self.vel_heading = ctx['vel_heading']
         self.global_map_attention = ctx['global_map_attention']
         self.causal_attention = ctx['causal_attention']
 
-        ctx['context_dim'] = self.model_dim
         in_dim = self.motion_dim * len(self.input_type)
         self.input_fc = nn.Linear(in_dim, self.model_dim)
 
-        encoder_config = {
-            'layer_type': 'map_agent' if self.global_map_attention else 'agent',
-            'layer_params': {
-                'd_model': self.model_dim,
-                'nhead': self.nhead,
-                'dim_feedforward': self.ff_dim,
-                'dropout': self.dropout,
-            }
+        layer_params = {
+            'd_model': self.model_dim,
+            'n_head': self.n_head,
+            'dim_feedforward': self.ff_dim,
+            'dropout': self.dropout
         }
-        self.tf_encoder = AgentFormerEncoder(encoder_config=encoder_config, num_layers=self.nlayer)
+
+        if self.global_map_attention:
+            self.tf_encoder = OcclusionFormerEncoder(layer_params=layer_params, num_layers=self.n_layer)
+            self.tf_encoder_call = self.map_agent_encoder_call
+        else:
+            self.tf_encoder = AgentFormerEncoder(layer_params=layer_params, num_layers=self.n_layer)
+            self.tf_encoder_call = self.agent_encoder_call
 
         self.pos_encoder = PositionalEncoding(self.model_dim, dropout=self.dropout, concat=ctx['pos_concat'])
 
@@ -153,6 +194,25 @@ class ContextEncoder(nn.Module):
             self.attention_mask = causal_attention_mask
         else:
             self.attention_mask = non_causal_attention_mask
+
+        self.pool = POOLING_FUNCTIONS[self.pooling]
+
+    def agent_encoder_call(self, data: Dict, tf_in_pos: Tensor, src_mask: Tensor):
+        data['context_enc'] = self.tf_encoder(
+            src=tf_in_pos,                                          # [B, O, model_dim]
+            src_identities=data['obs_identity_sequence'],           # [B, O]
+            src_mask=src_mask                                       # [B, O, O]
+        )                                                           # [B, O, model_dim], [B, model_dim]
+        # print(f"{data['context_enc'].shape, data['context_map'].shape=}")
+
+    def map_agent_encoder_call(self, data: Dict, tf_in_pos: Tensor, src_mask: Tensor):
+        data['context_enc'], data['context_map'] = self.tf_encoder(
+            src=tf_in_pos,                                          # [B, O, model_dim]
+            src_identities=data['obs_identity_sequence'],           # [B, O]
+            map_feature=data['global_map_encoding'],                # [B, model_dim]
+            src_mask=src_mask                                       # [B, O, O]
+        )                                                           # [B, O, model_dim], [B, model_dim]
+        # print(f"{data['context_enc'].shape, data['context_map'].shape=}")
 
     def forward(self, data):
         # NOTE: THIS FUNCTION IS NOT CAPABLE OF OPERATING ON BATCH SIZES != 1
@@ -174,79 +234,54 @@ class ContextEncoder(nn.Module):
         # print(f"{data['obs_timestep_sequence'][0, ...]=}")
         # print(f"{src_mask, src_mask.shape=}")
 
-        data['context_enc'], data['context_map'] = self.tf_encoder(
-            src=tf_in_pos,                                          # [B, O, model_dim]
-            src_identities=data['obs_identity_sequence'],           # [B, O]
-            map_feature=data['global_map_encoding'],                # [B, model_dim]
-            src_mask=src_mask                                       # [B, O, O]
-        )                                                           # [B, O, model_dim], [B, model_dim]
-        # print(f"{data['context_enc'].shape, data['context_map'].shape=}")
+        self.tf_encoder_call(data=data, tf_in_pos=tf_in_pos, src_mask=src_mask)
 
         # compute per agent context
-        # print(f"{self.pooling=}")
-        if self.pooling == 'mean':
-
-            agent_contexts = []
-            for context_seq, identities in zip(data['context_enc'], data['obs_identity_sequence']):
-                agent_contexts.append(
-                    torch.stack(
-                        [torch.mean(context_seq[identities == ag_id, ...], dim=0)
-                         for ag_id in torch.unique(identities)], dim=0
-                    )
-                )
-            data['agent_context'] = torch.stack(agent_contexts)     # [B, N, model_dim]
-            # print(f"{data['agent_context'].shape=}")
-
-        else:
-
-            agent_contexts = []
-            for context_seq, identities in zip(data['context_seq'], data['obs_identity_sequence']):
-                agent_contexts.append(
-                    torch.stack(
-                        [torch.max(context_seq[identities == ag_id, ...])
-                         for ag_id in torch.unique(identities)], dim=0
-                    )
-                )
-            data['agent_context'] = torch.stack(agent_contexts)     # [B, N, model_dim]
-            # print(f"{data['agent_context'].shape=}")
+        data['agent_context'] = self.pool(
+            sequences=data['context_enc'], identities=data['obs_identity_sequence']
+        )           # [B, N, model_dim]
+        # print(f"{data['agent_context'].shape=}")
 
 
 class FutureEncoder(nn.Module):
     """ Future Encoder """
     def __init__(self, ctx):
         super().__init__()
-        self.context_dim = context_dim = ctx['context_dim']
-        self.forecast_dim = forecast_dim = ctx['forecast_dim']
+        self.forecast_dim = ctx['forecast_dim']
         self.nz = ctx['nz']
         self.z_type = ctx['z_type']
         self.z_tau_annealer = ctx.get('z_tau_annealer', None)
         self.model_dim = ctx['tf_model_dim']
         self.ff_dim = ctx['tf_ff_dim']
-        self.nhead = ctx['tf_nhead']
+        self.n_head = ctx['tf_n_head']
         self.dropout = ctx['tf_dropout']
-        self.nlayer = ctx['future_encoder'].get('nlayer', 6)
+        self.n_layer = ctx['future_encoder'].get('n_layer', 6)
         self.out_mlp_dim = ctx['future_encoder'].get('out_mlp_dim', None)
         self.input_type = ctx['fut_input_type']
         self.pooling = ctx['future_encoder'].get('pooling', 'mean')
-        self.vel_heading = ctx['vel_heading']
         self.global_map_attention = ctx['global_map_attention']
         self.causal_attention = ctx['causal_attention']
 
         # networks
-        in_dim = forecast_dim * len(self.input_type)
+        in_dim = self.forecast_dim * len(self.input_type)
         self.input_fc = nn.Linear(in_dim, self.model_dim)
 
-        decoder_config = {
-            'layer_type': 'map_agent' if self.global_map_attention else 'agent',
-            'layer_params': {
-                'd_model': self.model_dim,
-                'nhead': self.nhead,
-                'dim_feedforward': self.ff_dim,
-                'dropout': self.dropout
-            }
+        layer_params = {
+            'd_model': self.model_dim,
+            'n_head': self.n_head,
+            'dim_feedforward': self.ff_dim,
+            'dropout': self.dropout
         }
-        self.tf_decoder = AgentFormerDecoder(decoder_config=decoder_config, num_layers=self.nlayer)
+
+        if self.global_map_attention:
+            self.tf_decoder = OcclusionFormerDecoder(layer_params=layer_params, num_layers=self.n_layer)
+            self.tf_decoder_call = self.map_agent_decoder_call
+        else:
+            self.tf_decoder = AgentFormerDecoder(layer_params=layer_params, num_layers=self.n_layer)
+            self.tf_decoder_call = self.agent_decoder_call
+
         self.pos_encoder = PositionalEncoding(self.model_dim, dropout=self.dropout, concat=ctx['pos_concat'])
+
         num_dist_params = 2 * self.nz if self.z_type == 'gaussian' else self.nz     # either gaussian or discrete
         if self.out_mlp_dim is None:
             self.q_z_net = nn.Linear(self.model_dim, num_dist_params)
@@ -260,6 +295,38 @@ class FutureEncoder(nn.Module):
             self.attention_mask = causal_attention_mask
         else:
             self.attention_mask = non_causal_attention_mask
+
+        self.pool = POOLING_FUNCTIONS[self.pooling]
+
+    def agent_decoder_call(
+            self, data: Dict, tf_in_pos: Tensor, tgt_mask: Tensor, mem_mask: Tensor
+    ) -> Tensor:
+        tf_out, _ = self.tf_decoder(
+            tgt=tf_in_pos,                                          # [B, P, model_dim]
+            memory=data['context_enc'],                             # [B, O, model_dim]
+            tgt_identities=data['pred_identity_sequence'],          # [B, P]
+            mem_identities=data['obs_identity_sequence'],           # [B, O]
+            tgt_mask=tgt_mask,                                      # [B, P, P]
+            memory_mask=mem_mask,                                   # [B, P, O]
+        )                                                           # [B, P, model_dim], [B, model_dim]
+        # print(f"{tf_out.shape=}")
+        return tf_out
+
+    def map_agent_decoder_call(
+            self, data: Dict, tf_in_pos: Tensor, tgt_mask: Tensor, mem_mask: Tensor
+    ) -> Tensor:
+        tf_out, _, _ = self.tf_decoder(
+            tgt=tf_in_pos,                                          # [B, P, model_dim]
+            memory=data['context_enc'],                             # [B, O, model_dim]
+            tgt_identities=data['pred_identity_sequence'],          # [B, P]
+            mem_identities=data['obs_identity_sequence'],           # [B, O]
+            tgt_map=data['global_map_encoding'],                    # [B, model_dim]
+            mem_map=data['context_map'],                            # [B, model_dim]
+            tgt_mask=tgt_mask,                                      # [B, P, P]
+            memory_mask=mem_mask,                                   # [B, P, O]
+        )                                                           # [B, P, model_dim], [B, model_dim]
+        # print(f"{tf_out.shape=}")
+        return tf_out
 
     def forward(self, data):
         # NOTE: THIS FUNCTION IS NOT CAPABLE OF OPERATING ON BATCH SIZES != 1
@@ -290,46 +357,14 @@ class FutureEncoder(nn.Module):
         # print(f"{data['global_map_encoding'].shape=}")
         # print(f"{data['context_map'].shape=}")
 
-        tf_out, map_out, _ = self.tf_decoder(
-            tgt=tf_in_pos,                                          # [B, P, model_dim]
-            memory=data['context_enc'],                             # [B, O, model_dim]
-            tgt_identities=data['pred_identity_sequence'],          # [B, P]
-            mem_identities=data['obs_identity_sequence'],           # [B, O]
-            tgt_map=data['global_map_encoding'],                    # [B, model_dim]
-            mem_map=data['context_map'],                            # [B, model_dim]
-            tgt_mask=tgt_mask,                                      # [B, P, P]
-            memory_mask=mem_mask,                                   # [B, P, O]
-        )                                                           # [B, P, model_dim], [B, model_dim]
-        # print(f"{tf_out.shape, map_out.shape=}")
+        tf_out = self.tf_decoder_call(data=data, tf_in_pos=tf_in_pos, tgt_mask=tgt_mask, mem_mask=mem_mask)
 
         # print(f"{self.pooling=}")
-        if self.pooling == 'mean':
+        h = self.pool(
+            sequences=tf_out, identities=data['pred_identity_sequence']
+        )       # [B, N, model_dim]
+        # print(f"{h.shape=}")
 
-            h = []
-            for feature_seq, identities in zip(tf_out, data['pred_identity_sequence']):
-                # print(f"{torch.unique(identities), torch.unique(identities).shape=}")
-                h.append(
-                    torch.stack(
-                        [torch.mean(feature_seq[identities == ag_id, ...], dim=0)
-                         for ag_id in torch.unique(identities)], dim=0
-                    )
-                )
-            h = torch.stack(h)      # [B, N, model_dim]
-            # print(f"{h.shape=}")
-
-        else:
-
-            h = []
-            for feature_seq, identities in zip(tf_out, data['pred_identity_sequence']):
-                # print(f"{torch.unique(identities), torch.unique(identities).shape=}")
-                h.append(
-                    torch.stack(
-                        [torch.mean(feature_seq[identities == ag_id, ...])
-                         for ag_id in torch.unique(identities)], dim=0
-                    )
-                )
-            h = torch.stack(h)      # [B, N, model_dim]
-            # print(f"{h.shape=}")
         if self.out_mlp_dim is not None:
             h = self.out_mlp(h)
         q_z_params = self.q_z_net(h)        # [B, N, nz (*2 if self.z_type == gaussian)]
@@ -348,25 +383,20 @@ class FutureDecoder(nn.Module):
     def __init__(self, ctx):
         super().__init__()
         self.ar_detach = ctx['ar_detach']
-        self.context_dim = context_dim = ctx['context_dim']
-        self.forecast_dim = forecast_dim = ctx['forecast_dim']
-        self.pred_scale = ctx['future_decoder'].get('pred_scale', 1.0)
+        self.forecast_dim = ctx['forecast_dim']
         self.pred_type = ctx['pred_type']
         self.pred_mode = ctx['future_decoder'].get('mode', 'point')
         self.sn_out_type = ctx['sn_out_type']
-        self.sn_out_heading = ctx['sn_out_heading']
         self.input_type = ctx['dec_input_type']
         self.future_frames = ctx['future_frames']
-        self.past_frames = ctx['past_frames']
         self.nz = ctx['nz']
         self.z_type = ctx['z_type']
         self.model_dim = ctx['tf_model_dim']
         self.ff_dim = ctx['tf_ff_dim']
-        self.nhead = ctx['tf_nhead']
+        self.n_head = ctx['tf_n_head']
         self.dropout = ctx['tf_dropout']
-        self.nlayer = ctx['future_decoder'].get('nlayer', 6)
+        self.n_layer = ctx['future_decoder'].get('n_layer', 6)
         self.out_mlp_dim = ctx['future_decoder'].get('out_mlp_dim', None)
-        self.pos_offset = ctx['future_decoder'].get('pos_offset', False)
         self.learn_prior = ctx['learn_prior']
         self.global_map_attention = ctx['global_map_attention']
 
@@ -374,19 +404,22 @@ class FutureDecoder(nn.Module):
         assert self.pred_mode in ["point"]      # future work, adding functionality for "gauss"
 
         # networks
-        in_dim = forecast_dim + len(self.input_type) * forecast_dim + self.nz
+        in_dim = self.forecast_dim + len(self.input_type) * self.forecast_dim + self.nz
         self.input_fc = nn.Linear(in_dim, self.model_dim)
 
-        decoder_config = {
-            'layer_type': 'map_agent' if self.global_map_attention else 'agent',
-            'layer_params': {
-                'd_model': self.model_dim,
-                'nhead': self.nhead,
-                'dim_feedforward': self.ff_dim,
-                'dropout': self.dropout
-            }
+        layer_params = {
+            'd_model': self.model_dim,
+            'n_head': self.n_head,
+            'dim_feedforward': self.ff_dim,
+            'dropout': self.dropout
         }
-        self.tf_decoder = AgentFormerDecoder(decoder_config=decoder_config, num_layers=self.nlayer)
+
+        if self.global_map_attention:
+            self.tf_decoder = OcclusionFormerDecoder(layer_params=layer_params, num_layers=self.n_layer)
+            self.tf_decoder_call = self.map_agent_decoder_call
+        else:
+            self.tf_decoder = AgentFormerDecoder(layer_params=layer_params, num_layers=self.n_layer)
+            self.tf_decoder_call = self.agent_decoder_call
 
         self.pos_encoder = PositionalEncoding(self.model_dim, dropout=self.dropout, concat=ctx['pos_concat'])
 
@@ -401,6 +434,38 @@ class FutureDecoder(nn.Module):
             self.p_z_net = nn.Linear(self.model_dim, num_dist_params)
             initialize_weights(self.p_z_net.modules())
 
+    def agent_decoder_call(
+            self, data: Dict, tf_in_pos: Tensor, context: Tensor,
+            agent_sequence: Tensor, tgt_mask: Tensor, mem_mask: Tensor, sample_num: int
+    ) -> Tuple[Tensor, Dict]:
+        tf_out, attn_weights = self.tf_decoder(
+            tgt=tf_in_pos,                                                          # [B * sample_num, K, model_dim]
+            memory=context,                                                         # [B * sample_num, O, model_dim]
+            tgt_identities=agent_sequence.repeat(sample_num, 1),                    # [B * sample_num, K]
+            mem_identities=data['obs_identity_sequence'].repeat(sample_num, 1),     # [B * sample_num, O]
+            tgt_mask=tgt_mask,                                                      # [B * sample_num, K, K]
+            memory_mask=mem_mask                                                    # [B * sample_num, K, O]
+        )       # [B * sample_num, K, model_dim], Dict
+        # print(f"{tf_out.shape, map_out.shape=}")
+        return tf_out, attn_weights
+
+    def map_agent_decoder_call(
+            self, data: Dict, tf_in_pos: Tensor, context: Tensor,
+            agent_sequence: Tensor, tgt_mask: Tensor, mem_mask: Tensor, sample_num: int
+    ) -> Tuple[Tensor, Dict]:
+        tf_out, map_out, attn_weights = self.tf_decoder(
+            tgt=tf_in_pos,                                                          # [B * sample_num, K, model_dim]
+            memory=context,                                                         # [B * sample_num, O, model_dim]
+            tgt_identities=agent_sequence.repeat(sample_num, 1),                    # [B * sample_num, K]
+            mem_identities=data['obs_identity_sequence'].repeat(sample_num, 1),     # [B * sample_num, O]
+            tgt_map=data['global_map_encoding'].repeat(sample_num, 1),              # [B * sample_num, model_dim]
+            mem_map=data['context_map'].repeat(sample_num, 1),                      # [B * sample_num, model_dim]
+            tgt_mask=tgt_mask,                                                      # [B * sample_num, K, K]
+            memory_mask=mem_mask                                                    # [B * sample_num, K, O]
+        )       # [B * sample_num, K, model_dim], [B * sample_num, model_dim], Dict
+        # print(f"{tf_out.shape, map_out.shape=}")
+        return tf_out, attn_weights
+
     def decode_next_timestep(
             self,
             dec_in_orig: torch.Tensor,              # [B * sample_num, N, 2]
@@ -411,7 +476,7 @@ class FutureDecoder(nn.Module):
             data: dict,
             context: torch.Tensor,                  # [B * sample_num, O, model_dim]
             sample_num: int
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, Dict]:
 
         # Embed input sequence in high-dim space
         tf_in = self.input_fc(dec_input_sequence)   # [B * sample_num, K, model_dim]
@@ -447,17 +512,10 @@ class FutureDecoder(nn.Module):
         data['global_map_encoding'] = torch.full([1, 2], np.nan)
         data['context_map'] = torch.full([1, 2], np.nan)
 
-        tf_out, map_out, attn_weights = self.tf_decoder(
-            tgt=tf_in_pos,                                                          # [B * sample_num, K, model_dim]
-            memory=context,                                                         # [B * sample_num, O, model_dim]
-            tgt_identities=agent_sequence.repeat(sample_num, 1),                    # [B * sample_num, K]
-            mem_identities=data['obs_identity_sequence'].repeat(sample_num, 1),     # [B * sample_num, O]
-            tgt_map=data['global_map_encoding'].repeat(sample_num, 1),              # [B * sample_num, model_dim]
-            mem_map=data['context_map'].repeat(sample_num, 1),                      # [B * sample_num, model_dim]
-            tgt_mask=tgt_mask,                                                      # [B * sample_num, K, K]
-            memory_mask=mem_mask                                                    # [B * sample_num, K, O]
-        )       # [B * sample_num, K, model_dim], [B * sample_num, model_dim], Dict
-        # print(f"{tf_out.shape, map_out.shape=}")
+        tf_out, attn_weights = self.tf_decoder_call(
+            data=data, tf_in_pos=tf_in_pos, context=context, agent_sequence=agent_sequence,
+            tgt_mask=tgt_mask, mem_mask=mem_mask, sample_num=sample_num
+        )
 
         # Map back to physical space
         seq_out = self.out_module(tf_out)  # [B * sample_num, K, 2]
@@ -715,22 +773,19 @@ class AgentFormer(nn.Module):
             'nz': cfg.nz,
             'z_type': cfg.get('z_type', 'gaussian'),
             'future_frames': cfg.future_frames,
-            'past_frames': cfg.past_frames,
             'motion_dim': cfg.motion_dim,
             'forecast_dim': cfg.forecast_dim,
             'input_type': input_type,
             'fut_input_type': fut_input_type,
             'dec_input_type': dec_input_type,
             'pred_type': pred_type,
-            'tf_nhead': cfg.tf_nhead,
+            'tf_n_head': cfg.tf_n_head,
             'tf_model_dim': cfg.tf_model_dim,
             'tf_ff_dim': cfg.tf_ff_dim,
             'tf_dropout': cfg.tf_dropout,
             'pos_concat': cfg.get('pos_concat', False),
             'ar_detach': cfg.get('ar_detach', True),
             'sn_out_type': cfg.get('sn_out_type', 'scene_norm'),
-            'sn_out_heading': cfg.get('sn_out_heading', False),
-            'vel_heading': cfg.get('vel_heading', False),
             'learn_prior': cfg.get('learn_prior', False),
             'global_map_attention': cfg.get('global_map_attention', False),
             'causal_attention': cfg.get('causal_attention', False),
