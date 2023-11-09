@@ -29,7 +29,7 @@ occlusion_process             : 'fully_observed'      # can be either 'fully_obs
 model_id: agentformer
 tf_model_dim: 256
 tf_ff_dim: 512
-tf_nhead: 8
+tf_n_head: 8
 tf_dropout: 0.1
 input_type: ['position', 'velocity']
 pred_type: 'scene_norm'
@@ -54,14 +54,14 @@ global_map_attention: false
 #    - [maxpool, 2, 2]
 
 context_encoder:
-  nlayer: 2
+  n_layer: 2
 
 future_decoder:
-  nlayer: 2
+  n_layer: 2
   out_mlp_dim: [512, 256]
 
 future_encoder:
-  nlayer: 2
+  n_layer: 2
   out_mlp_dim: [512, 256]
 
 # ------------------- VAE-------------------------
