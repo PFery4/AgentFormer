@@ -2,7 +2,7 @@ import torch
 import torch.nn.functional as F
 from torch.nn.modules.module import Module
 
-from model.attention_mechanisms import AgentAwareAttentionV2, MapAgentAwareAttention
+from model.attention_mechanisms import AgentAwareAttention, MapAgentAwareAttention
 
 from typing import Optional, Tuple
 Tensor = torch.Tensor
@@ -16,7 +16,7 @@ LAYER_ACTIVATION_FUNCTIONS = {
 # ENCODER LAYERS ######################################################################################################
 
 
-class AgentFormerEncoderLayer(Module):
+class BaseAttentionEncoderLayer(Module):
     r"""TransformerEncoderLayer is made up of self-attn and feedforward network.
     This standard encoder layer is based on the paper "Attention Is All You Need".
     Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez,
@@ -26,7 +26,7 @@ class AgentFormerEncoderLayer(Module):
 
     Args:
         d_model: the number of expected features in the input (required).
-        nhead: the number of heads in the multiheadattention models (required).
+        n_head: the number of heads in the multiheadattention models (required).
         dim_feedforward: the dimension of the feedforward network model (default=2048).
         dropout: the dropout value (default=0.1).
         activation: the activation function of intermediate layer, relu or gelu (default=relu).
@@ -38,17 +38,11 @@ class AgentFormerEncoderLayer(Module):
     """
 
     def __init__(
-            self, d_model: int, nhead: int,
-            dim_feedforward: int = 2048, dropout: float = 0.1, activation: str = "relu"
+            self, d_model: int,
+            dim_feedforward: int = 2048, dropout: float = 0.1, activation: str = 'relu'
     ):
         super().__init__()
-        # print(f"ENCODER_LAYER")
-        self.self_attn = AgentAwareAttentionV2(
-            traj_dim=d_model,
-            vdim=d_model,
-            num_heads=nhead,
-            dropout=dropout
-        )
+
         # Implementation of Feedforward model
         self.linear1 = torch.nn.Linear(d_model, dim_feedforward)
         self.dropout = torch.nn.Dropout(dropout)
@@ -56,15 +50,24 @@ class AgentFormerEncoderLayer(Module):
 
         self.norm1 = torch.nn.LayerNorm(d_model)
         self.norm2 = torch.nn.LayerNorm(d_model)
+
         self.dropout1 = torch.nn.Dropout(dropout)
         self.dropout2 = torch.nn.Dropout(dropout)
 
         self.activation = LAYER_ACTIVATION_FUNCTIONS[activation]
 
-    # def __setstate__(self, state):
-    #     if 'activation' not in state:
-    #         state['activation'] = F.relu
-    #     super().__setstate__(state)
+
+class AgentAwareAttentionEncoderLayer(BaseAttentionEncoderLayer):
+    def __init__(
+            self, d_model: int, n_head: int,
+            dim_feedforward: int = 2048, dropout: float = 0.1, activation: str = 'relu'
+    ):
+        super().__init__(
+            d_model=d_model, dim_feedforward=dim_feedforward, dropout=dropout, activation=activation
+        )
+        self.self_attn = AgentAwareAttention(
+            traj_dim=d_model, v_dim=d_model, num_heads=n_head, dropout=dropout
+        )
 
     def forward(
             self, src: Tensor, src_identities: Tensor,
@@ -74,6 +77,7 @@ class AgentFormerEncoderLayer(Module):
 
         Args:
             src: the sequence to the encoder layer (required).
+            src_identities: the sequence of identities that will be used to perform self/other attention (required).
             src_mask: the mask for the src sequence (optional).
         Shape:
             see the docs in Transformer class.
@@ -90,21 +94,17 @@ class AgentFormerEncoderLayer(Module):
         return src
 
 
-class MapAwareAgentFormerEncoderLayer(AgentFormerEncoderLayer):
+class MapAgentAwareAttentionEncoderLayer(BaseAttentionEncoderLayer):
 
     def __init__(
-            self, d_model: int, nhead: int,
-            dim_feedforward: int = 2048, dropout: float = 0.1, activation: str = "relu"
+            self, d_model: int, n_head: int,
+            dim_feedforward: int = 2048, dropout: float = 0.1, activation: str = 'relu'
     ):
         super().__init__(
-            d_model=d_model, nhead=nhead, dim_feedforward=dim_feedforward, dropout=dropout, activation=activation
+            d_model=d_model, dim_feedforward=dim_feedforward, dropout=dropout, activation=activation
         )
         self.self_attn = MapAgentAwareAttention(
-            traj_dim=d_model,
-            map_dim=d_model,
-            vdim=d_model,
-            num_heads=nhead,
-            dropout=dropout
+            traj_dim=d_model, map_dim=d_model, v_dim=d_model, num_heads=n_head, dropout=dropout
         )
 
         self.map_linear1 = torch.nn.Linear(d_model, dim_feedforward)
@@ -142,28 +142,10 @@ class MapAwareAgentFormerEncoderLayer(AgentFormerEncoderLayer):
         return src, map_feature
 
 
-class WrappedAgentFormerEncoderLayerForMapInput(AgentFormerEncoderLayer):
-    def __init__(
-            self, d_model: int, nhead: int,
-            dim_feedforward: int = 2048, dropout: float = 0.1, activation: str = "relu"
-    ):
-        super().__init__(
-            d_model=d_model, nhead=nhead, dim_feedforward=dim_feedforward, dropout=dropout, activation=activation
-        )
-
-    def forward(
-            self, src: Tensor, src_identities: Tensor, map_feature: Tensor,
-            src_mask: Optional[Tensor] = None
-    ) -> Tuple[Tensor, None]:
-        src = super().forward(
-            src=src, src_identities=src_identities, src_mask=src_mask
-        )
-        return src, None
-
 # DECODER LAYERS ######################################################################################################
 
 
-class AgentFormerDecoderLayer(Module):
+class BaseAttentionDecoderLayer(Module):
     r"""TransformerDecoderLayer is made up of self-attn, multi-head-attn and feedforward network.
     This standard decoder layer is based on the paper "Attention Is All You Need".
     Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez,
@@ -186,23 +168,11 @@ class AgentFormerDecoderLayer(Module):
     """
 
     def __init__(
-            self, d_model: int, nhead: int,
-            dim_feedforward: int = 2048, dropout: float = 0.1, activation: str = "relu"
+            self, d_model: int,
+            dim_feedforward: int = 2048, dropout: float = 0.1, activation: str = 'relu'
     ):
         super().__init__()
-        # print(f"DECODER_LAYER")
-        self.self_attn = AgentAwareAttentionV2(
-            traj_dim=d_model,
-            vdim=d_model,
-            num_heads=nhead,
-            dropout=dropout
-        )
-        self.cross_attn = AgentAwareAttentionV2(
-            traj_dim=d_model,
-            vdim=d_model,
-            num_heads=nhead,
-            dropout=dropout
-        )
+
         # Implementation of Feedforward model
         self.linear1 = torch.nn.Linear(d_model, dim_feedforward)
         self.dropout = torch.nn.Dropout(dropout)
@@ -217,20 +187,34 @@ class AgentFormerDecoderLayer(Module):
 
         self.activation = LAYER_ACTIVATION_FUNCTIONS[activation]
 
-    # def __setstate__(self, state):
-    #     if 'activation' not in state:
-    #         state['activation'] = F.relu
-    #     super().__setstate__(state)
+
+class AgentAwareAttentionDecoderLayer(BaseAttentionDecoderLayer):
+    def __init__(
+            self, d_model: int, n_head: int,
+            dim_feedforward: int = 2048, dropout: float = 0.1, activation: str = 'relu'
+    ):
+        super().__init__(
+            d_model=d_model, dim_feedforward=dim_feedforward, dropout=dropout, activation=activation
+        )
+
+        self.self_attn = AgentAwareAttention(
+            traj_dim=d_model, v_dim=d_model, num_heads=n_head, dropout=dropout
+        )
+        self.cross_attn = AgentAwareAttention(
+            traj_dim=d_model, v_dim=d_model, num_heads=n_head, dropout=dropout
+        )
 
     def forward(
             self, tgt: Tensor, memory: Tensor, tgt_identities: Tensor, mem_identities: Tensor,
-            tgt_mask: Optional[Tensor] = None, memory_mask: Optional[Tensor] = None,
+            tgt_mask: Optional[Tensor] = None, memory_mask: Optional[Tensor] = None
     ) -> Tuple[Tensor, Tensor, Tensor]:
         r"""Pass the inputs (and mask) through the decoder layer.
 
         Args:
             tgt: the sequence to the decoder layer (required).
             memory: the sequence from the last layer of the encoder (required).
+            tgt_identities: identities of tgt that will be used to perform self/other attention (required).
+            mem_identities: identities of memory that will be used to perform self/other attention (required).
             tgt_mask: the mask for the tgt sequence (optional).
             memory_mask: the mask for the memory sequence (optional).
         Shape:
@@ -252,27 +236,19 @@ class AgentFormerDecoderLayer(Module):
         return tgt, self_attn_weights, cross_attn_weights
 
 
-class MapAwareAgentFormerDecoderLayer(AgentFormerDecoderLayer):
+class MapAgentAwareAttentionDecoderLayer(BaseAttentionDecoderLayer):
     def __init__(
-            self, d_model: int, nhead: int,
+            self, d_model: int, n_head: int,
             dim_feedforward: int = 2048, dropout: float = 0.1, activation: str = 'relu'
     ):
         super().__init__(
-            d_model=d_model, nhead=nhead, dim_feedforward=dim_feedforward, dropout=dropout, activation=activation
+            d_model=d_model, dim_feedforward=dim_feedforward, dropout=dropout, activation=activation
         )
         self.self_attn = MapAgentAwareAttention(
-            traj_dim=d_model,
-            map_dim=d_model,
-            vdim=d_model,
-            num_heads=nhead,
-            dropout=dropout
+            traj_dim=d_model, map_dim=d_model, v_dim=d_model, num_heads=n_head, dropout=dropout
         )
         self.cross_attn = MapAgentAwareAttention(
-            traj_dim=d_model,
-            map_dim=d_model,
-            vdim=d_model,
-            num_heads=nhead,
-            dropout=dropout
+            traj_dim=d_model, map_dim=d_model, v_dim=d_model, num_heads=n_head, dropout=dropout
         )
 
         self.map_linear1 = torch.nn.Linear(d_model, dim_feedforward)
@@ -325,25 +301,3 @@ class MapAwareAgentFormerDecoderLayer(AgentFormerDecoderLayer):
 
         return tgt, tgt_map, self_attn_weights, cross_attn_weights
 
-
-class WrappedAgentFormerDecoderLayerForMapInput(AgentFormerDecoderLayer):
-    def __init__(
-            self, d_model: int, nhead: int,
-            dim_feedforward: int = 2048, dropout: float = 0.1, activation: str = "relu"
-    ):
-        super().__init__(
-            d_model=d_model, nhead=nhead, dim_feedforward=dim_feedforward, dropout=dropout, activation=activation
-        )
-
-    def forward(
-            self, tgt: Tensor, memory: Tensor,
-            tgt_identities: Tensor, mem_identities: Tensor,
-            tgt_map: Tensor, mem_map: Tensor,
-            tgt_mask: Optional[Tensor] = None, memory_mask: Optional[Tensor] = None
-    ) -> Tuple[Tensor, None, Tensor, Tensor]:
-        tgt, self_attn_weights, cross_attn_weights = super().forward(
-            tgt=tgt, memory=memory,
-            tgt_identities=tgt_identities, mem_identities=mem_identities,
-            tgt_mask=tgt_mask, memory_mask=memory_mask
-        )
-        return tgt, None, self_attn_weights, cross_attn_weights
