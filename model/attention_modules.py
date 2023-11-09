@@ -2,7 +2,7 @@ import torch
 import copy
 from torch.nn.modules.module import Module
 from torch.nn.modules.container import ModuleList
-from model.layers import \
+from model.attention_layers import \
     AgentAwareAttentionEncoderLayer, AgentAwareAttentionDecoderLayer,\
     MapAgentAwareAttentionEncoderLayer, MapAgentAwareAttentionDecoderLayer
 
