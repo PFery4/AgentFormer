@@ -70,21 +70,21 @@ class AgentAwareAttentionEncoderLayer(BaseAttentionEncoderLayer):
         )
 
     def forward(
-            self, src: Tensor, src_identities: Tensor,
+            self, src: Tensor, src_self_other_mask: Tensor,
             src_mask: Optional[Tensor] = None
     ) -> Tensor:
         r"""Pass the input through the encoder layer.
 
         Args:
             src: the sequence to the encoder layer (required).
-            src_identities: the sequence of identities that will be used to perform self/other attention (required).
+            src_self_other_mask: the self/other attention mask that corresponds to the src sequence (required).
             src_mask: the mask for the src sequence (optional).
         Shape:
             see the docs in Transformer class.
         """
         src2, _ = self.self_attn(
             q=src, k=src, v=src,
-            q_identities=src_identities, k_identities=src_identities, mask=src_mask
+            self_other_mask=src_self_other_mask, mask=src_mask
         )
         src = src + self.dropout1(src2)
         src = self.norm1(src)
@@ -119,13 +119,13 @@ class MapAgentAwareAttentionEncoderLayer(BaseAttentionEncoderLayer):
         self.map_activation = LAYER_ACTIVATION_FUNCTIONS[activation]
 
     def forward(
-            self, src: Tensor, src_identities: Tensor, map_feature: Tensor,
+            self, src: Tensor, src_self_other_mask: Tensor, map_feature: Tensor,
             src_mask: Optional[Tensor] = None
     ) -> Tuple[Tensor, Tensor]:
         src2, map_feature2, _ = self.self_attn(
             q=src, k=src, v=src,
             q_map=map_feature, k_map=map_feature, v_map=map_feature,
-            q_identities=src_identities, k_identities=src_identities, mask=src_mask
+            self_other_mask=src_self_other_mask, mask=src_mask
         )
         src = src + self.dropout1(src2)
         src = self.norm1(src)
@@ -205,7 +205,7 @@ class AgentAwareAttentionDecoderLayer(BaseAttentionDecoderLayer):
         )
 
     def forward(
-            self, tgt: Tensor, memory: Tensor, tgt_identities: Tensor, mem_identities: Tensor,
+            self, tgt: Tensor, memory: Tensor, tgt_tgt_self_other_mask: Tensor, tgt_mem_self_other_mask: Tensor,
             tgt_mask: Optional[Tensor] = None, memory_mask: Optional[Tensor] = None
     ) -> Tuple[Tensor, Tensor, Tensor]:
         r"""Pass the inputs (and mask) through the decoder layer.
@@ -213,20 +213,20 @@ class AgentAwareAttentionDecoderLayer(BaseAttentionDecoderLayer):
         Args:
             tgt: the sequence to the decoder layer (required).
             memory: the sequence from the last layer of the encoder (required).
-            tgt_identities: identities of tgt that will be used to perform self/other attention (required).
-            mem_identities: identities of memory that will be used to perform self/other attention (required).
+            tgt_tgt_self_other_mask: the self/other attention mask that corresponds to the tgt sequence (required).
+            tgt_mem_self_other_mask: the self/other attention mask that corresponds to the memory sequence (required).
             tgt_mask: the mask for the tgt sequence (optional).
             memory_mask: the mask for the memory sequence (optional).
         Shape:
             see the docs in Transformer class.
         """
         tgt2, self_attn_weights = self.self_attn(
-            q=tgt, k=tgt, v=tgt, q_identities=tgt_identities, k_identities=tgt_identities, mask=tgt_mask
+            q=tgt, k=tgt, v=tgt, self_other_mask=tgt_tgt_self_other_mask, mask=tgt_mask
         )
         tgt = tgt + self.dropout1(tgt2)
         tgt = self.norm1(tgt)
         tgt2, cross_attn_weights = self.cross_attn(
-            q=tgt, k=memory, v=memory, q_identities=tgt_identities, k_identities=mem_identities, mask=memory_mask
+            q=tgt, k=memory, v=memory, self_other_mask=tgt_mem_self_other_mask, mask=memory_mask
         )
         tgt = tgt + self.dropout2(tgt2)
         tgt = self.norm2(tgt)
@@ -266,14 +266,14 @@ class MapAgentAwareAttentionDecoderLayer(BaseAttentionDecoderLayer):
 
     def forward(
             self, tgt: Tensor, memory: Tensor,
-            tgt_identities: Tensor, mem_identities: Tensor,
+            tgt_tgt_self_other_mask: Tensor, tgt_mem_self_other_mask: Tensor,
             tgt_map: Tensor, mem_map: Tensor,
             tgt_mask: Optional[Tensor] = None, memory_mask: Optional[Tensor] = None
     ) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
         tgt2, tgt_map2, self_attn_weights = self.self_attn(
             q=tgt, k=tgt, v=tgt,
             q_map=tgt_map, k_map=tgt_map, v_map=tgt_map,
-            q_identities=tgt_identities, k_identities=tgt_identities, mask=tgt_mask
+            self_other_mask=tgt_tgt_self_other_mask, mask=tgt_mask
         )
 
         tgt = tgt + self.dropout1(tgt2)
@@ -284,7 +284,7 @@ class MapAgentAwareAttentionDecoderLayer(BaseAttentionDecoderLayer):
         tgt2, tgt_map2, cross_attn_weights = self.cross_attn(
             q=tgt, k=memory, v=memory,
             q_map=tgt_map, k_map=mem_map, v_map=mem_map,
-            q_identities=tgt_identities, k_identities=mem_identities, mask=memory_mask
+            self_other_mask=tgt_mem_self_other_mask, mask=memory_mask
         )
 
         tgt = tgt + self.dropout2(tgt2)

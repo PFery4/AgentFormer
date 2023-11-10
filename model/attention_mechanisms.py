@@ -60,23 +60,21 @@ class SelfOtherAwareAttention(Module):
         torch.nn.init.xavier_normal_(self.fc.weight)
         torch.nn.init.zeros_(self.fc.bias)
 
-    @staticmethod
-    def self_other_aware_mask(q_identities: Tensor, k_identities: Tensor):
-        # q_identities: [L]
-        # k_identities: [S]
-        return torch.stack([k_identities == q_id for q_id in q_identities])     # [L, S]
+    # @staticmethod
+    # def self_other_aware_mask(q_identities: Tensor, k_identities: Tensor):
+    #     # q_identities: [L]
+    #     # k_identities: [S]
+    #     return torch.stack([k_identities == q_id for q_id in q_identities])     # [L, S]
 
     def self_other_scaled_dot_product(
             self,
             q: Tensor, k: Tensor,
-            q_identities: Tensor, k_identities: Tensor,
+            self_other_mask: Tensor,
             mask: Tensor
     ) -> Tensor:
         # q: [B, L, T]
         # k: [B, S, T]
-        # v: [B, S, T]
-        # q_identities: [B, L]
-        # k_identities: [B, S]
+        # self_other_mask: [B, L, S]
         # mask: [B, L, S]
 
         B, L, _ = q.size()
@@ -101,12 +99,10 @@ class SelfOtherAwareAttention(Module):
 
         # print(f"4. {attention_self.shape, attention_other.shape=}")
 
-        agent_aware_mask = torch.stack(
-            [self.self_other_aware_mask(q_id, k_id) for q_id, k_id in zip(q_identities, k_identities)]
-        ).unsqueeze(1)    # [B, 1, L, S]
+        self_other_mask = self_other_mask.unsqueeze(1)     # [B, 1, L, S]
         # print(f"5. {agent_aware_mask.shape=}")
 
-        attention = attention_other * (~agent_aware_mask) + attention_self * agent_aware_mask        # [B, H, L, S]
+        attention = attention_other * (~self_other_mask) + attention_self * self_other_mask        # [B, H, L, S]
         # print(f"6. {attention.shape=}")
 
         attention += mask.unsqueeze(1)                                                               # [B, H, L, S]
@@ -122,7 +118,7 @@ class AgentAwareAttention(SelfOtherAwareAttention):
     def forward(
             self,
             q: Tensor, k: Tensor, v: Tensor,
-            q_identities: Tensor, k_identities: Tensor,
+            self_other_mask: Tensor,
             mask: Tensor
     ) -> Tuple[Tensor, Tensor]:
         # q: [B, L, T]
@@ -130,7 +126,8 @@ class AgentAwareAttention(SelfOtherAwareAttention):
         # v: [B, S, T]
         # q_identities: [B, L]
         # k_identities: [B, S]
-        # mask: [B, L]
+        # self_other_mask: [B, L, S]
+        # mask: [B, L, S]
 
         # print(f"\n\n{q.shape, k.shape, v.shape=}")
         # print(f"{q_identities.shape, k_identities.shape=}")
@@ -146,7 +143,7 @@ class AgentAwareAttention(SelfOtherAwareAttention):
         # print(f"1. {v.shape=}")
 
         attention = self.self_other_scaled_dot_product(
-            q=q, k=k, q_identities=q_identities, k_identities=k_identities, mask=mask
+            q=q, k=k, self_other_mask=self_other_mask, mask=mask
         )       # [B, H, L, S]
 
         # print(f"8. {attention.shape=}")
@@ -210,7 +207,7 @@ class MapAgentAwareAttention(SelfOtherAwareAttention):
     def forward(
             self,
             q: Tensor, k: Tensor, v: Tensor,
-            q_identities: Tensor, k_identities: Tensor,
+            self_other_mask: Tensor,
             mask: Tensor,
             q_map: Tensor, k_map: Tensor, v_map: Tensor
     ) -> Tuple[Tensor, Tensor, Tensor]:
@@ -220,8 +217,7 @@ class MapAgentAwareAttention(SelfOtherAwareAttention):
         # q_map: [B, M]
         # k_map: [B, M]
         # v_map: [B, M]
-        # q_identities: [B, L]
-        # k_identities: [B, S]
+        # self_other_mask: [B, L, S]
         # mask: [B, L, S]
 
         # print(f"IN ATTENTION MECHANISM")
@@ -265,7 +261,7 @@ class MapAgentAwareAttention(SelfOtherAwareAttention):
 
         # cross agent attention
         cross_agent_attention = self.self_other_scaled_dot_product(
-            q=q, k=k, q_identities=q_identities, k_identities=k_identities, mask=mask
+            q=q, k=k, self_other_mask=self_other_mask, mask=mask
         )       # [B, H, L, S]
         # print(f"8. {cross_agent_attention.shape=}")
 

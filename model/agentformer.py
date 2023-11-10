@@ -19,6 +19,12 @@ from typing import Dict
 Tensor = torch.Tensor
 
 
+def self_other_aware_mask(q_identities: Tensor, k_identities: Tensor):
+    # q_identities: [L]
+    # k_identities: [S]
+    return torch.stack([k_identities == q_id for q_id in q_identities])  # [L, S]
+
+
 def causal_attention_mask(
         timestep_sequence: torch.Tensor,
         batch_size: int = 1
@@ -197,18 +203,18 @@ class ContextEncoder(nn.Module):
 
         self.pool = POOLING_FUNCTIONS[self.pooling]
 
-    def agent_encoder_call(self, data: Dict, tf_in_pos: Tensor, src_mask: Tensor):
+    def agent_encoder_call(self, data: Dict, tf_in_pos: Tensor, src_self_other_mask: Tensor, src_mask: Tensor):
         data['context_enc'] = self.tf_encoder(
             src=tf_in_pos,                                          # [B, O, model_dim]
-            src_identities=data['obs_identity_sequence'],           # [B, O]
+            src_self_other_mask=src_self_other_mask,                # [B, O, O]
             src_mask=src_mask                                       # [B, O, O]
         )                                                           # [B, O, model_dim], [B, model_dim]
         # print(f"{data['context_enc'].shape, data['context_map'].shape=}")
 
-    def map_agent_encoder_call(self, data: Dict, tf_in_pos: Tensor, src_mask: Tensor):
+    def map_agent_encoder_call(self, data: Dict, tf_in_pos: Tensor, src_self_other_mask: Tensor, src_mask: Tensor):
         data['context_enc'], data['context_map'] = self.tf_encoder(
             src=tf_in_pos,                                          # [B, O, model_dim]
-            src_identities=data['obs_identity_sequence'],           # [B, O]
+            src_self_other_mask=src_self_other_mask,                # [B, O, O]
             map_feature=data['global_map_encoding'],                # [B, model_dim]
             src_mask=src_mask                                       # [B, O, O]
         )                                                           # [B, O, model_dim], [B, model_dim]
@@ -227,6 +233,12 @@ class ContextEncoder(nn.Module):
             time_tensor=data['obs_timestep_sequence']   # [B, O]
         )                                               # [B, O, model_dim]
 
+        self_other_mask = self_other_aware_mask(
+            q_identities=data['obs_identity_sequence'][0], k_identities=data['obs_identity_sequence'][0]
+        ).unsqueeze(0)          # [B, O, O]
+        # print(f"{data['obs_identity_sequence'][0]=}")
+        # print(f"{self_other_mask, self_other_mask.shape=}")
+
         src_mask = self.attention_mask(
             timestep_sequence=data['obs_timestep_sequence'][0, ...],     # [O]
             batch_size=1
@@ -234,7 +246,7 @@ class ContextEncoder(nn.Module):
         # print(f"{data['obs_timestep_sequence'][0, ...]=}")
         # print(f"{src_mask, src_mask.shape=}")
 
-        self.tf_encoder_call(data=data, tf_in_pos=tf_in_pos, src_mask=src_mask)
+        self.tf_encoder_call(data=data, tf_in_pos=tf_in_pos, src_self_other_mask=self_other_mask, src_mask=src_mask)
 
         # compute per agent context
         data['agent_context'] = self.pool(
@@ -299,13 +311,15 @@ class FutureEncoder(nn.Module):
         self.pool = POOLING_FUNCTIONS[self.pooling]
 
     def agent_decoder_call(
-            self, data: Dict, tf_in_pos: Tensor, tgt_mask: Tensor, mem_mask: Tensor
+            self, data: Dict, tf_in_pos: Tensor,
+            tgt_tgt_self_other_mask: Tensor, tgt_mem_self_other_mask: Tensor,
+            tgt_mask: Tensor, mem_mask: Tensor
     ) -> Tensor:
         tf_out, _ = self.tf_decoder(
             tgt=tf_in_pos,                                          # [B, P, model_dim]
             memory=data['context_enc'],                             # [B, O, model_dim]
-            tgt_identities=data['pred_identity_sequence'],          # [B, P]
-            mem_identities=data['obs_identity_sequence'],           # [B, O]
+            tgt_tgt_self_other_mask=tgt_tgt_self_other_mask,        # [B, P]
+            tgt_mem_self_other_mask=tgt_mem_self_other_mask,        # [B, O]
             tgt_mask=tgt_mask,                                      # [B, P, P]
             memory_mask=mem_mask,                                   # [B, P, O]
         )                                                           # [B, P, model_dim], [B, model_dim]
@@ -313,13 +327,15 @@ class FutureEncoder(nn.Module):
         return tf_out
 
     def map_agent_decoder_call(
-            self, data: Dict, tf_in_pos: Tensor, tgt_mask: Tensor, mem_mask: Tensor
+            self, data: Dict, tf_in_pos: Tensor,
+            tgt_tgt_self_other_mask: Tensor, tgt_mem_self_other_mask: Tensor,
+            tgt_mask: Tensor, mem_mask: Tensor
     ) -> Tensor:
         tf_out, _, _ = self.tf_decoder(
             tgt=tf_in_pos,                                          # [B, P, model_dim]
             memory=data['context_enc'],                             # [B, O, model_dim]
-            tgt_identities=data['pred_identity_sequence'],          # [B, P]
-            mem_identities=data['obs_identity_sequence'],           # [B, O]
+            tgt_tgt_self_other_mask=tgt_tgt_self_other_mask,        # [B, P]
+            tgt_mem_self_other_mask=tgt_mem_self_other_mask,        # [B, O]
             tgt_map=data['global_map_encoding'],                    # [B, model_dim]
             mem_map=data['context_map'],                            # [B, model_dim]
             tgt_mask=tgt_mask,                                      # [B, P, P]
@@ -342,6 +358,17 @@ class FutureEncoder(nn.Module):
         )                                                   # [B, P, model_dim]
         # print(f"{tf_in_pos.shape=}")
 
+        tgt_self_other_mask = self_other_aware_mask(
+            q_identities=data['pred_identity_sequence'][0], k_identities=data['pred_identity_sequence'][0]
+        ).unsqueeze(0)      # [B, P, P]
+        mem_self_other_mask = self_other_aware_mask(
+            q_identities=data['pred_identity_sequence'][0], k_identities=data['obs_identity_sequence'][0]
+        ).unsqueeze(0)      # [B, P, O]
+        # print(f"{data['obs_identity_sequence'][0]=}")
+        # print(f"{data['pred_identity_sequence'][0]=}")
+        # print(f"{tgt_self_other_mask, tgt_self_other_mask.shape=}")
+        # print(f"{mem_self_other_mask, mem_self_other_mask.shape=}")
+
         mem_mask = zeros_mask(
             tgt_sz=data['pred_timestep_sequence'].shape[1],
             src_sz=data['obs_timestep_sequence'].shape[1],
@@ -357,7 +384,11 @@ class FutureEncoder(nn.Module):
         # print(f"{data['global_map_encoding'].shape=}")
         # print(f"{data['context_map'].shape=}")
 
-        tf_out = self.tf_decoder_call(data=data, tf_in_pos=tf_in_pos, tgt_mask=tgt_mask, mem_mask=mem_mask)
+        tf_out = self.tf_decoder_call(
+            data=data, tf_in_pos=tf_in_pos,
+            tgt_tgt_self_other_mask=tgt_self_other_mask, tgt_mem_self_other_mask=mem_self_other_mask,
+            tgt_mask=tgt_mask, mem_mask=mem_mask
+        )
 
         # print(f"{self.pooling=}")
         h = self.pool(
@@ -436,13 +467,14 @@ class FutureDecoder(nn.Module):
 
     def agent_decoder_call(
             self, data: Dict, tf_in_pos: Tensor, context: Tensor,
-            agent_sequence: Tensor, tgt_mask: Tensor, mem_mask: Tensor, sample_num: int
+            tgt_tgt_self_other_mask: Tensor, tgt_mem_self_other_mask: Tensor,
+            tgt_mask: Tensor, mem_mask: Tensor, sample_num: int
     ) -> Tuple[Tensor, Dict]:
         tf_out, attn_weights = self.tf_decoder(
             tgt=tf_in_pos,                                                          # [B * sample_num, K, model_dim]
             memory=context,                                                         # [B * sample_num, O, model_dim]
-            tgt_identities=agent_sequence.repeat(sample_num, 1),                    # [B * sample_num, K]
-            mem_identities=data['obs_identity_sequence'].repeat(sample_num, 1),     # [B * sample_num, O]
+            tgt_tgt_self_other_mask=tgt_tgt_self_other_mask.repeat(sample_num, 1, 1),  # [B * sample_num, K, K]
+            tgt_mem_self_other_mask=tgt_mem_self_other_mask.repeat(sample_num, 1, 1),  # [B * sample_num, K, O]
             tgt_mask=tgt_mask,                                                      # [B * sample_num, K, K]
             memory_mask=mem_mask                                                    # [B * sample_num, K, O]
         )       # [B * sample_num, K, model_dim], Dict
@@ -451,13 +483,14 @@ class FutureDecoder(nn.Module):
 
     def map_agent_decoder_call(
             self, data: Dict, tf_in_pos: Tensor, context: Tensor,
-            agent_sequence: Tensor, tgt_mask: Tensor, mem_mask: Tensor, sample_num: int
+            tgt_tgt_self_other_mask: Tensor, tgt_mem_self_other_mask: Tensor,
+            tgt_mask: Tensor, mem_mask: Tensor, sample_num: int
     ) -> Tuple[Tensor, Dict]:
         tf_out, map_out, attn_weights = self.tf_decoder(
             tgt=tf_in_pos,                                                          # [B * sample_num, K, model_dim]
             memory=context,                                                         # [B * sample_num, O, model_dim]
-            tgt_identities=agent_sequence.repeat(sample_num, 1),                    # [B * sample_num, K]
-            mem_identities=data['obs_identity_sequence'].repeat(sample_num, 1),     # [B * sample_num, O]
+            tgt_tgt_self_other_mask=tgt_tgt_self_other_mask.repeat(sample_num, 1, 1),  # [B * sample_num, K, K]
+            tgt_mem_self_other_mask=tgt_mem_self_other_mask.repeat(sample_num, 1, 1),  # [B * sample_num, K, O]
             tgt_map=data['global_map_encoding'].repeat(sample_num, 1),              # [B * sample_num, model_dim]
             mem_map=data['context_map'].repeat(sample_num, 1),                      # [B * sample_num, model_dim]
             tgt_mask=tgt_mask,                                                      # [B * sample_num, K, K]
@@ -490,6 +523,17 @@ class FutureDecoder(nn.Module):
         )           # [B * sample_num, K, model_dim]
         # print(f"{tf_in_pos.shape=}")
 
+        tgt_self_other_mask = self_other_aware_mask(
+            q_identities=agent_sequence[0], k_identities=agent_sequence[0]
+        ).unsqueeze(0)      # [B, K, K]
+        mem_self_other_mask = self_other_aware_mask(
+            q_identities=agent_sequence[0], k_identities=data['obs_identity_sequence'][0]
+        ).unsqueeze(0)      # [B, P, O]
+        # print(f"{data['obs_identity_sequence'][0]=}")
+        # print(f"{agent_sequence[0]=}")
+        # print(f"{tgt_self_other_mask, tgt_self_other_mask.shape=}")
+        # print(f"{mem_self_other_mask, mem_self_other_mask.shape=}")
+
         # Generate attention masks (tgt_mask ensures proper autoregressive attention, such that predictions which
         # were originally made at loop iteration nr t cannot attend from sequence elements which have been added
         # at loop iterations >t)
@@ -513,7 +557,8 @@ class FutureDecoder(nn.Module):
         data['context_map'] = torch.full([1, 2], np.nan)
 
         tf_out, attn_weights = self.tf_decoder_call(
-            data=data, tf_in_pos=tf_in_pos, context=context, agent_sequence=agent_sequence,
+            data=data, tf_in_pos=tf_in_pos, context=context,
+            tgt_tgt_self_other_mask=tgt_self_other_mask, tgt_mem_self_other_mask=mem_self_other_mask,
             tgt_mask=tgt_mask, mem_mask=mem_mask, sample_num=sample_num
         )
 

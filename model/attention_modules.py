@@ -27,7 +27,7 @@ class AgentFormerEncoder(Module):
         self.layers = _get_clones(layer, num_layers)
 
     def forward(
-            self, src: Tensor, src_identities: Tensor,
+            self, src: Tensor, src_self_other_mask: Tensor,
             src_mask: Optional[Tensor] = None
     ) -> Tensor:
 
@@ -35,7 +35,7 @@ class AgentFormerEncoder(Module):
 
         for layer in self.layers:
             output = layer(
-                src=output, src_identities=src_identities, src_mask=src_mask,
+                src=output, src_self_other_mask=src_self_other_mask, src_mask=src_mask,
             )
 
         return output
@@ -51,7 +51,7 @@ class OcclusionFormerEncoder(Module):
         self.layers = _get_clones(layer, num_layers)
 
     def forward(
-            self, src: Tensor, src_identities: Tensor, map_feature: Tensor,
+            self, src: Tensor, src_self_other_mask: Tensor, map_feature: Tensor,
             src_mask: Optional[Tensor] = None
     ) -> Tuple[Tensor, Tensor]:
 
@@ -60,7 +60,7 @@ class OcclusionFormerEncoder(Module):
 
         for layer in self.layers:
             output, map_output = layer(
-                src=output, src_identities=src_identities, map_feature=map_output, src_mask=src_mask,
+                src=output, src_self_other_mask=src_self_other_mask, map_feature=map_output, src_mask=src_mask,
             )
 
         return output, map_output
@@ -80,7 +80,7 @@ class AgentFormerDecoder(Module):
 
     def forward(
             self, tgt: Tensor, memory: Tensor,
-            tgt_identities: Tensor, mem_identities: Tensor,
+            tgt_tgt_self_other_mask: Tensor, tgt_mem_self_other_mask: Tensor,
             tgt_mask: Optional[Tensor] = None, memory_mask: Optional[Tensor] = None
     ) -> Tuple[Tensor, Dict]:
         output = tgt
@@ -91,7 +91,7 @@ class AgentFormerDecoder(Module):
         for i, mod in enumerate(self.layers):
             output, self_attn_weights[i], cross_attn_weights[i] = mod(
                 tgt=output, memory=memory,
-                tgt_identities=tgt_identities, mem_identities=mem_identities,
+                tgt_tgt_self_other_mask=tgt_tgt_self_other_mask, tgt_mem_self_other_mask=tgt_mem_self_other_mask,
                 tgt_mask=tgt_mask, memory_mask=memory_mask
             )
 
@@ -109,7 +109,7 @@ class OcclusionFormerDecoder(Module):
 
     def forward(
             self, tgt: Tensor, memory: Tensor,
-            tgt_identities: Tensor, mem_identities: Tensor,
+            tgt_tgt_self_other_mask: Tensor, tgt_mem_self_other_mask: Tensor,
             tgt_map: Tensor, mem_map: Tensor,
             tgt_mask: Optional[Tensor] = None, memory_mask: Optional[Tensor] = None
     ) -> Tuple[Tensor, Tensor, Dict]:
@@ -121,13 +121,9 @@ class OcclusionFormerDecoder(Module):
         for i, mod in enumerate(self.layers):
             output, map_output, self_attn_weights[i], cross_attn_weights[i] = mod(
                 tgt=output, memory=memory,
-                tgt_identities=tgt_identities, mem_identities=mem_identities,
+                tgt_tgt_self_other_mask=tgt_tgt_self_other_mask, tgt_mem_self_other_mask=tgt_mem_self_other_mask,
                 tgt_map=map_output, mem_map=mem_map,
                 tgt_mask=tgt_mask, memory_mask=memory_mask,
             )
-
-        # if need_weights:
-        #     self_attn_weights = torch.stack(self_attn_weights).cpu().numpy()
-        #     cross_attn_weights = torch.stack(cross_attn_weights).cpu().numpy()
 
         return output, map_output, {'self_attn_weights': self_attn_weights, 'cross_attn_weights': cross_attn_weights}
