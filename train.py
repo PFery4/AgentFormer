@@ -31,30 +31,62 @@ def logging(cfg, epoch, total_epoch, iter, total_iter, ep, seq, frame, losses_st
     print_log(prnt_str, log)
 
 
+def train_one_batch(data):
+    # providing the data dictionary to the model
+    model.set_data(data=data)
+
+    # zeroing the gradients
+    optimizer.zero_grad()
+
+    # making a prediction
+    model_data = model()
+
+    # computing loss and updating model parameters
+    total_loss, loss_dict, loss_unweighted_dict = model.compute_loss()
+    total_loss.backward()
+    optimizer.step()
+
+    return total_loss, loss_dict, loss_unweighted_dict
+
+
+def update_loss_meters(train_loss_meter, total_loss, loss_unweighted_dict):
+    train_loss_meter['total_loss'].update(total_loss.item())
+    for key in loss_unweighted_dict.keys():
+        train_loss_meter[key].update(loss_unweighted_dict[key])
+
+
 def train(epoch_index: int):
     since_train = time.time()
     train_loss_meter = {x: AverageMeter() for x in cfg.loss_cfg.keys()}
     train_loss_meter['total_loss'] = AverageMeter()
 
     for i, data in enumerate(training_loader):
-        # providing the data dictionary to the model
-        model.set_data(data=data)
+        # # providing the data dictionary to the model
+        # model.set_data(data=data)
+        #
+        # # zeroing the gradients
+        # optimizer.zero_grad()
+        #
+        # # making a prediction
+        # model_data = model()
+        #
+        # # computing loss and updating model parameters
+        # total_loss, loss_dict, loss_unweighted_dict = model.compute_loss()
+        # total_loss.backward()
+        # optimizer.step()
+        total_loss, loss_dict, loss_unweighted_dict = train_one_batch(data=data)
 
-        # zeroing the gradients
-        optimizer.zero_grad()
-
-        # making a prediction
-        model_data = model()
-
-        # computing loss and updating model parameters
-        total_loss, loss_dict, loss_unweighted_dict = model.compute_loss()
-        total_loss.backward()
-        optimizer.step()
+        update_loss_meters(
+            train_loss_meter=train_loss_meter, total_loss=total_loss, loss_unweighted_dict=loss_unweighted_dict
+        )
 
         # memory_report('BEFORE UPDATING LOSS METERS')
-        train_loss_meter['total_loss'].update(total_loss.item())
-        for key in loss_unweighted_dict.keys():
-            train_loss_meter[key].update(loss_unweighted_dict[key])
+        # train_loss_meter['total_loss'].update(total_loss.item())
+        # for key in loss_unweighted_dict.keys():
+        #     train_loss_meter[key].update(loss_unweighted_dict[key])
+        update_loss_meters(
+            train_loss_meter=train_loss_meter, total_loss=total_loss, loss_unweighted_dict=loss_unweighted_dict
+        )
         # memory_report('AFTER UPDATING LOSS METERS')
 
         if i % cfg.print_freq == 0:
@@ -158,6 +190,7 @@ if __name__ == '__main__':
         training_loader = DataLoader(dataset=sdd_dataset, shuffle=True, num_workers=2)
     else:
         generator = data_generator(cfg, log, split='train', phase='training')
+        raise NotImplementedError
 
     """ model """
     model_id = cfg.get('model_id', 'agentformer')
