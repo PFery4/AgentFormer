@@ -37,7 +37,7 @@ def logging(cfg, epoch, total_epoch, iter, total_iter, ep, seq, frame, losses_st
         print(prnt_str)
 
 
-def train_one_batch(data):
+def train_one_batch(model, data, optimizer):
     # providing the data dictionary to the model
     model.set_data(data=data)
 
@@ -80,7 +80,7 @@ def train(epoch_index: int):
         # total_loss, loss_dict, loss_unweighted_dict = model.compute_loss()
         # total_loss.backward()
         # optimizer.step()
-        total_loss, loss_dict, loss_unweighted_dict = train_one_batch(data=data)
+        total_loss, loss_dict, loss_unweighted_dict = train_one_batch(model=model, data=data, optimizer=optimizer)
 
         update_loss_meters(
             train_loss_meter=train_loss_meter, total_loss=total_loss, loss_unweighted_dict=loss_unweighted_dict
