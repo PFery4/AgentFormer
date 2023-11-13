@@ -13,6 +13,8 @@ import copy
 import glob, glob2
 from torch import nn
 
+from io import TextIOWrapper
+
 
 class AverageMeter(object):
     """Computes and stores the average and current value"""
@@ -239,7 +241,7 @@ def initialize_weights(modules):
                 nn.init.constant_(m.bias, 0)
 
 
-def print_log(print_str, log, same_line=False, display=True):
+def print_log(print_str: str, log: TextIOWrapper, same_line: bool = False, display: bool = True):
     """
     print a string to a log file
 
