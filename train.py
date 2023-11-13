@@ -15,12 +15,15 @@ from utils.torch import get_scheduler
 from utils.config import Config
 from utils.utils import prepare_seed, print_log, AverageMeter, convert_secs2time, get_timestring, memory_report
 
+from typing import Optional
+from io import TextIOWrapper
+
 torch.backends.cudnn.enabled = True
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = True
 
 
-def logging(cfg, epoch, total_epoch, iter, total_iter, ep, seq, frame, losses_str, log):
+def logging(cfg, epoch, total_epoch, iter, total_iter, ep, seq, frame, losses_str, log: Optional[TextIOWrapper]):
     ep_time_str = convert_secs2time(ep)
     eta_time_str = convert_secs2time(ep / (iter + 1) * (total_iter * (total_epoch - epoch) - (iter + 1)))
     prnt_str = f"{cfg} |Epo: {epoch:02d}/{total_epoch:02d}, " \
@@ -28,7 +31,10 @@ def logging(cfg, epoch, total_epoch, iter, total_iter, ep, seq, frame, losses_st
                f"Ep: {ep_time_str:s}, ETA: {eta_time_str}," \
                f"seq: {seq:s}, frame: {frame}," \
                f"{losses_str}"
-    print_log(prnt_str, log)
+    if log is not None:
+        print_log(prnt_str, log)
+    else:
+        print(prnt_str)
 
 
 def train_one_batch(data):
