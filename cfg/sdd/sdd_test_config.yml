@@ -1,9 +1,5 @@
 # ------------------- General Options -------------------------
 
-"""
-This config file is used as a sandbox for trying out different versions of the model/training process.
-"""
-
 description                  : OcclusionFormer (before Dlow)
 results_root_dir             : results
 seed                         : 42
