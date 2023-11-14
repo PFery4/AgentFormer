@@ -16,12 +16,10 @@ from train import print_log
 
 if __name__ == '__main__':
 
+    dataloader_runs = 10
+    model_runs = 10
     cfg_str = 'sdd_test_config'
     cfg = Config(cfg_id=cfg_str, tmp=True, create_dirs=True)
-    wait = 10
-    warmup = 10
-    active = 5
-
 
     prepare_seed(cfg.seed)
 
@@ -76,49 +74,33 @@ if __name__ == '__main__':
     print(f"{device=}")
     model.train()
 
+    ###################################################################################################################
+    print(f"PROFILING DATALOADER ON ITS OWN")
+    data = None
+    loader_iter = iter(training_loader)
+    for i in range(dataloader_runs):
+
+        data = next(loader_iter)
+
+        num_agents = data['identities'].shape[1]
+        print(f"{i, num_agents=}")
+
+    print(f"{data['identities']=}")
+
+    print(f"NOW PROFILING MODEL ON ITS OWN")
     since_train = time.time()
     train_loss_meter = {x: AverageMeter() for x in cfg.loss_cfg.keys()}
     train_loss_meter['total_loss'] = AverageMeter()
+    for i in range(model_runs):
 
-    with torch.profiler.profile(
-        schedule=torch.profiler.schedule(wait=wait, warmup=warmup, active=active, repeat=1),
-        on_trace_ready=torch.profiler.tensorboard_trace_handler('./test_log/profiling_baseline'),
-        record_shapes=True,
-        profile_memory=True,
-        with_stack=True
-    ) as prof:
+        total_loss, loss_dict, loss_unweighted_dict = train.train_one_batch(
+            model=model, data=data, optimizer=optimizer
+        )
 
-        for i, data in enumerate(training_loader):
+        train.update_loss_meters(
+            train_loss_meter=train_loss_meter, total_loss=total_loss, loss_unweighted_dict=loss_unweighted_dict
+        )
 
-            prof.step()
-            if i >= wait + warmup + active:
-                break
+        print(f"{i, total_loss=}")
 
-            total_loss, loss_dict, loss_unweighted_dict = train.train_one_batch(
-                model=model, data=data, optimizer=optimizer
-            )
-
-            train.update_loss_meters(
-                train_loss_meter=train_loss_meter, total_loss=total_loss, loss_unweighted_dict=loss_unweighted_dict
-            )
-
-            if i % cfg.print_freq == 0:
-                ep = time.time() - since_train
-                losses_str = ' '.join([f'{x}: {y.avg:.3f} ({y.val:.3f})' for x, y in train_loss_meter.items()])
-                train.logging(
-                    cfg=cfg_str,
-                    epoch=1,
-                    total_epoch=cfg.num_epochs,
-                    iter=i,
-                    total_iter=len(training_loader),
-                    ep=ep,
-                    seq=data['seq'][0],
-                    frame=data['frame'][0],
-                    losses_str=losses_str,
-                    log=log
-                )
-                tb_x = i + 1
-                for name, meter in train_loss_meter.items():
-                    tb_logger.add_scalar(f'model_{name}', meter.avg, tb_x)
-
-        print("Goodbye!")
+    print("Goodbye!")
