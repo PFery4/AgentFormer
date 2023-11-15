@@ -77,7 +77,6 @@ class TorchDataGeneratorSDD(Dataset):
         else:
             raise NotImplementedError
 
-
         # we are preparing reflect padded versions of the dataset, so that it becomes quicker to process the dataset.
         # the reason why we need to produce reflect padded images is that we will need a full representation of the
         # scene image (as the model requires a global map). With the known SDD pixel to meter ratios and a desired
