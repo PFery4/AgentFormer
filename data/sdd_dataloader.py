@@ -254,13 +254,13 @@ class TorchDataGeneratorSDD(Dataset):
 
         keep_agent_mask = torch.full([trajs.shape[0]], True)
         if trajs.shape[0] > self.max_train_agent:
-            print(f"HEY, WE HAVE TOO MANY: {trajs.shape[0]} (full_obs)")
+            # print(f"HEY, WE HAVE TOO MANY: {trajs.shape[0]} (full_obs)")
             keep_agent_mask = self.remove_agents_far_from(
                 keep_mask=keep_agent_mask,
                 target_point=center_point,
                 points=last_obs_positions
             )
-            print(f"{keep_agent_mask=}")
+            # print(f"{keep_agent_mask=}")
 
             center_point = torch.mean(last_obs_positions[keep_agent_mask], dim=0)
 
@@ -330,13 +330,13 @@ class TorchDataGeneratorSDD(Dataset):
             # identifying the target agent's last observed position (the agent for whom an occlusion was simulated)
             tgt_last_obs_pos = last_obs_positions[tgt_idx]
 
-            print(f"HEY, WE HAVE TOO MANY: {torch.sum(sufficiently_observed_mask)} (occlusion)")
+            # print(f"HEY, WE HAVE TOO MANY: {torch.sum(sufficiently_observed_mask)} (occlusion)")
             close_keep_mask = self.remove_agents_far_from(
                 keep_mask=sufficiently_observed_mask,
                 target_point=tgt_last_obs_pos,
                 points=last_obs_positions
             )
-            print(f"{close_keep_mask=}")
+            # print(f"{close_keep_mask=}")
 
         keep_agent_mask = torch.logical_and(sufficiently_observed_mask, close_keep_mask)
 
@@ -453,8 +453,8 @@ class TorchDataGeneratorSDD(Dataset):
         )
 
         # identifying agents who are outside the global scene map
-        inside_map_mask = ~torch.any(torch.any(torch.abs(trajs) >= 0.95 * 0.5 * self.map_side, dim=-1), dim=-1)
-        print(f"{inside_map_mask=}")
+        # inside_map_mask = ~torch.any(torch.any(torch.abs(trajs) >= 0.95 * 0.5 * self.map_side, dim=-1), dim=-1)
+        # print(f"{inside_map_mask=}")
 
         # removing agent surplus
         ids = ids[keep_mask]
@@ -676,42 +676,6 @@ class TorchDataGeneratorSDD(Dataset):
 
         if draw_ax_nlog_probability_map is not None:
             self.visualize_nlog_probability_map(data_dict=data_dict, draw_ax=draw_ax_nlog_probability_map)
-
-
-def save_preprocessed_dataset():
-    import pickle
-    from utils.utils import prepare_seed
-    config_str = 'sdd_baseline_occlusionformer_pre'
-
-    config = Config(config_str)
-    prepare_seed(config.seed)
-
-    # for split in ['train', 'val', 'test']:
-    #     print(f"saving preprocessed dataset of {split} split.")
-
-    split = 'train'
-    dataset_id = 'occlusion_simulations'
-
-    generator = TorchDataGeneratorSDD(parser=config, log=None, split=split)
-
-    save_path = os.path.join(REPO_ROOT, 'datasets', 'SDD', dataset_id, split)
-    os.makedirs(save_path, exist_ok=True)
-    print(f"{save_path}")
-
-    for idx in range(10):
-
-        filename = f'{idx:06}.pickle'
-        data_dict = generator.__getitem__(idx)
-
-        del data_dict['scene_orig']
-        del data_dict['timesteps']
-
-        print(f"{data_dict.keys()=}")
-
-        with open(os.path.join(save_path, filename), 'wb') as f:
-            pickle.dump(data_dict, f, protocol=pickle.HIGHEST_PROTOCOL)
-
-    print(f"Goodbye !")
 
 
 def show_example_instances_dataloader():
