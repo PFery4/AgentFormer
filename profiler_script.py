@@ -85,22 +85,22 @@ if __name__ == '__main__':
         num_agents = data['identities'].shape[1]
         print(f"{i, num_agents=}")
 
-    print(f"{data['identities']=}")
-
-    print(f"NOW PROFILING MODEL ON ITS OWN")
-    since_train = time.time()
-    train_loss_meter = {x: AverageMeter() for x in cfg.loss_cfg.keys()}
-    train_loss_meter['total_loss'] = AverageMeter()
-    for i in range(model_runs):
-
-        total_loss, loss_dict, loss_unweighted_dict = train.train_one_batch(
-            model=model, data=data, optimizer=optimizer
-        )
-
-        train.update_loss_meters(
-            train_loss_meter=train_loss_meter, total_loss=total_loss, loss_unweighted_dict=loss_unweighted_dict
-        )
-
-        print(f"{i, total_loss=}")
+    # print(f"{data['identities']=}")
+    #
+    # print(f"NOW PROFILING MODEL ON ITS OWN")
+    # since_train = time.time()
+    # train_loss_meter = {x: AverageMeter() for x in cfg.loss_cfg.keys()}
+    # train_loss_meter['total_loss'] = AverageMeter()
+    # for i in range(model_runs):
+    #
+    #     total_loss, loss_dict, loss_unweighted_dict = train.train_one_batch(
+    #         model=model, data=data, optimizer=optimizer
+    #     )
+    #
+    #     train.update_loss_meters(
+    #         train_loss_meter=train_loss_meter, total_loss=total_loss, loss_unweighted_dict=loss_unweighted_dict
+    #     )
+    #
+    #     print(f"{i, total_loss=}")
 
     print("Goodbye!")
