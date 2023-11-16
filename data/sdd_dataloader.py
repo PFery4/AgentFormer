@@ -33,15 +33,17 @@ import src.data.config as sdd_conf
 
 
 class TorchDataGeneratorSDD(Dataset):
-    def __init__(self, parser: Config, log: TextIOWrapper, split='train'):
+    def __init__(self, parser: Config, log: Optional[TextIOWrapper] = None, split: str = 'train'):
         self.split = split
         assert split in ['train', 'val', 'test']
         assert parser.dataset == 'sdd', f"error: wrong dataset name: {parser.dataset} (should be \"sdd\")"
 
-        print_log("\n-------------------------- loading %s data --------------------------" % split, log=log)
+        prnt_str = "\n-------------------------- loading %s data --------------------------" % split
+        print_log(prnt_str, log=log) if log is not None else print(prnt_str)
         self.sdd_config = sdd_conf.get_config(parser.sdd_config_file_name)
         dataset = StanfordDroneDatasetWithOcclusionSim(self.sdd_config, split=self.split)
-        print_log(f"instantiating dataloader from {dataset.__class__} class", log)
+        prnt_str = f"instantiating dataloader from {dataset.__class__} class"
+        print_log(prnt_str, log=log) if log is not None else print(prnt_str)
 
         # stealing StanfordDroneDatasetWithOcclusionSim relevant data
         self.coord_conv = dataset.coord_conv
@@ -93,8 +95,10 @@ class TorchDataGeneratorSDD(Dataset):
         self.timesteps = torch.arange(-dataset.T_obs, dataset.T_pred) + 1
         self.lookup_time_window = np.arange(0, self.T_total) * int(dataset.orig_fps // dataset.fps)
 
-        print_log(f'total num samples: {len(dataset)}', log)
-        print_log("------------------------------ done --------------------------------\n", log=log)
+        prnt_str = f'total num samples: {len(dataset)}'
+        print_log(prnt_str, log=log) if log is not None else print(prnt_str)
+        prnt_str = "------------------------------ done --------------------------------\n"
+        print_log(prnt_str, log=log) if log is not None else print(prnt_str)
 
     def make_padded_scene_images(self):
         os.makedirs(self.padded_images_path, exist_ok=True)
@@ -241,14 +245,24 @@ class TorchDataGeneratorSDD(Dataset):
         return keep_mask
 
     def trajectory_processing_without_occlusion(self, trajs: Tensor, scene_map: TorchGeometricMap, m_by_px: float):
-        trajs = scene_map.to_map_points(trajs)
         obs_mask = torch.ones(trajs.shape[:-1])
         obs_mask[..., self.T_obs:] = False
         scene_map.set_homography(torch.eye(3))
 
         last_obs_positions = trajs[:, self.T_obs - 1, :]
-        center_agent_idx = torch.randint(0, trajs.shape[0], (1,))
-        center_point = last_obs_positions[center_agent_idx].squeeze()
+        center_point = torch.mean(last_obs_positions, dim=0)
+
+        keep_agent_mask = torch.full([trajs.shape[0]], True)
+        if trajs.shape[0] > self.max_train_agent:
+            print(f"HEY, WE HAVE TOO MANY: {trajs.shape[0]} (full_obs)")
+            keep_agent_mask = self.remove_agents_far_from(
+                keep_mask=keep_agent_mask,
+                target_point=center_point,
+                points=last_obs_positions
+            )
+            print(f"{keep_agent_mask=}")
+
+            center_point = torch.mean(last_obs_positions[keep_agent_mask], dim=0)
 
         scaling = self.traj_scale * m_by_px
         trajs = (trajs - center_point) * scaling
@@ -258,25 +272,24 @@ class TorchDataGeneratorSDD(Dataset):
         # cropping the scene map
         self.crop_scene_map(scene_map=scene_map)
 
-        return trajs, obs_mask, center_agent_idx, scene_map.image
+        return trajs, obs_mask, keep_agent_mask, scene_map.image
 
     def wrapped_trajectory_processing_without_occlusion(
             self, trajs: Tensor,
             scene_map: TorchGeometricMap, m_by_px: float
     ):
-        trajs, obs_mask, center_agent_idx, scene_map_image = self.trajectory_processing_without_occlusion(
+        trajs, obs_mask, keep_mask, scene_map_image = self.trajectory_processing_without_occlusion(
             trajs=trajs, scene_map=scene_map, m_by_px=m_by_px
         )
 
         last_obs_indices = torch.full([trajs.shape[0]], self.T_obs - 1)
-        keep_mask = torch.full([trajs.shape[0]], True)
 
         occlusion_map = torch.full([self.map_resolution, self.map_resolution], True)
         dist_transformed_occlusion_map = torch.zeros([self.map_resolution, self.map_resolution])
         probability_map = torch.zeros([self.map_resolution, self.map_resolution])
         nlog_probability_map = torch.zeros([self.map_resolution, self.map_resolution])
 
-        return trajs, obs_mask, last_obs_indices, keep_mask, center_agent_idx, \
+        return trajs, obs_mask, last_obs_indices, keep_mask, \
                occlusion_map, dist_transformed_occlusion_map, probability_map, nlog_probability_map, scene_map.image
 
     def trajectory_processing_with_occlusion(
@@ -285,7 +298,6 @@ class TorchDataGeneratorSDD(Dataset):
             scene_map: TorchGeometricMap, px_by_m: float, m_by_px: float
     ):
         # mapping trajectories to the scene map coordinate system
-        trajs = scene_map.to_map_points(trajs)
         ego = scene_map.to_map_points(ego)
         occluder = scene_map.to_map_points(occluder)
         scene_map.set_homography(torch.eye(3))
@@ -311,29 +323,31 @@ class TorchDataGeneratorSDD(Dataset):
         # computing agents' last observed positions
         last_obs_indices = self.last_observed_indices(obs_mask=obs_mask)
         last_obs_positions = self.last_observed_positions(trajs=trajs, last_obs_indices=last_obs_indices)  # [N, 2]
-        # identifying the target agent's last observed position (the agent for whom an occlusion was simulated)
-        tgt_last_obs_pos = last_obs_positions[tgt_idx]
 
-        # identifying the candidate agents to use as the center point of the instance.
-        # We want to keep the simulated occlusion case in view, so we select agents who aren't too far from the
-        # occlusion target.
-        dist_threshold_mask = self.points_within_distance(
-            target_point=tgt_last_obs_pos.squeeze(), points=last_obs_positions,
-            distance=self.distance_threshold_occluded_target * px_by_m
-        )
+        # further removing agents if we have too many.
+        close_keep_mask = torch.full_like(sufficiently_observed_mask, True)
+        if torch.sum(sufficiently_observed_mask) > self.max_train_agent:
+            # identifying the target agent's last observed position (the agent for whom an occlusion was simulated)
+            tgt_last_obs_pos = last_obs_positions[tgt_idx]
 
-        # sampling an agent to be the center point. we're selecting from agents who are close to the
-        # simulated occlusion, and who have enough observations available
-        keep_mask = torch.logical_and(sufficiently_observed_mask, dist_threshold_mask)
-        center_agent_idx = self.random_index(keep_mask).squeeze()
-        center_point = last_obs_positions[center_agent_idx]
+            print(f"HEY, WE HAVE TOO MANY: {torch.sum(sufficiently_observed_mask)} (occlusion)")
+            close_keep_mask = self.remove_agents_far_from(
+                keep_mask=sufficiently_observed_mask,
+                target_point=tgt_last_obs_pos,
+                points=last_obs_positions
+            )
+            print(f"{close_keep_mask=}")
+
+        keep_agent_mask = torch.logical_and(sufficiently_observed_mask, close_keep_mask)
+
+        center_point = torch.mean(last_obs_positions[keep_agent_mask], dim=0)
 
         # shifting and scaling (to metric) of the trajectories, visibility polygon and scene map coordinates
         scaling = self.traj_scale * m_by_px
 
         trajs = (trajs - center_point) * scaling
         ego_visipoly = sg.Polygon((torch.from_numpy(ego_visipoly.coords) - center_point) * scaling)
-        scene_map.homography_translation(center_point.squeeze())
+        scene_map.homography_translation(center_point)
         scene_map.homography_scaling(1 / scaling)
 
         # cropping the scene map
@@ -358,7 +372,7 @@ class TorchDataGeneratorSDD(Dataset):
         probability_map = torch.nn.functional.softmax(clipped_map.view(-1), dim=0).view(clipped_map.shape)
         nlog_probability_map = -torch.nn.functional.log_softmax(clipped_map.view(-1), dim=0).view(clipped_map.shape)
 
-        return trajs, obs_mask, last_obs_indices, keep_mask, center_agent_idx, \
+        return trajs, obs_mask, last_obs_indices, keep_agent_mask, \
                occlusion_map, dist_transformed_occlusion_map, probability_map, nlog_probability_map, scene_map.image
 
     def process_cases_with_simulated_occlusions(
@@ -429,7 +443,10 @@ class TorchDataGeneratorSDD(Dataset):
         theta_rot = np.random.rand() * 360
         scene_map.rotate_around_center(theta=theta_rot)
 
-        trajs, obs_mask, last_obs_indices, keep_mask, center_agent_idx, \
+        # mapping the trajectories to scene map coordinate system
+        trajs = scene_map.to_map_points(trajs)
+
+        trajs, obs_mask, last_obs_indices, keep_mask, \
         occlusion_map, dist_transformed_occlusion_map, \
         probability_map, nlog_probability_map, scene_map_image = self.trajectory_processing_strategy(
             occlusion_case=occlusion_case, trajs=trajs, scene_map=scene_map, px_by_m=px_by_m, m_by_px=m_by_px
@@ -437,17 +454,7 @@ class TorchDataGeneratorSDD(Dataset):
 
         # identifying agents who are outside the global scene map
         inside_map_mask = ~torch.any(torch.any(torch.abs(trajs) >= 0.95 * 0.5 * self.map_side, dim=-1), dim=-1)
-        keep_mask = torch.logical_and(keep_mask, inside_map_mask)
-
-        # further cutting down of agents if we have too many. We make sure not to remove the center of the instance
-        # nor the agent who was the subject of the occlusion
-        if torch.sum(keep_mask) > self.max_train_agent:
-            last_obs_pos = self.last_observed_positions(trajs=trajs, last_obs_indices=last_obs_indices)
-            keep_mask = self.remove_agents_far_from(
-                keep_mask=keep_mask,
-                target_point=last_obs_pos[center_agent_idx],
-                points=last_obs_pos
-            )
+        print(f"{inside_map_mask=}")
 
         # removing agent surplus
         ids = ids[keep_mask]
@@ -456,39 +463,44 @@ class TorchDataGeneratorSDD(Dataset):
         last_obs_indices = last_obs_indices[keep_mask]
 
         obs_mask = obs_mask.to(torch.bool)
+        pred_mask = self.predict_mask(last_obs_indices=last_obs_indices)
         agent_grid = self.agent_grid(ids=ids)
         timestep_grid = self.timestep_grid(ids=ids)
 
         obs_trajs = trajs[obs_mask, ...]
-        obs_vel = self.observed_velocity(trajs=trajs, obs_mask=obs_mask)[obs_mask, ...]
+        obs_vel = self.observed_velocity(trajs=trajs, obs_mask=obs_mask)
+        obs_vel_seq = obs_vel[obs_mask, ...]
         obs_ids = agent_grid[obs_mask, ...]
         obs_timesteps = timestep_grid[obs_mask, ...]
         last_obs_positions = self.last_observed_positions(trajs=trajs, last_obs_indices=last_obs_indices)
         last_obs_timesteps = self.last_observed_timesteps(last_obs_indices=last_obs_indices)
 
-        pred_mask = self.predict_mask(last_obs_indices=last_obs_indices).T
-        pred_trajs = trajs.transpose(0, 1)[pred_mask, ...]
-        pred_vel = self.true_velocity(trajs=trajs).transpose(0, 1)[pred_mask, ...]
-        pred_ids = agent_grid.T[pred_mask, ...]
-        pred_timesteps = timestep_grid.T[pred_mask, ...]
+        pred_trajs = trajs.transpose(0, 1)[pred_mask.T, ...]
+        pred_vel = self.true_velocity(trajs=trajs)
+        pred_vel_seq = pred_vel.transpose(0, 1)[pred_mask.T, ...]
+        pred_ids = agent_grid.T[pred_mask.T, ...]
+        pred_timesteps = timestep_grid.T[pred_mask.T, ...]
 
         data_dict = {
             'trajectories': trajs,
+            # 'obs_velocities': obs_vel,
             'observation_mask': obs_mask,
+            # 'pred_velocities': pred_vel,
+            # 'prediction_mask': pred_mask,
 
             'identities': ids,
             'timesteps': self.timesteps,
 
             'obs_identity_sequence': obs_ids,
             'obs_position_sequence': obs_trajs,
-            'obs_velocity_sequence': obs_vel,
+            'obs_velocity_sequence': obs_vel_seq,
             'obs_timestep_sequence': obs_timesteps,
             'last_obs_positions': last_obs_positions,
             'last_obs_timesteps': last_obs_timesteps,
 
             'pred_identity_sequence': pred_ids,
             'pred_position_sequence': pred_trajs,
-            'pred_velocity_sequence': pred_vel,
+            'pred_velocity_sequence': pred_vel_seq,
             'pred_timestep_sequence': pred_timesteps,
 
             'scene_orig': torch.zeros([2]),
@@ -518,7 +530,8 @@ class TorchDataGeneratorSDD(Dataset):
 
         return data_dict
 
-    def visualize_sequences(self, data_dict: Dict, draw_ax: matplotlib.axes.Axes):
+    @staticmethod
+    def visualize_sequences(data_dict: Dict, draw_ax: matplotlib.axes.Axes):
         ids = data_dict['identities']
 
         obs_ids = data_dict['obs_identity_sequence']
@@ -555,7 +568,7 @@ class TorchDataGeneratorSDD(Dataset):
 
         for i, (ag_id, pos, vel, timestep) in enumerate(zip(obs_ids, plot_obs_trajs, plot_obs_vel, obs_timesteps)):
             c = color[np.nonzero(ids == ag_id).flatten()].reshape(1, -1)
-            s = 5 * (timestep + self.T_obs)
+            s = 5 * (timestep + 8)
             draw_ax.scatter(pos[0], pos[1], marker='x', s=5 + s, color=c)
             old_pos = pos - vel
             draw_ax.plot([old_pos[0], pos[0]], [old_pos[1], pos[1]], color=c, linestyle='--', alpha=0.8)
@@ -665,7 +678,43 @@ class TorchDataGeneratorSDD(Dataset):
             self.visualize_nlog_probability_map(data_dict=data_dict, draw_ax=draw_ax_nlog_probability_map)
 
 
-if __name__ == '__main__':
+def save_preprocessed_dataset():
+    import pickle
+    from utils.utils import prepare_seed
+    config_str = 'sdd_baseline_occlusionformer_pre'
+
+    config = Config(config_str)
+    prepare_seed(config.seed)
+
+    # for split in ['train', 'val', 'test']:
+    #     print(f"saving preprocessed dataset of {split} split.")
+
+    split = 'train'
+    dataset_id = 'occlusion_simulations'
+
+    generator = TorchDataGeneratorSDD(parser=config, log=None, split=split)
+
+    save_path = os.path.join(REPO_ROOT, 'datasets', 'SDD', dataset_id, split)
+    os.makedirs(save_path, exist_ok=True)
+    print(f"{save_path}")
+
+    for idx in range(10):
+
+        filename = f'{idx:06}.pickle'
+        data_dict = generator.__getitem__(idx)
+
+        del data_dict['scene_orig']
+        del data_dict['timesteps']
+
+        print(f"{data_dict.keys()=}")
+
+        with open(os.path.join(save_path, filename), 'wb') as f:
+            pickle.dump(data_dict, f, protocol=pickle.HIGHEST_PROTOCOL)
+
+    print(f"Goodbye !")
+
+
+def show_example_instances_dataloader():
     from utils.utils import prepare_seed, memory_report
     from tqdm import tqdm
 
@@ -679,16 +728,9 @@ if __name__ == '__main__':
     config = Config(config_str)
     prepare_seed(config.seed)
 
-    log = open(os.path.join(config.log_dir, 'log.txt'), "a+")
-    time_str = get_timestring()
-    print_log("time str: {}".format(time_str), log)
-    print_log("python version : {}".format(sys.version.replace('\n', ' ')), log)
-    print_log("torch version : {}".format(torch.__version__), log)
-    print_log("cudnn version : {}".format(torch.backends.cudnn.version()), log)
-
     split = 'train'
 
-    generator = TorchDataGeneratorSDD(parser=config, log=log, split=split)
+    generator = TorchDataGeneratorSDD(parser=config, log=None, split=split)
 
     sdd_config = sdd_conf.get_config(config.sdd_config_file_name)
     compare_generator = StanfordDroneDatasetWithOcclusionSim(sdd_config, split=split)
@@ -700,24 +742,31 @@ if __name__ == '__main__':
         # 225, 615, 735
         # (run this on the v3 simulators, with max_train_agent 16 to
         # observe preprocessing of cases with too many agents)
-        if idx < 735:
-            continue
+        # if idx < 735:
+        #     continue
 
         data_dict = generator.__getitem__(idx)
         print(f"{idx, len(data_dict['identities'])=}")
 
-        fig, ax = plt.subplots(1, 6)
-        visualize.visualize_training_instance(
-            draw_ax=ax[0], instance_dict=compare_generator.__getitem__(idx)
-        )
-        generator.visualize(
-            data_dict=data_dict,
-            draw_ax=ax[1],
-            draw_ax_sequences=ax[2],
-            draw_ax_dist_transformed_map=ax[3],
-            draw_ax_probability_map=ax[4],
-            draw_ax_nlog_probability_map=ax[5]
-        )
-        plt.show()
+        if len(data_dict['identities']) == generator.max_train_agent:
+
+            fig, ax = plt.subplots(1, 6)
+            visualize.visualize_training_instance(
+                draw_ax=ax[0], instance_dict=compare_generator.__getitem__(idx)
+            )
+            generator.visualize(
+                data_dict=data_dict,
+                draw_ax=ax[1],
+                draw_ax_sequences=ax[2],
+                draw_ax_dist_transformed_map=ax[3],
+                draw_ax_probability_map=ax[4],
+                draw_ax_nlog_probability_map=ax[5]
+            )
+            plt.show()
 
         # memory_report('AFTER')
+
+
+if __name__ == '__main__':
+    show_example_instances_dataloader()
+    # save_preprocessed_dataset()
