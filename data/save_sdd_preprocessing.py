@@ -27,33 +27,33 @@ if __name__ == '__main__':
     splits = ['train', 'val', 'test']
     presaved_datasets_dir = os.path.join(REPO_ROOT, 'datasets', 'SDD', 'pre_saved_datasets')
 
-    for split in splits:
-        dataset_id = 'occlusion_simulations'
-        print(f"Presaving the \'{dataset_id}\' dataset.")
-        print(f"Beginning saving process of {split} split.")
-
-        prepare_seed(config.seed)
-        generator = TorchDataGeneratorSDD(parser=config, log=None, split=split)
-
-        save_path = os.path.join(presaved_datasets_dir, dataset_id, split)
-        print(f"root directory of the dataset will be:\n{save_path}")
-        os.makedirs(save_path, exist_ok=True)
-
-        # indices = np.linspace(0, len(generator), 50, endpoint=False).astype(int)
-        indices = range(len(generator))
-
-        for idx in tqdm(indices):
-
-            filename = f'{idx:08}.pickle'
-            data_dict = generator.__getitem__(idx)
-
-            del data_dict['timesteps']
-            del data_dict['scene_orig']
-
-            with open(os.path.join(save_path, filename), 'wb') as f:
-                pickle.dump(data_dict, f, protocol=pickle.HIGHEST_PROTOCOL)
-
-        print(f"Done!")
+    # for split in splits:
+    #     dataset_id = 'occlusion_simulation'
+    #     print(f"Presaving the \'{dataset_id}\' dataset.")
+    #     print(f"Beginning saving process of {split} split.")
+    #
+    #     prepare_seed(config.seed)
+    #     generator = TorchDataGeneratorSDD(parser=config, log=None, split=split)
+    #
+    #     save_path = os.path.join(presaved_datasets_dir, dataset_id, split)
+    #     print(f"root directory of the dataset will be:\n{save_path}")
+    #     os.makedirs(save_path, exist_ok=True)
+    #
+    #     # indices = np.linspace(0, len(generator), 50, endpoint=False).astype(int)
+    #     indices = range(len(generator))
+    #
+    #     for idx in tqdm(indices):
+    #
+    #         filename = f'{idx:08}.pickle'
+    #         data_dict = generator.__getitem__(idx)
+    #
+    #         del data_dict['timesteps']
+    #         del data_dict['scene_orig']
+    #
+    #         with open(os.path.join(save_path, filename), 'wb') as f:
+    #             pickle.dump(data_dict, f, protocol=pickle.HIGHEST_PROTOCOL)
+    #
+    #     print(f"Done!")
 
     config = Config(config_str)
 
