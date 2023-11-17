@@ -1,3 +1,5 @@
+import glob
+import pickle
 import os.path
 from io import TextIOWrapper
 
@@ -676,6 +678,53 @@ class TorchDataGeneratorSDD(Dataset):
 
         if draw_ax_nlog_probability_map is not None:
             self.visualize_nlog_probability_map(data_dict=data_dict, draw_ax=draw_ax_nlog_probability_map)
+
+
+class PresavedDatasetSDD(Dataset):
+    # TODO: add map homography
+
+    presaved_datasets_dir = os.path.join(REPO_ROOT, 'datasets', 'SDD', 'pre_saved_datasets')
+
+    def __init__(self, parser: Config, log: Optional[TextIOWrapper] = None, split: str = 'train'):
+        self.split = split
+
+        assert split in ['train', 'val', 'test']
+        assert parser.dataset == 'sdd', f"error: wrong dataset name: {parser.dataset} (should be \"sdd\")"
+        assert parser.occlusion_process in ['fully_observed', 'occlusion_simulation']
+
+        prnt_str = "\n-------------------------- loading %s data --------------------------" % split
+        print_log(prnt_str, log=log) if log is not None else print(prnt_str)
+
+        self.dataset_dir = os.path.join(self.presaved_datasets_dir, parser.occlusion_process, split)
+
+        prnt_str = f"Extracting data from the following directory:\n{self.dataset_dir}"
+        print_log(prnt_str, log=log) if log is not None else print(prnt_str)
+
+        self.T_obs = parser.past_frames
+        self.T_pred = parser.future_frames
+        self.T_total = self.T_obs + self.T_pred
+
+        self.timesteps = torch.arange(-self.T_obs, self.T_pred) + 1
+
+        prnt_str = f'total number of samples: {self.__len__()}'
+        print_log(prnt_str, log=log) if log is not None else print(prnt_str)
+        prnt_str = f'------------------------------ done --------------------------------\n'
+        print_log(prnt_str, log=log) if log is not None else print(prnt_str)
+
+    def __len__(self):
+        return len(glob.glob1(self.dataset_dir, "*.pickle"))
+
+    def __getitem__(self, idx):
+
+        filename = f'{idx:08}.pickle'
+
+        with open(os.path.join(self.dataset_dir, filename), 'wb') as f:
+            data_dict = pickle.load(f)
+
+        data_dict['timesteps'] = self.timesteps
+        data_dict['scene_orig'] = torch.zeros([2])
+
+        return data_dict
 
 
 def show_example_instances_dataloader():
