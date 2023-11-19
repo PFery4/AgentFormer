@@ -24,13 +24,13 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--occlusion_process', default=None)
     parser.add_argument('--split', default=None)
-    parser.add_argument('--start_idx', default=None)
-    parser.add_argument('--end_idx', default=None)
+    parser.add_argument('--start_idx', type=int, default=0)
+    parser.add_argument('--end_idx', type=int, default=-10)
     args = parser.parse_args()
 
     assert args.occlusion_process in ['occlusion_simulation', 'fully_observed']
     assert args.split in ['train', 'val', 'test']
-    if isinstance(args.start_idx, int) and isinstance(args.end_idx, int):
+    if args.end_idx > 0:
         assert args.end_idx > args.start_idx
 
     dataset_id = args.occlusion_process
@@ -66,10 +66,7 @@ if __name__ == '__main__':
     print(f"root directory of the dataset will be:\n{save_path}")
     os.makedirs(save_path, exist_ok=True)
 
-    if start_idx is None:
-        start_idx = 0
-
-    if end_idx is None:
+    if end_idx < 0:
         end_idx = len(generator)
 
     indices = range(start_idx, end_idx, 1)
