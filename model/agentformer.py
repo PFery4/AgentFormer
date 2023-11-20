@@ -553,9 +553,6 @@ class FutureDecoder(nn.Module):
         # print(f"{data['global_map_encoding'].shape=}")
         # print(f"{data['context_map'].shape=}")
 
-        data['global_map_encoding'] = torch.full([1, 2], np.nan)
-        data['context_map'] = torch.full([1, 2], np.nan)
-
         tf_out, attn_weights = self.tf_decoder_call(
             data=data, tf_in_pos=tf_in_pos, context=context,
             tgt_tgt_self_other_mask=tgt_self_other_mask, tgt_mem_self_other_mask=mem_self_other_mask,
@@ -893,12 +890,13 @@ class AgentFormer(nn.Module):
         self.data['pred_timestep_sequence'] = data['pred_timestep_sequence'].detach().clone().to(self.device)       # [B, P]
         self.data['pred_identity_sequence'] = data['pred_identity_sequence'].detach().clone().to(self.device)       # [B, P]
 
-        self.data['scene_map'] = data['scene_map'].detach().clone().to(self.device)             # [B, C, H, W]
-        self.data['occlusion_map'] = data['dist_transformed_occlusion_map'].detach().clone().to(self.device)    # [B, H, W]
+        if self.global_map_attention:
+            self.data['scene_map'] = data['scene_map'].detach().clone().to(self.device)             # [B, C, H, W]
+            self.data['occlusion_map'] = data['dist_transformed_occlusion_map'].detach().clone().to(self.device)    # [B, H, W]
 
-        self.data['nlog_probability_occlusion_map'] = data['nlog_probability_occlusion_map'].detach().clone().to(self.device)   # [B, H, W]
-        self.data['combined_map'] = torch.cat((self.data['scene_map'], self.data['occlusion_map'].unsqueeze(1)), dim=1)     # [B, C + 1, H, W]
-        self.data['map_homography'] = data['map_homography'].detach().clone().to(self.device)        # [B, 3, 3]
+            self.data['nlog_probability_occlusion_map'] = data['nlog_probability_occlusion_map'].detach().clone().to(self.device)   # [B, H, W]
+            self.data['combined_map'] = torch.cat((self.data['scene_map'], self.data['occlusion_map'].unsqueeze(1)), dim=1)     # [B, C + 1, H, W]
+            self.data['map_homography'] = data['map_homography'].detach().clone().to(self.device)        # [B, 3, 3]
         # memory_report('AFTER PUPOLATING DATA DICT')
 
     def step_annealer(self):
