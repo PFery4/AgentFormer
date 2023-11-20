@@ -23,8 +23,6 @@ def visualize_sequences(data_dict: Dict, draw_ax: matplotlib.axes.Axes) -> None:
     assert 'pred_velocity_sequence' in data_dict.keys()
     assert 'pred_timestep_sequence' in data_dict.keys()
 
-    assert 'map_homography' in data_dict.keys()
-
     ids = data_dict['identities']
 
     obs_ids = data_dict['obs_identity_sequence']
@@ -38,10 +36,12 @@ def visualize_sequences(data_dict: Dict, draw_ax: matplotlib.axes.Axes) -> None:
     pred_vel = data_dict['pred_velocity_sequence']
     pred_timesteps = data_dict['pred_timestep_sequence']
 
-    homography = data_dict['map_homography']
-
-    vel_homography = homography.clone()
-    vel_homography[:2, 2] = 0.
+    homography = torch.eye(3)
+    vel_homography = torch.eye(3)
+    if 'map_homography' in data_dict.keys():
+        homography = data_dict['map_homography']
+        vel_homography = homography.clone()
+        vel_homography[:2, 2] = 0.
 
     color = plt.cm.rainbow(np.linspace(0, 1, ids.shape[0]))
 
@@ -85,12 +85,14 @@ def visualize_trajectories(data_dict: Dict, draw_ax: matplotlib.axes.Axes) -> No
     assert 'identities' in data_dict.keys()
     assert 'trajectories' in data_dict.keys()
     assert 'observation_mask' in data_dict.keys()
-    assert 'map_homography' in data_dict.keys()
 
     ids = data_dict['identities']
     trajs = data_dict['trajectories']
     obs_mask = data_dict['observation_mask']
-    homography = data_dict['map_homography']
+
+    homography = torch.eye(3)
+    if 'map_homography' in data_dict.keys():
+        homography = data_dict['map_homography']
 
     homogeneous_trajs = torch.cat((trajs, torch.ones([*trajs.shape[:-1], 1])), dim=-1).transpose(-1, -2)
     plot_trajs = (homography @ homogeneous_trajs).transpose(-1, -2)[..., :-1]
@@ -168,9 +170,14 @@ def visualize(
         draw_ax_probability_map: Optional[matplotlib.axes.Axes] = None,
         draw_ax_nlog_probability_map: Optional[matplotlib.axes.Axes] = None
 ) -> None:
+    has_scene_map = 'scene_map' in data_dict.keys()
+    if has_scene_map:
+        visualize_scene_map_and_occlusion_map(data_dict=data_dict, draw_ax=draw_ax)
     visualize_trajectories(data_dict=data_dict, draw_ax=draw_ax)
 
     if draw_ax_sequences is not None:
+        if has_scene_map:
+            visualize_scene_map_and_occlusion_map(data_dict=data_dict, draw_ax=draw_ax_sequences)
         visualize_sequences(data_dict=data_dict, draw_ax=draw_ax_sequences)
 
     if draw_ax_dist_transformed_map is not None:
@@ -200,13 +207,14 @@ def show_example_instances_dataloader():
     split = 'train'
 
     config = Config(config_str)
+    config.occlusion_process = 'fully_observed'
     prepare_seed(config.seed)
 
     generator = dataset_type(parser=config, log=None, split=split)
 
     num_figures = 2
 
-    if isinstance(generator, TorchDataGeneratorSDD):
+    if generator.occlusion_process == 'occlusion_simulation':
         num_figures += 3        # adding figures for the maps
 
     if compare:
@@ -235,12 +243,14 @@ def show_example_instances_dataloader():
         draw_ax_dist_transformed_map = None
         draw_ax_probability_map = None
         draw_ax_nlog_probability_map = None
-        if isinstance(generator, TorchDataGeneratorSDD):
+        if 'dist_transformed_occlusion_map' in data_dict.keys():
             draw_ax_dist_transformed_map = ax[2]
+        if 'probability_occlusion_map' in data_dict.keys():
             draw_ax_probability_map = ax[3]
+        if 'nlog_probability_occlusion_map' in data_dict.keys():
             draw_ax_nlog_probability_map = ax[4]
 
-        generator.visualize(
+        visualize(
             data_dict=data_dict,
             draw_ax=ax[0],
             draw_ax_sequences=ax[1],
@@ -249,12 +259,3 @@ def show_example_instances_dataloader():
             draw_ax_nlog_probability_map=draw_ax_nlog_probability_map
         )
         plt.show()
-
-
-if __name__ == '__main__':
-    print("Hello !")
-
-    # TODO: TRY IT OUT
-    show_example_instances_dataloader()
-
-    print("Goodbye !")
