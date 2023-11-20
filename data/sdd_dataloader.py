@@ -643,11 +643,10 @@ def show_example_instances_dataloader():
         # memory_report('AFTER')
 
 
-if __name__ == '__main__':
-    # show_example_instances_dataloader()
-    # save_preprocessed_dataset()
-
-    config_str = 'sdd_baseline_occlusionformer_pre'
-    config = Config(config_str)
-    PresavedDatasetSDD(parser=config, log=None, split='train')
-
+# if __name__ == '__main__':
+#     # show_example_instances_dataloader()
+#     # save_preprocessed_dataset()
+#
+#     config_str = 'sdd_baseline_occlusionformer_pre'
+#     config = Config(config_str)
+#     PresavedDatasetSDD(parser=config, log=None, split='train')
