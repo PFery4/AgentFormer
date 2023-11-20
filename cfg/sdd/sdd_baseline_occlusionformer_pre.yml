@@ -22,7 +22,7 @@ scene_side_length             : 80.0     # [m]
 global_map_resolution         : 800      # [px]
 rand_rot_scene                : true
 max_train_agent               : 32
-occlusion_process             : 'occlusion_simulation'      # can be either 'fully_observed' or 'occlusion_simulation'
+occlusion_process             : 'fully_observed'      # can be either 'fully_observed' or 'occlusion_simulation'
 
 # ------------------- Model -------------------------
 
@@ -34,7 +34,7 @@ tf_dropout: 0.1
 input_type: ['position', 'velocity']
 pred_type: 'scene_norm'
 sn_out_type: 'norm'
-pos_concat: false
+pos_concat: true
 causal_attention: false
 
 global_map_attention: false
@@ -90,6 +90,7 @@ lr_fix_epochs                 : 10
 lr_scheduler                  : 'step'
 decay_step                    : 10
 decay_gamma                   : 0.5
-print_freq                    : 20
-model_save_freq               : 5000       # number of batches passed through the model between each save
+print_freq                    : 500
+validation_freq               : 5000        # number of batches to pass through between each validation (+ saving if better val loss)
+# model_save_freq               : 5000       # number of batches passed through the model between each save
 
