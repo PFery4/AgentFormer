@@ -26,6 +26,7 @@ if __name__ == '__main__':
     parser.add_argument('--split', default=None)
     parser.add_argument('--start_idx', type=int, default=0)
     parser.add_argument('--end_idx', type=int, default=-10)
+    parser.add_argument('--tiny_dataset', type=bool, default=False)
     args = parser.parse_args()
 
     assert args.occlusion_process in ['occlusion_simulation', 'fully_observed']
@@ -37,6 +38,7 @@ if __name__ == '__main__':
     split = args.split
     start_idx = args.start_idx
     end_idx = args.end_idx
+    tiny = args.tiny_dataset
 
     config_str = 'sdd_baseline_occlusionformer_pre'
     config = Config(config_str)
@@ -70,6 +72,10 @@ if __name__ == '__main__':
         end_idx = len(generator)
 
     indices = range(start_idx, end_idx, 1)
+
+    if tiny:
+        indices = np.linspace(0, len(generator), num=50, endpoint=False).astype(int)
+        print("Attention! Creating a tiny version of the dataset: only 50 instances will be saved.")
 
     for idx in tqdm(indices):
 
