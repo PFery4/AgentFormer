@@ -207,7 +207,7 @@ def show_example_instances_dataloader():
     split = 'train'
 
     config = Config(config_str)
-    config.occlusion_process = 'fully_observed'
+    # config.occlusion_process = 'fully_observed'
     prepare_seed(config.seed)
 
     generator = dataset_type(parser=config, log=None, split=split)
