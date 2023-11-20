@@ -534,8 +534,6 @@ class TorchDataGeneratorSDD(Dataset):
 
 
 class PresavedDatasetSDD(Dataset):
-    # TODO: add map homography
-
     presaved_datasets_dir = os.path.join(REPO_ROOT, 'datasets', 'SDD', 'pre_saved_datasets')
 
     def __init__(self, parser: Config, log: Optional[TextIOWrapper] = None, split: str = 'train'):
