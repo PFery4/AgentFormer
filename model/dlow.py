@@ -12,12 +12,13 @@ from model import model_lib
 def compute_z_kld(data, cfg):
     loss_unweighted = data['q_z_dist_dlow'].kl(data['p_z_dist_infer']).sum()
     if cfg.get('normalize', True):
-        loss_unweighted /= data['batch_size']
+        loss_unweighted /= data['agent_num']
     loss_unweighted = loss_unweighted.clamp_min_(cfg.min_clip)
     loss = loss_unweighted * cfg['weight']
     return loss, loss_unweighted
 
 
+#TODO: FIX THIS LOSS
 def diversity_loss(data, cfg):
     loss_unweighted = 0
     fut_motions = data['infer_dec_motion'].view(*data['infer_dec_motion'].shape[:2], -1)
@@ -30,6 +31,7 @@ def diversity_loss(data, cfg):
     return loss, loss_unweighted
 
 
+#TODO: FIX THIS LOSS
 def recon_loss(data, cfg):
     diff = data['infer_dec_motion'] - data['fut_motion_orig'].unsqueeze(1)
     if cfg.get('mask', True):
@@ -52,15 +54,15 @@ loss_func = {
 }
 
 
-""" DLow (Diversifying Latent Flows)"""
 class DLow(nn.Module):
+    """ DLow (Diversifying Latent Flows)"""
     def __init__(self, cfg):
         super().__init__()
 
         self.device = torch.device('cpu')
         self.cfg = cfg
-        self.nk = nk = cfg.sample_k
-        self.nz = nz = cfg.nz
+        self.nk = cfg.sample_k
+        self.nz = cfg.nz
         self.share_eps = cfg.get('share_eps', True)
         self.train_w_mean = cfg.get('train_w_mean', False)
         self.loss_cfg = self.cfg.loss_cfg
@@ -69,6 +71,8 @@ class DLow(nn.Module):
         pred_cfg = Config(cfg.pred_cfg, tmp=False, create_dirs=False)
         pred_model = model_lib.model_dict[pred_cfg.model_id](pred_cfg)
         self.pred_model_dim = pred_cfg.tf_model_dim
+
+        # TODO: Fix loading of pred_model with checkpoints
         if cfg.pred_epoch > 0:
             cp_path = pred_cfg.model_path % cfg.pred_epoch
             print('loading model from checkpoint: %s' % cp_path)
@@ -80,9 +84,9 @@ class DLow(nn.Module):
         # Dlow's Q net
         self.qnet_mlp = cfg.get('qnet_mlp', [512, 256])
         self.q_mlp = MLP(self.pred_model_dim, self.qnet_mlp)
-        self.q_A = nn.Linear(self.q_mlp.out_dim, nk * nz)
-        self.q_b = nn.Linear(self.q_mlp.out_dim, nk * nz)
-        
+        self.q_A = nn.Linear(self.q_mlp.out_dim, self.nk * self.nz)
+        self.q_b = nn.Linear(self.q_mlp.out_dim, self.nk * self.nz)
+
     def set_device(self, device):
         self.device = device
         self.to(device)
@@ -94,37 +98,49 @@ class DLow(nn.Module):
 
     def main(self, mean=False, need_weights=False):
         pred_model = self.pred_model[0]
-        if hasattr(pred_model, 'use_map') and pred_model.use_map:
-            self.data['map_enc'] = pred_model.map_encoder(self.data['agent_maps'])
+        if pred_model.global_map_attention:
+            self.data['global_map_encoding'] = pred_model.global_map_encoder(self.data['combined_map'])
+
         pred_model.context_encoder(self.data)
 
         if not mean:
             if self.share_eps:
-                eps = torch.randn([1, self.nz]).to(self.device)
-                eps = eps.repeat((self.data['agent_num'] * self.nk, 1))
+                eps = torch.randn([1, self.nz]).to(self.device)                 # [1, nz]
+                eps = eps.repeat((self.data['agent_num'] * self.nk, 1))         # [N * nk, nz]
             else:
-                eps = torch.randn([self.data['agent_num'], self.nz]).to(self.device)
-                eps = eps.repeat_interleave(self.nk, dim=0)
+                eps = torch.randn([self.data['agent_num'], self.nz]).to(self.device)    # [N, nz]
+                eps = eps.repeat_interleave(self.nk, dim=0)                             # [N * nk, nz]
 
-        qnet_h = self.q_mlp(self.data['agent_context'])
-        A = self.q_A(qnet_h).view(-1, self.nz)
-        b = self.q_b(qnet_h).view(-1, self.nz)
+        qnet_h = self.q_mlp(self.data['agent_context'])                                 # [B, N, q_mlp.outdim]
+        A = self.q_A(qnet_h).view(*qnet_h.shape[:2], self.nk, self.nz).permute(0, 2, 1, 3).view(
+            -1, self.data['agent_num'], self.nz)                  # [B * nk, N, nz]
+        b = self.q_b(qnet_h).view(*qnet_h.shape[:2], self.nk, self.nz).permute(0, 2, 1, 3).view(
+            -1, self.data['agent_num'], self.nz)                  # [B * nk, N, nz]
+        print(f"{A.shape, b.shape=}")
 
-        z = b if mean else A*eps + b
-        logvar = (A ** 2 + 1e-8).log()
+        z = b if mean else A*eps + b                    # [B * nk, N, nz]
+        logvar = (A ** 2 + 1e-8).log()                  # [B * nk, N, nz]
         self.data['q_z_dist_dlow'] = Normal(mu=b, logvar=logvar)
 
-        pred_model.future_decoder(self.data, mode='infer', sample_num=self.nk, autoregress=True, z=z, need_weights=need_weights)
+        pred_model.future_decoder(
+            self.data, mode='infer', sample_num=self.nk, autoregress=True, z=z, need_weights=need_weights
+        )
         return self.data
-    
+
     def forward(self):
         return self.main(mean=self.train_w_mean)
 
     def inference(self, mode, sample_num, need_weights=False):
         self.main(mean=True, need_weights=need_weights)
-        res = self.data[f'infer_dec_motion']
+        res = self.data[f'infer_dec_motion']            # [B * sample_num, P, 2]
+
+        print(f"{res.shape=}")
+
         if mode == 'recon':
-            res = res[:, 0]
+            res = res[0, ...]
+
+        print(f"{res.shape=}")
+
         return res, self.data
 
     def compute_loss(self):
