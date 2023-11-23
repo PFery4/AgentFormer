@@ -59,7 +59,7 @@ def single_mean_pooling(feature_sequence: Tensor, identity_sequence: Tensor) -> 
     # identity_sequence [L] with N unique values
     agent_masks = identity_sequence.unsqueeze(0) == identity_sequence.unique().unsqueeze(1)     # [N, L]
     sequence_copies = feature_sequence.unsqueeze(0).repeat([agent_masks.shape[0], 1, 1])
-    return torch.sum(sequence_copies.where(agent_masks.unsqueeze(-1), torch.tensor(0.)), dim=-2) / \
+    return torch.sum(sequence_copies.where(agent_masks.unsqueeze(-1), torch.tensor(0., device=feature_sequence.device)), dim=-2) / \
            torch.sum(agent_masks, dim=-1).unsqueeze(-1)
 
 
@@ -106,6 +106,7 @@ class PositionalEncoding(nn.Module):
         return pe       # [t_range, d_model]
 
     def time_encode(self, sequence_timesteps: torch.Tensor) -> torch.Tensor:
+        # TODO: Accelerate this time_encode factor
         # sequence_timesteps: [T_total]
         # out: [T_total, self.d_model]
         return torch.cat([self.pe[(self.timestep_window == t).squeeze(), ...] for t in sequence_timesteps], dim=0)
