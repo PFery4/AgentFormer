@@ -220,7 +220,6 @@ class ContextEncoder(nn.Module):
         # print(f"{data['obs_identity_sequence'][0]=}")
         # print(f"{self_other_mask, self_other_mask.shape=}")
 
-        print(f"{data['obs_timestep_sequence'][0, ...]=}")
         src_mask = self.attention_mask(
             timestep_sequence=data['obs_timestep_sequence'][0, ...],     # [O]
             batch_size=1
@@ -357,7 +356,6 @@ class FutureEncoder(nn.Module):
             batch_size=1
         ).to(tf_seq_in.device)          # [B, P, O]
 
-        print(f"{data['pred_timestep_sequence'][0, ...]=}")
         tgt_mask = self.attention_mask(
             timestep_sequence=data['pred_timestep_sequence'][0, ...],       # [P]
             batch_size=1
