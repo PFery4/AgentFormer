@@ -22,28 +22,10 @@ Tensor = torch.Tensor
 def self_other_aware_mask(q_identities: Tensor, k_identities: Tensor) -> Tensor:
     # q_identities: [L]
     # k_identities: [S]
-    return torch.stack([k_identities == q_id for q_id in q_identities])  # [L, S]
-
-
-def self_other_aware_mask_2(q_identities: Tensor, k_identities: Tensor) -> Tensor:
-    # q_identities: [L]
-    # k_identities: [S]
     return q_identities.unsqueeze(1) == k_identities.unsqueeze(0)  # [L, S]
 
 
 def causal_attention_mask(
-        timestep_sequence: torch.Tensor,
-        batch_size: int = 1
-) -> torch.Tensor:
-    # timestep_sequence [T]
-    mask = torch.zeros(timestep_sequence.shape[0], timestep_sequence.shape[0])
-    for idx, timestep in enumerate(timestep_sequence):
-        mask_seq = (timestep_sequence > timestep)
-        mask[idx, mask_seq] = float('-inf')
-    return mask.unsqueeze(0).repeat(batch_size, 1, 1)       # [batch_size, T, T]
-
-
-def causal_attention_mask_2(
         timestep_sequence: torch.Tensor,
         batch_size: int = 1
 ) -> torch.Tensor:
@@ -75,41 +57,17 @@ def non_causal_attention_mask(
 def single_mean_pooling(feature_sequence: Tensor, identity_sequence: Tensor) -> Tensor:
     # feature_sequence [L, *]
     # identity_sequence [L] with N unique values
-    return torch.stack(
-        [torch.mean(feature_sequence[identity_sequence == ag_id, ...], dim=0)
-         for ag_id in torch.unique(identity_sequence)], dim=0
-    )
+    agent_masks = identity_sequence.unsqueeze(0) == identity_sequence.unique().unsqueeze(1)     # [N, L]
+    sequence_copies = feature_sequence.unsqueeze(0).repeat([agent_masks.shape[0], 1, 1])
+    return torch.sum(sequence_copies.where(agent_masks.unsqueeze(-1), torch.tensor(0.)), dim=-2) / \
+           torch.sum(agent_masks, dim=-1).unsqueeze(-1)
 
 
 def mean_pooling(sequences: Tensor, identities: Tensor) -> Tensor:
     # feature_sequence [B, N, *]
     # identities [B, N]
-    out = []
-    for feature_sequence, identity_sequence in zip(sequences, identities):
-        out.append(
-            single_mean_pooling(feature_sequence, identity_sequence)
-        )
-    out = torch.stack(out)
-    return out
-
-
-def single_mean_pooling_2(feature_sequence: Tensor, identity_sequence: Tensor) -> Tensor:
-    # feature_sequence [L, *]
-    # identity_sequence [L] with N unique values
-    agent_masks = identity_sequence.unsqueeze(0) == identity_sequence.unique().unsqueeze(1)     # [N, L]
-    sequence_copies = feature_sequence.unsqueeze(0).repeat([agent_masks.shape[0], 1, 1])
-
-    # print(f"{agent_masks.shape, sequence_copies.shape=}")
-    # print(f"{sequence_copies.where(agent_masks.unsqueeze(-1), torch.tensor(0.)).shape=}")
-    return torch.sum(sequence_copies.where(agent_masks.unsqueeze(-1), torch.tensor(0.)), dim=-2) / \
-           torch.sum(agent_masks, dim=-1).unsqueeze(-1)
-
-
-def mean_pooling_2(sequences: Tensor, identities: Tensor) -> Tensor:
-    # feature_sequence [B, N, *]
-    # identities [B, N]
     # Note: does not work on batched data (ie only works on batch size = 1)
-    return single_mean_pooling_2(sequences[0, ...], identities[0, ...]).unsqueeze(0)
+    return single_mean_pooling(sequences[0, ...], identities[0, ...]).unsqueeze(0)
 
 
 POOLING_FUNCTIONS = {
