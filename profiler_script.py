@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
 import train
-from data.sdd_dataloader import TorchDataGeneratorSDD
+from data.sdd_dataloader import TorchDataGeneratorSDD, PresavedDatasetSDD
 from model.model_lib import model_dict
 from utils.torch import get_scheduler
 from utils.config import Config
@@ -16,9 +16,8 @@ from train import print_log
 
 if __name__ == '__main__':
 
-    dataloader_runs = 10
     model_runs = 10
-    cfg_str = 'sdd_test_config'
+    cfg_str = 'sdd_baseline_copy_idgaf_pre'
     cfg = Config(cfg_id=cfg_str, tmp=True, create_dirs=True)
 
     prepare_seed(cfg.seed)
@@ -56,7 +55,7 @@ if __name__ == '__main__':
     tb_logger = SummaryWriter(cfg.tb_dir)
     print(f"{cfg.tb_dir=}")
 
-    sdd_dataset = TorchDataGeneratorSDD(parser=cfg, log=log, split='train')
+    sdd_dataset = PresavedDatasetSDD(parser=cfg, log=log, split='train')
     training_loader = DataLoader(dataset=sdd_dataset, shuffle=True, num_workers=2)
 
     model_id = cfg.get('model_id', 'agentformer')
@@ -75,32 +74,27 @@ if __name__ == '__main__':
     model.train()
 
     ###################################################################################################################
-    print(f"PROFILING DATALOADER ON ITS OWN")
-    data = None
-    loader_iter = iter(training_loader)
-    for i in range(dataloader_runs):
+    print(f"NOW PROFILING MODEL ON ITS OWN")
+    since_train = time.time()
+    train_loss_meter = {x: AverageMeter() for x in cfg.loss_cfg.keys()}
+    train_loss_meter['total_loss'] = AverageMeter()
 
-        data = next(loader_iter)
+    data_iter = iter(training_loader)
 
-        num_agents = data['identities'].shape[1]
-        print(f"{i, num_agents=}")
+    for i in range(model_runs):
 
-    # print(f"{data['identities']=}")
-    #
-    # print(f"NOW PROFILING MODEL ON ITS OWN")
-    # since_train = time.time()
-    # train_loss_meter = {x: AverageMeter() for x in cfg.loss_cfg.keys()}
-    # train_loss_meter['total_loss'] = AverageMeter()
-    # for i in range(model_runs):
-    #
-    #     total_loss, loss_dict, loss_unweighted_dict = train.train_one_batch(
-    #         model=model, data=data, optimizer=optimizer
-    #     )
-    #
-    #     train.update_loss_meters(
-    #         train_loss_meter=train_loss_meter, total_loss=total_loss, loss_unweighted_dict=loss_unweighted_dict
-    #     )
-    #
-    #     print(f"{i, total_loss=}")
+        data = next(data_iter)
+
+        total_loss, loss_dict, loss_unweighted_dict = train.train_one_batch(
+            model=model, data=data, optimizer=optimizer
+        )
+
+        train.update_loss_meters(
+            loss_meter=train_loss_meter,
+            total_loss=total_loss,
+            loss_unweighted_dict=loss_unweighted_dict
+        )
+
+        print(f"{i, total_loss=}")
 
     print("Goodbye!")
