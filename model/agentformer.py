@@ -19,10 +19,16 @@ from typing import Dict
 Tensor = torch.Tensor
 
 
-def self_other_aware_mask(q_identities: Tensor, k_identities: Tensor):
+def self_other_aware_mask(q_identities: Tensor, k_identities: Tensor) -> Tensor:
     # q_identities: [L]
     # k_identities: [S]
     return torch.stack([k_identities == q_id for q_id in q_identities])  # [L, S]
+
+
+def self_other_aware_mask_2(q_identities: Tensor, k_identities: Tensor) -> Tensor:
+    # q_identities: [L]
+    # k_identities: [S]
+    return q_identities.unsqueeze(1) == k_identities.unsqueeze(0)  # [L, S]
 
 
 def causal_attention_mask(
@@ -30,12 +36,19 @@ def causal_attention_mask(
         batch_size: int = 1
 ) -> torch.Tensor:
     # timestep_sequence [T]
-    stop_at = torch.argmax(timestep_sequence)
     mask = torch.zeros(timestep_sequence.shape[0], timestep_sequence.shape[0])
-    for idx in range(stop_at):
-        mask_seq = (timestep_sequence > timestep_sequence[idx])
+    for idx, timestep in enumerate(timestep_sequence):
+        mask_seq = (timestep_sequence > timestep)
         mask[idx, mask_seq] = float('-inf')
     return mask.unsqueeze(0).repeat(batch_size, 1, 1)       # [batch_size, T, T]
+
+
+def causal_attention_mask_2(
+        timestep_sequence: torch.Tensor,
+        batch_size: int = 1
+) -> torch.Tensor:
+    # timestep_sequence [T]
+    return torch.where(timestep_sequence.unsqueeze(1) < timestep_sequence.unsqueeze(0), float('-inf'), 0.).unsqueeze(0).repeat(batch_size, 1, 1)
 
 
 def zeros_mask(tgt_sz: int, src_sz: int, batch_size: int = 1) -> torch.Tensor:
@@ -56,7 +69,16 @@ def non_causal_attention_mask(
         batch_size: int = 1
 ) -> torch.Tensor:
     # timestep_sequence [T]
-    return zeros_mask(timestep_sequence.shape[0], timestep_sequence.shape[0], batch_size)       # [batch_size, T, T]
+    return torch.zeros(batch_size, timestep_sequence.shape[0], timestep_sequence.shape[0])      # [batch_size, T, T]
+
+
+def single_mean_pooling(feature_sequence: Tensor, identity_sequence: Tensor) -> Tensor:
+    # feature_sequence [L, *]
+    # identity_sequence [L] with N unique values
+    return torch.stack(
+        [torch.mean(feature_sequence[identity_sequence == ag_id, ...], dim=0)
+         for ag_id in torch.unique(identity_sequence)], dim=0
+    )
 
 
 def mean_pooling(sequences: Tensor, identities: Tensor) -> Tensor:
@@ -65,33 +87,34 @@ def mean_pooling(sequences: Tensor, identities: Tensor) -> Tensor:
     out = []
     for feature_sequence, identity_sequence in zip(sequences, identities):
         out.append(
-            torch.stack(
-                [torch.mean(feature_sequence[identity_sequence == ag_id, ...], dim=0)
-                 for ag_id in torch.unique(identities)], dim=0
-            )
+            single_mean_pooling(feature_sequence, identity_sequence)
         )
     out = torch.stack(out)
     return out
 
 
-def max_pooling(sequences: Tensor, identities: Tensor) -> Tensor:
+def single_mean_pooling_2(feature_sequence: Tensor, identity_sequence: Tensor) -> Tensor:
+    # feature_sequence [L, *]
+    # identity_sequence [L] with N unique values
+    agent_masks = identity_sequence.unsqueeze(0) == identity_sequence.unique().unsqueeze(1)     # [N, L]
+    sequence_copies = feature_sequence.unsqueeze(0).repeat([agent_masks.shape[0], 1, 1])
+
+    # print(f"{agent_masks.shape, sequence_copies.shape=}")
+    # print(f"{sequence_copies.where(agent_masks.unsqueeze(-1), torch.tensor(0.)).shape=}")
+    return torch.sum(sequence_copies.where(agent_masks.unsqueeze(-1), torch.tensor(0.)), dim=-2) / \
+           torch.sum(agent_masks, dim=-1).unsqueeze(-1)
+
+
+def mean_pooling_2(sequences: Tensor, identities: Tensor) -> Tensor:
     # feature_sequence [B, N, *]
     # identities [B, N]
-    out = []
-    for feature_sequence, identity_sequence in zip(sequences, identities):
-        out.append(
-            torch.stack(
-                [torch.max(feature_sequence[identity_sequence == ag_id, ...])
-                 for ag_id in torch.unique(identities)], dim=0
-            )
-        )
-    out = torch.stack(out)
-    return out
+    # Note: does not work on batched data (ie only works on batch size = 1)
+    return single_mean_pooling_2(sequences[0, ...], identities[0, ...]).unsqueeze(0)
 
 
 POOLING_FUNCTIONS = {
     'mean': mean_pooling,
-    'max': max_pooling
+    'max': None
 }
 
 
@@ -239,6 +262,7 @@ class ContextEncoder(nn.Module):
         # print(f"{data['obs_identity_sequence'][0]=}")
         # print(f"{self_other_mask, self_other_mask.shape=}")
 
+        print(f"{data['obs_timestep_sequence'][0, ...]=}")
         src_mask = self.attention_mask(
             timestep_sequence=data['obs_timestep_sequence'][0, ...],     # [O]
             batch_size=1
@@ -374,6 +398,8 @@ class FutureEncoder(nn.Module):
             src_sz=data['obs_timestep_sequence'].shape[1],
             batch_size=1
         ).to(tf_seq_in.device)          # [B, P, O]
+
+        print(f"{data['pred_timestep_sequence'][0, ...]=}")
         tgt_mask = self.attention_mask(
             timestep_sequence=data['pred_timestep_sequence'][0, ...],       # [P]
             batch_size=1
