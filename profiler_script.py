@@ -97,4 +97,5 @@ if __name__ == '__main__':
 
         print(f"{i, total_loss=}")
 
+    print(f"Passing through {model_runs} instances in: {time.time() - since_train} seconds")
     print("Goodbye!")
