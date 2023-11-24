@@ -603,8 +603,9 @@ class FutureDecoder(nn.Module):
 
         # generate timestep tensor to extend timestep_sequence for next loop iteration
         next_timesteps = torch.full(
-            [agents_from_pred.shape[0] + agents_from_dec_in.shape[0]], torch.max(timestep_sequence) + 1
-        ).to(tf_in.device)  # [k + n]
+            [agents_from_pred.shape[0] + agents_from_dec_in.shape[0]], torch.max(timestep_sequence) + 1,
+            device=tf_in.device
+        )       # [k + n]
         # print(f"{next_timesteps=}")
 
         # update trajectory sequence
@@ -639,11 +640,11 @@ class FutureDecoder(nn.Module):
         # print(f"{dec_in_z.shape=}")
 
         # print(f"{data['last_obs_timesteps'].shape=}")
-        catch_up_timestep_sequence = data['last_obs_timesteps'][0, ...].detach().clone()                        # [N]
+        catch_up_timestep_sequence = data['last_obs_timesteps'][0, ...].detach().clone().to(dec_in.device)      # [N]
         starting_seq_indices = (catch_up_timestep_sequence == torch.min(catch_up_timestep_sequence, dim=0)[0])  # [N]
         # print(f"{starting_seq_indices, starting_seq_indices.shape=}")
 
-        timestep_sequence = catch_up_timestep_sequence[starting_seq_indices].to(dec_in.device)          # [⊆N] == [K]
+        timestep_sequence = catch_up_timestep_sequence[starting_seq_indices]                            # [⊆N] == [K]
         agent_sequence = data['valid_id'][:, starting_seq_indices].detach().clone()                     # [B, K]
         dec_input_sequence = dec_in_z[:, starting_seq_indices].detach().clone()                         # [B * sample_num, K, nz + 2]
         # print(f"{timestep_sequence, timestep_sequence.shape=}")
