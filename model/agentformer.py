@@ -560,9 +560,9 @@ class FutureDecoder(nn.Module):
 
             # defining origins for each element in the sequence, using agent_sequence, dec_in and data['valid_id']
             # NOTE: current implementation cannot handle batched data
-            seq_origins = torch.cat(
-                [dec_in_orig[:, data['valid_id'][0] == ag_id, :] for ag_id in agent_sequence[0]], dim=1
-            )       # [B * sample_num, K, 2]
+            seq_origins = dec_in_orig[
+                :, (agent_sequence.unsqueeze(2) == data['valid_id'].unsqueeze(1)).nonzero()[..., -1], :
+            ]       # [B * sample_num, K, 2]
             # print(f"{seq_origins[0], seq_origins.shape=}")
 
             seq_out = seq_out + seq_origins  # [B * sample_num, K, 2]
@@ -587,10 +587,9 @@ class FutureDecoder(nn.Module):
             out_in_from_dec_in = dec_in_orig[from_dec_in_indices, ...]      # [B * sample_num, n, 2]
 
         # concatenate with latent z codes
-        z_in_from_pred = torch.cat(
-            [z_in_orig[:, (data['valid_id'][0] == agent_idx), :]
-             for agent_idx in agents_from_pred], dim=1
-        )  # [B * sample_num, k, nz]
+        z_in_from_pred = z_in_orig[
+            :, (agents_from_pred.unsqueeze(0).unsqueeze(2) == data['valid_id'].unsqueeze(1)).nonzero()[..., -1], :
+        ]  # [B * sample_num, k, nz]
         out_in_z_from_pred = torch.cat(
             [out_in_from_pred, z_in_from_pred], dim=-1
         )  # [B * sample_num, k, nz + 2]
