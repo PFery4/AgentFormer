@@ -258,4 +258,9 @@ def show_example_instances_dataloader():
             draw_ax_probability_map=draw_ax_probability_map,
             draw_ax_nlog_probability_map=draw_ax_nlog_probability_map
         )
+
+        # print(f"{data_dict['identities']=}")
+        # print(f"{data_dict['obs_timestep_sequence']=}")
+        # print(f"{data_dict['pred_timestep_sequence']=}")
+
         plt.show()
