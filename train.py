@@ -7,6 +7,7 @@ import torch
 from torch import optim
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
+from csv import DictWriter
 
 from data.dataloader import data_generator
 from data.sdd_dataloader import TorchDataGeneratorSDD, PresavedDatasetSDD
@@ -119,6 +120,12 @@ def train(epoch_index: int, batch_idx: int = 0, best_val_loss: float = 1_000_000
             tb_x = epoch_index * len(training_loader) + i + 1
             for name, meter in train_loss_meter.items():
                 tb_logger.add_scalar(f'model_{name}', meter.avg, tb_x)
+            with open(csv_train_logfile, 'a') as f:
+                dict_writer = DictWriter(f, fieldnames=csv_field_names)
+                meter_dict = {name: meter.avg for name, meter in train_loss_meter.items()}
+                row_dict = {**{'tb_x': tb_x}, **meter_dict}
+                dict_writer.writerow(row_dict)
+                f.close()
 
         """ perform validation, and model saving """
         if (cfg.validation_freq > 0 and i % cfg.validation_freq == cfg.validation_freq - 1) or \
@@ -155,8 +162,13 @@ def train(epoch_index: int, batch_idx: int = 0, best_val_loss: float = 1_000_000
             tb_x = epoch_index * len(training_loader) + i + 1
             for name, meter in val_loss_meter.items():
                 tb_logger.add_scalar(f'model_val_{name}', meter.avg, tb_x)
-
             tb_logger.flush()
+            with open(csv_val_logfile, 'a') as f:
+                dict_writer = DictWriter(f, fieldnames=csv_field_names)
+                meter_dict = {name: meter.avg for name, meter in val_loss_meter.items()}
+                row_dict = {**{'tb_x': tb_x}, **meter_dict}
+                dict_writer.writerow(row_dict)
+                f.close()
 
             val_duration = time.time() - val_time
             log_str = f"Validation took: {convert_secs2time(val_duration)}"
@@ -190,7 +202,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     """ setup """
-    cfg = Config(args.cfg, args.tmp, create_dirs=True)
+    cfg = Config(args.cfg, args.tmp, create_dirs=False)
     prepare_seed(cfg.seed)
     torch.set_default_dtype(torch.float32)
     # DELFTBLUE GPU ##################################################################################################
@@ -242,6 +254,15 @@ if __name__ == '__main__':
     print_log("torch version : {}".format(torch.__version__), log)
     print_log("cudnn version : {}".format(torch.backends.cudnn.version()), log)
     tb_logger = SummaryWriter(cfg.tb_dir)
+    csv_train_logfile = os.path.join(cfg.log_dir, "train_losses.csv")
+    csv_val_logfile = os.path.join(cfg.log_dir, "val_losses.csv")
+    csv_field_names = ['tb_x', 'total_loss'] + [*cfg.loss_cfg.keys()]
+    for csv_file in [csv_train_logfile, csv_val_logfile]:
+        with open(csv_file, 'a+') as f:
+            dict_writer = DictWriter(f, fieldnames=csv_field_names)
+            row_dict = {name: name for name in csv_field_names}
+            dict_writer.writerow(row_dict)
+    # print(f"{csv_field_names=}")
     print(f"{cfg.tb_dir=}")
 
     """ data """
