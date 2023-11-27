@@ -230,6 +230,8 @@ class ContextEncoder(nn.Module):
         self.tf_encoder_call(data=data, tf_in_pos=tf_in_pos, src_self_other_mask=self_other_mask, src_mask=src_mask)
 
         # compute per agent context
+        assert torch.all(data['obs_identity_sequence'][0, ...].unique() == data['valid_id'][0, ...]),\
+            f"{data['obs_identity_sequence'][0, ...].unique()}, {data['valid_id'][0, ...]}"
         data['agent_context'] = self.pool(
             sequences=data['context_enc'], identities=data['obs_identity_sequence']
         )           # [B, N, model_dim]
