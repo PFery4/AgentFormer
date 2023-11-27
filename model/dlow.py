@@ -3,6 +3,7 @@ from torch import nn
 from torch.nn import functional as F
 # from utils.torch import *
 from utils.config import Config
+from model.agentformer_loss import index_mapping_gt_seq_pred_seq
 from model.common.mlp import MLP
 # from model.common.dist import *
 from model.common.dist import Normal
@@ -18,27 +19,53 @@ def compute_z_kld(data, cfg):
     return loss, loss_unweighted
 
 
-#TODO: FIX THIS LOSS
 def diversity_loss(data, cfg):
     loss_unweighted = 0
-    fut_motions = data['infer_dec_motion'].view(*data['infer_dec_motion'].shape[:2], -1)
-    for motion in fut_motions:
-        dist = F.pdist(motion, 2) ** 2
+    pred_motions = data['infer_dec_motion'].view(*data['infer_dec_motion'].shape[0], -1)    # [K, P * 2]
+    ids_masks = torch.repeat_interleave(
+        (data['infer_dec_agents'] == data['infer_dec_agents'].unique().unsqueeze(1)), repeats=2, dim=-1
+    )           # [N, P]
+
+    for id_mask in ids_masks:
+        pred_seq = pred_motions[:, id_mask]
+        dist = F.pdist(pred_seq, 2) ** 2
         loss_unweighted += (-dist / cfg['d_scale']).exp().mean()
+
     if cfg.get('normalize', True):
-        loss_unweighted /= data['batch_size']
+        loss_unweighted /= data['agent_num']
     loss = loss_unweighted * cfg['weight']
     return loss, loss_unweighted
 
 
-#TODO: FIX THIS LOSS
 def recon_loss(data, cfg):
-    diff = data['infer_dec_motion'] - data['fut_motion_orig'].unsqueeze(1)
-    if cfg.get('mask', True):
-        mask = data['fut_mask'].unsqueeze(1).unsqueeze(-1)
-        diff *= mask
-    dist = diff.pow(2).sum(dim=-1).sum(dim=-1)
-    loss_unweighted = dist.min(dim=1)[0]
+    # 'infer_dec_motion' [K, P, 2]       (K modes, sequence length P)
+    idx_map = index_mapping_gt_seq_pred_seq(
+        ag_gt=data['pred_identity_sequence'][0],
+        tsteps_gt=data['pred_timestep_sequence'][0],
+        ag_pred=data['train_dec_agents'][0],
+        tsteps_pred=data['train_dec_timesteps']
+    )
+    gt_identities = data['pred_identity_sequence'][:, idx_map]      # [B, P]
+    gt_timesteps = data['pred_timestep_sequence'][:, idx_map]       # [B, P]
+    gt_positions = data['pred_position_sequence'][:, idx_map, :]    # [B, P, 2]
+
+
+    # checking that the predicted sequence and the ground truth have the same timestep / agent order
+    assert torch.all(data['infer_dec_agents'] == gt_identities),\
+        f"{data['infer_dec_agents']=}\n\n{gt_identities=}"
+    assert torch.all(data['infer_dec_timesteps'] == gt_timesteps),\
+        f"{data['infer_dec_timesteps']=}\n\n{gt_timesteps=}"
+
+    diff = data['infer_dec_motion'] - gt_positions
+
+    dist = diff.pow(2).sum(-1)
+    dist = torch.stack(
+        [dist[:, gt_identities.squeeze() == ag_id].sum(dim=-1) /
+         torch.sum(gt_identities.squeeze() == ag_id)
+         for ag_id in torch.unique(gt_identities)]
+    )       # [N, K]        N agents, K modes
+
+    loss_unweighted, _ = dist.min(dim=1)     # [N]
     if cfg.get('normalize', True):
         loss_unweighted = loss_unweighted.mean()
     else:
@@ -72,12 +99,11 @@ class DLow(nn.Module):
         pred_model = model_lib.model_dict[pred_cfg.model_id](pred_cfg)
         self.pred_model_dim = pred_cfg.tf_model_dim
 
-        # TODO: Fix loading of pred_model with checkpoints
-        if cfg.pred_epoch > 0:
-            cp_path = pred_cfg.model_path % cfg.pred_epoch
-            print('loading model from checkpoint: %s' % cp_path)
-            model_cp = torch.load(cp_path, map_location='cpu')
-            pred_model.load_state_dict(model_cp['model_dict'])
+        assert cfg.pred_checkpoint_name is not None
+        cp_path = pred_cfg.model_path % cfg.pred_checkpoint_name
+        print('loading model from checkpoint: %s' % cp_path)
+        model_cp = torch.load(cp_path, map_location='cpu')
+        pred_model.load_state_dict(model_cp['model_dict'])
         pred_model.eval()
         self.pred_model = [pred_model]
 
