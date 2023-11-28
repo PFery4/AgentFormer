@@ -562,6 +562,27 @@ class PresavedDatasetSDD(Dataset):
         print_log(prnt_str, log=log) if log is not None else print(prnt_str)
         self.pickle_files = glob.glob1(self.dataset_dir, "*.pickle")
 
+        if self.split == 'val' and len(self.pickle_files) > parser.validation_freq // 4:
+            # Training set might be quite large. When that is the case, we prefer to validate after every
+            # <parser.validation_freq> batches rather than every epoch (i.e., validating multiple times per epoch).
+            # train / val split size ratios are typically ~80/20. Our desired validation set size should then be:
+            #       <parser.validation_freq> * 20/80
+            # If we check that the validation split contains more instances than desired, we artificially
+            # reduce the dataset size by discarding instances, in order to reach the desired val set size.
+            required_val_set_size = parser.validation_freq // 4
+            keep_instances = np.linspace(0, len(self.pickle_files)-1, num=required_val_set_size).round().astype(int)
+
+            assert np.all(keep_instances[1:] != keep_instances[:-1])        # verifying no duplicates
+
+            keep_pickle_files = [self.pickle_files[i] for i in keep_instances]
+
+            prnt_str = f"Val set size too large! --> {len(self.pickle_files)} " \
+                       f"(validating after every {parser.validation_freq} batch).\n" \
+                       f"Reducing val set size to {len(keep_pickle_files)}."
+            print_log(prnt_str, log=log) if log is not None else print(prnt_str)
+            self.pickle_files = keep_pickle_files
+            assert len(self.pickle_files) == required_val_set_size
+
         self.map_side = parser.get('scene_side_length', 80.0)               # [m]
         self.map_resolution = parser.get('global_map_resolution', 800)      # [px]
         self.map_homography = torch.Tensor(
