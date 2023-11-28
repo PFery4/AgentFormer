@@ -62,7 +62,7 @@ def update_loss_meters(loss_meter, total_loss, loss_unweighted_dict):
         loss_meter[key].update(loss_unweighted_dict[key])
 
 
-def train(epoch_index: int, batch_idx: int = 0, best_val_loss: float = 1_000_000_000.):
+def train(epoch_index: int, batch_idx: int = 0):
     since_train = time.time()
     train_loss_meter = {x: AverageMeter() for x in cfg.loss_cfg.keys()}
     train_loss_meter['total_loss'] = AverageMeter()
@@ -171,24 +171,28 @@ def train(epoch_index: int, batch_idx: int = 0, best_val_loss: float = 1_000_000
                 f.close()
 
             val_duration = time.time() - val_time
-            log_str = f"Validation took: {convert_secs2time(val_duration)}"
+            log_str = f"Epoch {epoch_index}, batch {i}: Validation loss is {val_loss_meter['total_loss'].avg}\n" \
+                      f"Validation took: {convert_secs2time(val_duration)}"
             print_log(log_str, log=log)
 
-            if val_loss_meter['total_loss'].avg < best_val_loss:
-                log_str = f"New best validation loss {val_loss_meter['total_loss'].avg}, saving the model"
-                print_log(log_str, log=log)
-                best_val_loss = val_loss_meter['total_loss'].avg
-                save_name = f"epoch_{epoch_index}_batch_{i}"
-                cp_path = cfg.model_path % save_name
-                model_cp = {'model_dict': model.state_dict(), 'opt_dict': optimizer.state_dict(),
-                            'scheduler_dict': scheduler.state_dict(),
-                            'epoch_idx': epoch_index, 'batch_idx': i,
-                            'val_loss': val_loss_meter['total_loss'].avg}
-
-                log_str = f"saving model at:\n{cp_path}"
-                print_log(log_str, log=log)
-
-                torch.save(model_cp, cp_path)
+            save_name = f"epoch_{epoch_index}_batch_{i}"
+            cp_path = cfg.model_path % save_name
+            model_cp = {'model_dict': model.state_dict(), 'opt_dict': optimizer.state_dict(),
+                        'scheduler_dict': scheduler.state_dict(),
+                        'epoch_idx': epoch_index, 'batch_idx': i,
+                        'val_loss': val_loss_meter['total_loss'].avg}
+            log_str = f"saving model at:\n{cp_path}"
+            print_log(log_str, log=log)
+            torch.save(model_cp, cp_path)
+            with open(csv_models, 'a+') as f:
+                dict_writer = DictWriter(f, fieldnames=csv_models_field_names)
+                row_dict = {
+                    'epoch': epoch_index,
+                    'batch': i,
+                    'model_name': save_name,
+                    'val_loss': val_loss_meter['total_loss'].avg
+                }
+                dict_writer.writerow(row_dict)
 
             print_log("\n\n", log=log)
 
@@ -262,8 +266,12 @@ if __name__ == '__main__':
             dict_writer = DictWriter(f, fieldnames=csv_field_names)
             row_dict = {name: name for name in csv_field_names}
             dict_writer.writerow(row_dict)
-    # print(f"{csv_field_names=}")
-    print(f"{cfg.tb_dir=}")
+    csv_models = os.path.join(cfg.model_dir, 'models.csv')
+    csv_models_field_names = ['epoch', 'batch', 'model_name', 'val_loss']
+    with open(csv_models, 'a+') as f:
+        dict_writer = DictWriter(f, fieldnames=csv_models_field_names)
+        row_dict = {name: name for name in csv_models_field_names}
+        dict_writer.writerow(row_dict)
 
     """ data """
     if cfg.dataset == "sdd":
@@ -291,7 +299,6 @@ if __name__ == '__main__':
 
     start_epoch_idx = 0
     start_batch_idx = 0
-    best_val_loss = 1_000_000_000.
 
     model.set_device(device)
 
@@ -304,8 +311,6 @@ if __name__ == '__main__':
             optimizer.load_state_dict(model_cp['opt_dict'])
         if 'scheduler_dict' in model_cp:
             scheduler.load_state_dict(model_cp['scheduler_dict'])
-        if 'val_loss' in model_cp:
-            best_val_loss = model_cp['val_loss']
         if 'epoch_idx' in model_cp:
             start_epoch_idx = model_cp['epoch_idx']
         if 'batch_idx' in model_cp:
@@ -320,12 +325,9 @@ if __name__ == '__main__':
 
         model.train(True)
         if epoch_i == start_epoch_idx:
-            train(epoch_index=epoch_i, batch_idx=start_batch_idx, best_val_loss=best_val_loss)
+            train(epoch_index=epoch_i, batch_idx=start_batch_idx)
         else:
-            train(epoch_index=epoch_i, batch_idx=0, best_val_loss=1_000_000_000.)
-        # """ save model """
-        # if cfg.model_save_freq > 0 and (i + 1) % cfg.model_save_freq == 0:
-        #     cp_path = cfg.model_path % (i + 1)
-        #     model_cp = {'model_dict': model.state_dict(), 'opt_dict': optimizer.state_dict(),
-        #                 'scheduler_dict': scheduler.state_dict(), 'epoch': i + 1}
-        #     torch.save(model_cp, cp_path)
+            train(epoch_index=epoch_i, batch_idx=0)
+
+    log_str = "Done for now, Goodbye!"
+    print_log(log_str, log=log)
