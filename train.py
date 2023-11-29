@@ -147,7 +147,7 @@ def train(epoch_index: int, batch_idx: int = 0):
             model.eval()
 
             with torch.no_grad():
-                for i, val_data in enumerate(validation_loader):
+                for i_val, val_data in enumerate(validation_loader):
                     model.set_data(val_data)
                     model_data = model()
 
