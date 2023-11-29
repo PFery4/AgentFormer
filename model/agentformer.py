@@ -849,7 +849,7 @@ class AgentFormer(nn.Module):
         self.device = device
         self.to(device)
 
-    def set_data(self, data: dict) -> None:
+    def set_data(self, data: Dict) -> None:
         # NOTE: in our case, batch size B is always 1
 
         # memory_report('BEFORE PUPOLATING DATA DICT')
