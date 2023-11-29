@@ -241,26 +241,19 @@ def initialize_weights(modules):
                 nn.init.constant_(m.bias, 0)
 
 
-def print_log(print_str: str, log: TextIOWrapper, same_line: bool = False, display: bool = True):
+def print_log(print_str: str, log: TextIOWrapper, display: bool = True):
     """
     print a string to a log file
 
     parameters:
         print_str:          a string to print
-        log:                a opened file to save the log
+        log:                an opened file to save the log
         same_line:          True if we want to print the string without a new next line
         display:            False if we want to disable to print the string onto the terminal
     """
     if display:
-        if same_line:
-            print('{}'.format(print_str), end='')
-        else:
-            print('{}'.format(print_str))
-
-    if same_line:
-        log.write('{}'.format(print_str))
-    else:
-        log.write('{}\n'.format(print_str))
+        print(print_str)
+    log.write(f'{print_str}\n')
     log.flush()
 
 
