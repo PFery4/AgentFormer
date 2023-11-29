@@ -612,6 +612,7 @@ class PresavedDatasetSDD(Dataset):
         with open(os.path.join(self.dataset_dir, filename), 'rb') as f:
             data_dict = pickle.load(f)
 
+        data_dict['filename'] = filename
         data_dict['timesteps'] = self.timesteps
         data_dict['scene_orig'] = torch.zeros([2])
 
