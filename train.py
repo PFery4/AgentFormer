@@ -123,7 +123,7 @@ def train(epoch_index: int, batch_idx: int = 0):
             with open(csv_train_logfile, 'a') as f:
                 dict_writer = DictWriter(f, fieldnames=csv_field_names)
                 meter_dict = {name: meter.avg for name, meter in train_loss_meter.items()}
-                row_dict = {**{'tb_x': tb_x}, **meter_dict}
+                row_dict = {**{'tb_x': tb_x, 'epoch': epoch_index, 'batch': i}, **meter_dict}
                 dict_writer.writerow(row_dict)
                 f.close()
 
@@ -166,7 +166,7 @@ def train(epoch_index: int, batch_idx: int = 0):
             with open(csv_val_logfile, 'a') as f:
                 dict_writer = DictWriter(f, fieldnames=csv_field_names)
                 meter_dict = {name: meter.avg for name, meter in val_loss_meter.items()}
-                row_dict = {**{'tb_x': tb_x}, **meter_dict}
+                row_dict = {**{'tb_x': tb_x, 'epoch': epoch_index, 'batch': i}, **meter_dict}
                 dict_writer.writerow(row_dict)
                 f.close()
 
@@ -195,6 +195,17 @@ def train(epoch_index: int, batch_idx: int = 0):
                 dict_writer.writerow(row_dict)
 
             print_log("\n\n", log=log)
+
+        with open(csv_train_logfile, 'a') as f:
+            dict_writer = DictWriter(f, fieldnames=csv_field_names)
+            row_dict = {name: f"END OF EPOCH {epoch_index}" for name in csv_field_names}
+            dict_writer.writerow(row_dict)
+            f.close()
+        with open(csv_val_logfile, 'a') as f:
+            dict_writer = DictWriter(f, fieldnames=csv_field_names)
+            row_dict = {name: f"END OF EPOCH {epoch_index}" for name in csv_field_names}
+            dict_writer.writerow(row_dict)
+            f.close()
 
 
 if __name__ == '__main__':
@@ -260,7 +271,7 @@ if __name__ == '__main__':
     tb_logger = SummaryWriter(cfg.tb_dir)
     csv_train_logfile = os.path.join(cfg.log_dir, "train_losses.csv")
     csv_val_logfile = os.path.join(cfg.log_dir, "val_losses.csv")
-    csv_field_names = ['tb_x', 'total_loss'] + [*cfg.loss_cfg.keys()]
+    csv_field_names = ['tb_x', 'epoch', 'batch', 'total_loss'] + [*cfg.loss_cfg.keys()]
     for csv_file in [csv_train_logfile, csv_val_logfile]:
         with open(csv_file, 'a+') as f:
             dict_writer = DictWriter(f, fieldnames=csv_field_names)
