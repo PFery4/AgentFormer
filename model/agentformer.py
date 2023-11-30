@@ -857,7 +857,7 @@ class AgentFormer(nn.Module):
 
         self.data['valid_id'] = data['identities'].detach().clone().to(self.device)     # [B, N]
         self.data['T_total'] = data['timesteps'].shape[0]
-        self.data['agent_num'] = self.data['valid_id'].shape[0]
+        self.data['agent_num'] = self.data['valid_id'].shape[-1]
         self.data['timesteps'] = data['timesteps'].detach().clone().to(self.device)     # [B, T]
         self.data['scene_orig'] = data['scene_orig'].detach().clone().to(self.device)   # [B, 2]
 
