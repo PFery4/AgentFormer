@@ -20,52 +20,41 @@ Tensor = torch.Tensor
 
 
 def compute_sequence_ADE(
-        pred_positions: Tensor,         # [B * sample_num, P, 2]
-        pred_identities: Tensor,        # [B * sample_num, P]
-        pred_timesteps: Tensor,         # [P]
-        gt_positions: Tensor,           # [B, P, 2]
-        gt_identities: Tensor,          # [B, P]
-        gt_timesteps: Tensor,           # [B, P]
-        unique_identities: Tensor,      # [B, N]
-):
-    # TODO: this function needs verification
-    # TODO: perhaps assume correct index mapping within the function (move index mapping elsewhere)
-    idx_map = index_mapping_gt_seq_pred_seq(
-        ag_gt=gt_identities[0],
-        tsteps_gt=gt_timesteps[0],
-        ag_pred=pred_identities[0],
-        tsteps_pred=pred_timesteps
-    )
+        pred_positions: Tensor,         # [K, P, 2]
+        gt_positions: Tensor,           # [P, 2]
+        identities: Tensor,             # [N]
+        identity_mask: Tensor,          # [N, P]
+) -> Tensor:        # [N, K]
 
-    # NOTE: careful, in place modification might be weird for subsequent calls of the function...
-    gt_identities = gt_identities[:, idx_map]
-    gt_timesteps = gt_timesteps[:, idx_map]
-    gt_positions = gt_positions[:, idx_map, :]
+    diff = gt_positions - pred_positions        # [K, P, 2]
+    dists = diff.pow(2).sum(-1).sqrt()          # [K, P]
 
-    assert torch.all(pred_identities == gt_identities)
-    assert torch.all(pred_timesteps == gt_timesteps)
+    scores_tensor = torch.zeros([identities.shape[0], pred_positions.shape[0]])     # [N, K]
+    for i, (mask, identity) in enumerate(zip(identity_mask, identities)):
+        masked_dist = dists[:, mask]                # [K, p]
+        ades = torch.mean(masked_dist, dim=-1)      # [K]
+        scores_tensor[i, :] = ades
 
-    diff = gt_positions - pred_positions        # [B * sample_num, P, 2]
-    dists = diff.pow(2).sum(-1).sqrt()          # [B * sample_num, P]
+    return scores_tensor        # [N, K]
 
-    identity_masks = gt_identities == unique_identities.unique().unsqueeze(1)       # [N, P]
 
-    identity_list = []
-    sample_mode_list = []
-    score_list = []
-    for mask, identity in zip(identity_masks, unique_identities.unique()):
-        # mask [P]
-        masked_dist = dists[:, mask]              # [B * sample_num, p]
-        ades = torch.mean(masked_dist, dim=-1)    # [B * sample_num]
+def compute_sequence_FDE(
+        pred_positions: Tensor,         # [K, P, 2]
+        gt_positions: Tensor,           # [P, 2]
+        identities: Tensor,             # [N]
+        identity_mask: Tensor,          # [N, P]
+) -> Tensor:        # [N, K]
 
-        identity_list.extend([identity] * ades.shape[0])
-        sample_mode_list.extend(list(range(ades.shape[0])))
-        score_list.extend(ades.tolist())
+    diff = gt_positions - pred_positions        # [K, P, 2]
+    dists = diff.pow(2).sum(-1).sqrt()          # [K, P]
 
-    return score_list, identity_list, sample_mode_list
+    scores_tensor = torch.zeros([identities.shape[0], pred_positions.shape[0]])     # [N, K]
+    for i, (mask, identity) in enumerate(zip(identity_mask, identities)):
+        masked_dist = dists[:, mask]            # [K, p]
+        fdes = masked_dist[:, -1]               # [K]
+        scores_tensor[i, :] = fdes
 
-def compute_sequence_FDE():
-    pass
+    return scores_tensor        # [N, K]
 
 
 def compute_occlusion_area_occupancy():
@@ -176,11 +165,70 @@ if __name__ == '__main__':
             pickle.dump(out_dict, f, protocol=pickle.HIGHEST_PROTOCOL)
 
     # computing performance metrics from saved predictions
-    # TODO: CONTINUE HERE
-    for i, filename in enumerate(glob.glob1(save_dir, '*.pickle')):
-        print(f"{filename=}")
+    for i, in_data in enumerate(test_loader):
+
+        filename = in_data['filename'][0]
+
         with open(os.path.join(save_dir, filename), 'rb') as f:
-            data_dict = pickle.load(f)
-        print(f"{data_dict.keys()=}")
+            pred_data = pickle.load(f)
+
+        valid_ids = pred_data['valid_id'][0]                        # [N]
+        gt_identities = pred_data['pred_identity_sequence'][0]      # [P]
+        gt_timesteps = pred_data['pred_timestep_sequence'][0]       # [P]
+        gt_positions = pred_data['pred_position_sequence'][0]       # [P, 2]
+
+        infer_pred_identities = pred_data['infer_dec_agents'][0]        # [P]
+        infer_pred_timesteps = pred_data['infer_dec_timesteps']         # [P]
+        infer_pred_positions = pred_data['infer_dec_motion']            # [K, P, 2]
+        infer_pred_past_mask = pred_data['infer_dec_past_mask']         # [P]
+
+        idx_map = index_mapping_gt_seq_pred_seq(
+            ag_gt=gt_identities,
+            tsteps_gt=gt_timesteps,
+            ag_pred=infer_pred_identities,
+            tsteps_pred=infer_pred_timesteps
+        )
+
+        gt_identities = gt_identities[idx_map]      # [P]
+        gt_timesteps = gt_timesteps[idx_map]        # [P]
+        gt_positions = gt_positions[idx_map, :]     # [P, 2]
+
+        assert torch.all(infer_pred_identities == gt_identities)
+        assert torch.all(infer_pred_timesteps == gt_timesteps)
+
+        identity_mask = valid_ids.unsqueeze(1) == infer_pred_identities.unsqueeze(0)
+
+        # print(f"{valid_ids=}")
+        # print(f"{infer_pred_identities=}")
+        # print(f"{identity_mask, identity_mask.shape=}")
+
+        # PERFORM METRIC MEASUREMENTS
+
+        infer_ade_scores = compute_sequence_ADE(
+            pred_positions=infer_pred_positions,
+            gt_positions=gt_positions,
+            identities=valid_ids,
+            identity_mask=identity_mask
+        )
+
+        infer_fde_scores = compute_sequence_FDE(
+            pred_positions=infer_pred_positions,
+            gt_positions=gt_positions,
+            identities=valid_ids,
+            identity_mask=identity_mask
+        )
+
+        print(f"{infer_ade_scores=}")
+        print(f"{infer_fde_scores=}")
+
+        # TODO: CONTINUE HERE
+        raise NotImplementedError
+
+        # # TODO: DO IT FOR RECON TOO NOW
+        # recon_pred_identities = pred_data['recon_dec_agents'][0]        # [P]
+        # recon_pred_timesteps = pred_data['recon_dec_timesteps']         # [P]
+        # recon_pred_positions = pred_data['recon_dec_motion']            # [1, P, 2]
+        # recon_pred_past_mask = pred_data['recon_dec_past_mask']         # [P]
+
 
 
