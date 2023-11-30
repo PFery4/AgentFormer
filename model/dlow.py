@@ -21,10 +21,11 @@ def compute_z_kld(data, cfg):
 
 def diversity_loss(data, cfg):
     loss_unweighted = 0
-    pred_motions = data['infer_dec_motion'].view(*data['infer_dec_motion'].shape[0], -1)    # [K, P * 2]
+    pred_motions = data['infer_dec_motion'].view(data['infer_dec_motion'].shape[0], -1)    # [K, P * 2]
+
     ids_masks = torch.repeat_interleave(
-        (data['infer_dec_agents'] == data['infer_dec_agents'].unique().unsqueeze(1)), repeats=2, dim=-1
-    )           # [N, P]
+        (data['infer_dec_agents'][0].unsqueeze(0) == data['infer_dec_agents'].unique().unsqueeze(1)), repeats=2, dim=-1
+    )           # [N, P * 2]
 
     for id_mask in ids_masks:
         pred_seq = pred_motions[:, id_mask]
@@ -42,8 +43,8 @@ def recon_loss(data, cfg):
     idx_map = index_mapping_gt_seq_pred_seq(
         ag_gt=data['pred_identity_sequence'][0],
         tsteps_gt=data['pred_timestep_sequence'][0],
-        ag_pred=data['train_dec_agents'][0],
-        tsteps_pred=data['train_dec_timesteps']
+        ag_pred=data['infer_dec_agents'][0],
+        tsteps_pred=data['infer_dec_timesteps']
     )
     gt_identities = data['pred_identity_sequence'][:, idx_map]      # [B, P]
     gt_timesteps = data['pred_timestep_sequence'][:, idx_map]       # [B, P]
@@ -138,12 +139,11 @@ class DLow(nn.Module):
                 eps = eps.repeat_interleave(self.nk, dim=0)                             # [N * nk, nz]
 
         qnet_h = self.q_mlp(self.data['agent_context'])                                 # [B, N, q_mlp.outdim]
-        A = self.q_A(qnet_h).view(*qnet_h.shape[:2], self.nk, self.nz).permute(0, 2, 1, 3).view(
-            -1, self.data['agent_num'], self.nz)                  # [B * nk, N, nz]
-        b = self.q_b(qnet_h).view(*qnet_h.shape[:2], self.nk, self.nz).permute(0, 2, 1, 3).view(
-            -1, self.data['agent_num'], self.nz)                  # [B * nk, N, nz]
-        print(f"{A.shape, b.shape=}")
 
+        A = self.q_A(qnet_h).view(*qnet_h.shape[:-1], self.nk, self.nz).permute(0, 2, 1, 3).reshape(
+            -1, self.data['agent_num'], self.nz)                  # [B * nk, N, nz]
+        b = self.q_b(qnet_h).view(*qnet_h.shape[:-1], self.nk, self.nz).permute(0, 2, 1, 3).reshape(
+            -1, self.data['agent_num'], self.nz)                  # [B * nk, N, nz]
         z = b if mean else A*eps + b                    # [B * nk, N, nz]
         logvar = (A ** 2 + 1e-8).log()                  # [B * nk, N, nz]
         self.data['q_z_dist_dlow'] = Normal(mu=b, logvar=logvar)
@@ -160,12 +160,8 @@ class DLow(nn.Module):
         self.main(mean=True, need_weights=need_weights)
         res = self.data[f'infer_dec_motion']            # [B * sample_num, P, 2]
 
-        print(f"{res.shape=}")
-
         if mode == 'recon':
             res = res[0, ...]
-
-        print(f"{res.shape=}")
 
         return res, self.data
 
