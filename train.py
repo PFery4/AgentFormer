@@ -196,16 +196,16 @@ def train(epoch_index: int, batch_idx: int = 0):
 
             print_log("\n\n", log=log)
 
-        with open(csv_train_logfile, 'a') as f:
-            dict_writer = DictWriter(f, fieldnames=csv_field_names)
-            row_dict = {name: f"END OF EPOCH {epoch_index}" for name in csv_field_names}
-            dict_writer.writerow(row_dict)
-            f.close()
-        with open(csv_val_logfile, 'a') as f:
-            dict_writer = DictWriter(f, fieldnames=csv_field_names)
-            row_dict = {name: f"END OF EPOCH {epoch_index}" for name in csv_field_names}
-            dict_writer.writerow(row_dict)
-            f.close()
+    with open(csv_train_logfile, 'a') as f:
+        dict_writer = DictWriter(f, fieldnames=csv_field_names)
+        row_dict = {name: f"END OF EPOCH {epoch_index}" for name in csv_field_names}
+        dict_writer.writerow(row_dict)
+        f.close()
+    with open(csv_val_logfile, 'a') as f:
+        dict_writer = DictWriter(f, fieldnames=csv_field_names)
+        row_dict = {name: f"END OF EPOCH {epoch_index}" for name in csv_field_names}
+        dict_writer.writerow(row_dict)
+        f.close()
 
 
 if __name__ == '__main__':
