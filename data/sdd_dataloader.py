@@ -604,6 +604,20 @@ class PresavedDatasetSDD(Dataset):
         prnt_str = f'------------------------------ done --------------------------------\n'
         print_log(prnt_str, log=log) if log is not None else print(prnt_str)
 
+    # TODO: WIP ON THE IMPUTATION APPROACH
+    def impute_and_cv_predict(self, trajs: Tensor, obs_mask: Tensor) -> Tensor:
+        # trajs [N, T, 2]
+        # obs_mask [N, T]
+        imputed_trajs = torch.zeros_like(trajs)
+        for i, (traj, mask) in enumerate(zip(trajs, obs_mask)):
+            # print(f"{self.timesteps[mask]=}")
+            # print(f"{traj[mask]=}")
+            f = interp1d(self.timesteps[mask], traj[mask], axis=0, fill_value='extrapolate')
+            interptraj = f(self.timesteps)
+            # print(f"{interptraj=}")
+            imputed_trajs[i, ...] = torch.from_numpy(interptraj)
+        return imputed_trajs
+
     def __len__(self):
         return len(self.pickle_files)
 
@@ -621,63 +635,19 @@ class PresavedDatasetSDD(Dataset):
         return data_dict
 
 
-def show_example_instances_dataloader():
-    from utils.utils import prepare_seed, memory_report
-    from tqdm import tqdm
+if __name__ == '__main__':
 
-    print(sdd_conf.REPO_ROOT)
+    cfg = Config('sdd_baseline_copy_for_test_pre')
+    presaved_dataset = PresavedDatasetSDD(parser=cfg, log=None, split='train')
 
-    n_calls = 10000
-    # config_str = 'sdd_agentformer_pre'
-    # config_str = 'sdd_occlusion_agentformer_pre'
-    config_str = 'sdd_baseline_occlusionformer_pre'
+    # TODO: WIP ON THIS IMPUTATION METHOD
+    def simple_imputer(data_dict: Dict) -> None:
+        print(f"{data_dict['trajectories']=}")
+        print(f"{data_dict['observation_mask']=}")
 
-    config = Config(config_str)
-    prepare_seed(config.seed)
+    for i, data in enumerate(presaved_dataset):
 
-    split = 'train'
+        print(f"{data.keys()=}")
+        simple_imputer(data)
+        print(zblu)
 
-    generator = TorchDataGeneratorSDD(parser=config, log=None, split=split)
-
-    sdd_config = sdd_conf.get_config(config.sdd_config_file_name)
-    compare_generator = StanfordDroneDatasetWithOcclusionSim(sdd_config, split=split)
-
-    for idx in range(len(generator)):
-
-        # memory_report('BEFORE')
-
-        # 225, 615, 735
-        # (run this on the v3 simulators, with max_train_agent 16 to
-        # observe preprocessing of cases with too many agents)
-        # if idx < 735:
-        #     continue
-
-        data_dict = generator.__getitem__(idx)
-        print(f"{idx, len(data_dict['identities'])=}")
-
-        if len(data_dict['identities']) == generator.max_train_agent:
-
-            fig, ax = plt.subplots(1, 6)
-            visualize.visualize_training_instance(
-                draw_ax=ax[0], instance_dict=compare_generator.__getitem__(idx)
-            )
-            generator.visualize(
-                data_dict=data_dict,
-                draw_ax=ax[1],
-                draw_ax_sequences=ax[2],
-                draw_ax_dist_transformed_map=ax[3],
-                draw_ax_probability_map=ax[4],
-                draw_ax_nlog_probability_map=ax[5]
-            )
-            plt.show()
-
-        # memory_report('AFTER')
-
-
-# if __name__ == '__main__':
-#     # show_example_instances_dataloader()
-#     # save_preprocessed_dataset()
-#
-#     config_str = 'sdd_baseline_occlusionformer_pre'
-#     config = Config(config_str)
-#     PresavedDatasetSDD(parser=config, log=None, split='train')
