@@ -47,7 +47,7 @@ class Oracle(BasePredictorClass):
     This model predicts the Ground Truth (yes, this is cheating).
     """
 
-    def __init__(self):
+    def __init__(self, *args, **kwargs):
         super().__init__()
 
     def inference(self, mode='infer', *args, **kwargs):
@@ -64,7 +64,7 @@ class ConstantVelocityPredictor(BasePredictorClass):
     This model predicts constant velocity motion starting from the last observed position.
     """
 
-    def __init__(self):
+    def __init__(self, *args, **kwargs):
         super().__init__()
 
     def inference(self, mode='infer', *args, **kwargs):
