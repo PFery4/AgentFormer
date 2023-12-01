@@ -42,6 +42,7 @@ global_map_attention: false
 #  model_id: global_map_cnn
 #  normalize: false
 #  dropout: 0.0
+#  use_scene_map: true
 #  map_channels: 3
 #  use_occlusion_map: true
 #  output_dim: 256
