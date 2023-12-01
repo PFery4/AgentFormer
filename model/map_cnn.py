@@ -43,7 +43,7 @@ class GlobalMapCNN(nn.Module):
     # cfg = {
     #     'map_channels': 3,
     #     'use_occlusion_map': True,
-    #     'map_resolution': [400, 400],
+    #     'map_resolution': 400,
     #     'output_dim': 256,
     #     'layers': [
     #         ['conv2d', 4, 7, 3],
@@ -58,15 +58,19 @@ class GlobalMapCNN(nn.Module):
     def __init__(self, cfg: Dict):
         super().__init__()
         self.layers = nn.ModuleList()
-        self.use_occlusion_map = cfg.get('use_occlusion_map', False)    # whether to add occlusion map as extra channel
+        self.use_scene_map = cfg.get('use_scene_map', False)            # whether to process the global [RGB] scene map
+        self.use_occlusion_map = cfg.get('use_occlusion_map', False)    # whether to process the occlusion map
+        assert self.use_scene_map or self.use_occlusion_map             # we must process at least one map type
+
         self.map_channels = cfg.get('map_channels', 3)                  # (R, G, B)
-        self.input_channels = self.map_channels + int(self.use_occlusion_map)   # number of input channels
+        self.input_channels = self.map_channels * int(self.use_scene_map) +\
+            int(self.use_occlusion_map)   # number of input channels
         self.resolution = cfg.get('map_resolution', 800)            # [px], resolution of the scene maps
         self.map_size = [self.resolution] * 2
         self.output_dim = cfg.get('output_dim', 256)                # dimension of the produced compressed state
         self.input_shape = (self.input_channels, *self.map_size)
 
-        x_dummy = torch.randn(self.input_shape).unsqueeze(0)
+        x_dummy = torch.randn(self.input_shape).unsqueeze(0)        # [B, C, H, W]
 
         layers = cfg.get('layers')
         for layer in layers:
@@ -97,17 +101,29 @@ class GlobalMapCNN(nn.Module):
 
 
 if __name__ == "__main__":
-    from utils.config import Config
 
-    cfg = Config('sdd_occlusion_agentformer_pre')
-    map_cfg = cfg.get('global_map_encoder')
+    map_cfg = {
+        'use_scene_map': False,
+        'map_channels': 3,
+        'use_occlusion_map': True,
+        'output_dim': 256,
+        'layers': [
+            ['conv2d', 4, 7, 3],    # [out_channels, kernel_size, stride]
+            ['maxpool', 2, 2],      # [kernel_size, stride]
+            ['conv2d', 8, 5, 2],
+            ['maxpool', 2, 2],
+            ['conv2d', 8, 3, 1],
+            ['maxpool', 2, 2]
+        ]
+    }
 
     map_cnn = GlobalMapCNN(cfg=map_cfg)
-    print("GlobalMapCNN attributes:")
+    print("GlobalMapCNN attributes:\n")
     [print(f"{k}:\t\t{v}") for k, v in map_cnn.__dict__.items()]
+    print("\n")
 
-    x = torch.randn([1, *map_cnn.input_shape])
-    y = map_cnn(x)
-    print(f"{x.shape=}")
-    print(f"{y.shape=}")
+    x_input = torch.randn([1, *map_cnn.input_shape])
+    y_output = map_cnn(x_input)
+    print(f"{x_input.shape=}")
+    print(f"{y_output.shape=}")
 
