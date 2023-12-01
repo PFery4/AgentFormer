@@ -199,7 +199,7 @@ def show_example_instances_dataloader():
     import src.visualization.sdd_visualize as simulation_visualize
     import src.data.config as sdd_conf
 
-    config_str = 'sdd_baseline_occlusionformer_pre'
+    config_str = 'sdd_baseline_copy_for_test_pre'
     # dataset_type = TorchDataGeneratorSDD
     dataset_type = PresavedDatasetSDD
 
