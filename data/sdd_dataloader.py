@@ -551,11 +551,13 @@ class PresavedDatasetSDD(Dataset):
         dataset_dir = os.path.join(self.presaved_datasets_dir, self.occlusion_process, split)
         self.dataset_dir = None
         if os.path.exists(dataset_dir):
+            self.dataset_name = self.occlusion_process
             self.dataset_dir = dataset_dir
         else:
             prnt_str = "Couldn't find full dataset path, trying with tiny instead..."
             print_log(prnt_str, log=log) if log is not None else print(prnt_str)
-            self.dataset_dir = os.path.join(self.presaved_datasets_dir, f"{self.occlusion_process}_tiny", split)
+            self.dataset_name = f"{self.occlusion_process}_tiny"
+            self.dataset_dir = os.path.join(self.presaved_datasets_dir, self.dataset_name, split)
         assert os.path.exists(self.dataset_dir)
 
         prnt_str = f"Extracting data from the following directory:\n{self.dataset_dir}"
