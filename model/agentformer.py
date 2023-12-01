@@ -843,7 +843,6 @@ class AgentFormer(nn.Module):
             elif map_enc_cfg.use_scene_map and not map_enc_cfg.use_occlusion_map: self.input_map_key = 'scene_map'
             elif not map_enc_cfg.use_scene_map and map_enc_cfg.use_occlusion_map: self.input_map_key = 'occlusion_map'
             else: raise NotImplementedError
-            print(f"{self.input_map_key=}")
 
         # models
         self.context_encoder = ContextEncoder(ctx)
@@ -888,8 +887,6 @@ class AgentFormer(nn.Module):
             )       # [B, (C) + (1), H, W]
             self.data['input_global_map'] = self.data[self.input_map_key]
 
-            print(f"{self.data['input_global_map'].shape=}")
-
             self.data['nlog_probability_occlusion_map'] = data['nlog_probability_occlusion_map']\
                 .detach().clone().to(self.device)                                                   # [B, H, W]
             self.data['map_homography'] = data['map_homography'].detach().clone().to(self.device)        # [B, 3, 3]
@@ -926,6 +923,8 @@ class AgentFormer(nn.Module):
         return self.data
 
     def inference(self, mode='infer', sample_num=20, need_weights=False):
+        if self.global_map_attention:
+            self.data['global_map_encoding'] = self.global_map_encoder(self.data['input_global_map'])
         if self.data['context_enc'] is None:
             self.context_encoder(self.data)
         if mode == 'recon':
