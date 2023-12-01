@@ -133,9 +133,9 @@ if __name__ == '__main__':
 
     # saving model predictions
     if checkpoint_name is not None:
-        save_dir = os.path.join(cfg.result_dir, checkpoint_name, split)
+        save_dir = os.path.join(cfg.result_dir, sdd_test_set.dataset_name, checkpoint_name, split)
     else:
-        save_dir = os.path.join(cfg.result_dir, 'untrained', split)
+        save_dir = os.path.join(cfg.result_dir, sdd_test_set.dataset_name, 'untrained', split)
     log_str = f'saving predictions under the following directory:\n{save_dir}\n\n'
     print_log(log_str, log=log)
     mkdir_if_missing(save_dir)
