@@ -126,7 +126,7 @@ class DLow(nn.Module):
     def main(self, mean=False, need_weights=False):
         pred_model = self.pred_model[0]
         if pred_model.global_map_attention:
-            self.data['global_map_encoding'] = pred_model.global_map_encoder(self.data['combined_map'])
+            self.data['global_map_encoding'] = pred_model.global_map_encoder(self.data['input_global_map'])
 
         pred_model.context_encoder(self.data)
 

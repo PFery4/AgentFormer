@@ -836,9 +836,14 @@ class AgentFormer(nn.Module):
 
         if self.global_map_attention:
             map_enc_cfg = cfg.global_map_encoder
-            map_enc_cfg['map_resolution'] = cfg['global_map_resolution']
+            map_enc_cfg['map_resolution'] = cfg.global_map_resolution
             self.global_map_encoder = MapEncoder(map_enc_cfg)
             ctx['global_map_enc_dim'] = self.global_map_encoder.out_dim
+            if map_enc_cfg.use_scene_map and map_enc_cfg.use_occlusion_map: self.input_map_key = 'combined_map'
+            elif map_enc_cfg.use_scene_map and not map_enc_cfg.use_occlusion_map: self.input_map_key = 'scene_map'
+            elif not map_enc_cfg.use_scene_map and map_enc_cfg.use_occlusion_map: self.input_map_key = 'occlusion_map'
+            else: raise NotImplementedError
+            print(f"{self.input_map_key=}")
 
         # models
         self.context_encoder = ContextEncoder(ctx)
@@ -876,10 +881,17 @@ class AgentFormer(nn.Module):
 
         if self.global_map_attention:
             self.data['scene_map'] = data['scene_map'].detach().clone().to(self.device)             # [B, C, H, W]
-            self.data['occlusion_map'] = data['dist_transformed_occlusion_map'].detach().clone().to(self.device)    # [B, H, W]
+            self.data['occlusion_map'] = data['dist_transformed_occlusion_map']\
+                .detach().clone().to(self.device).unsqueeze(1)                                      # [B, 1, H, W]
+            self.data['combined_map'] = torch.cat(
+                (self.data['scene_map'], self.data['occlusion_map']), dim=1
+            )       # [B, (C) + (1), H, W]
+            self.data['input_global_map'] = self.data[self.input_map_key]
 
-            self.data['nlog_probability_occlusion_map'] = data['nlog_probability_occlusion_map'].detach().clone().to(self.device)   # [B, H, W]
-            self.data['combined_map'] = torch.cat((self.data['scene_map'], self.data['occlusion_map'].unsqueeze(1)), dim=1)     # [B, C + 1, H, W]
+            print(f"{self.data['input_global_map'].shape=}")
+
+            self.data['nlog_probability_occlusion_map'] = data['nlog_probability_occlusion_map']\
+                .detach().clone().to(self.device)                                                   # [B, H, W]
             self.data['map_homography'] = data['map_homography'].detach().clone().to(self.device)        # [B, 3, 3]
         # memory_report('AFTER PUPOLATING DATA DICT')
 
@@ -890,7 +902,7 @@ class AgentFormer(nn.Module):
     def forward(self):
         # memory_report('BEFORE FORWARD')
         if self.global_map_attention:
-            self.data['global_map_encoding'] = self.global_map_encoder(self.data['combined_map'])
+            self.data['global_map_encoding'] = self.global_map_encoder(self.data['input_global_map'])
             # print(f"{self.data['global_map_encoding'].shape=}")
         # memory_report('AFTER GLOBAL MAP ENCODING')
 
