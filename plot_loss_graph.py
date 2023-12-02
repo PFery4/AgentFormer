@@ -10,9 +10,12 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--cfg', default=None)
     parser.add_argument('--split', default=None)
+    parser.add_argument('--save', type=bool, default=False)
+    parser.add_argument('--show', type=bool, default=False)
     args = parser.parse_args()
 
     assert args.split in ['train', 'val']
+    assert args.save or args.show, "You must choose to either *show* or *save* the loss graph..."
     cfg = Config(args.cfg)
 
     csv_file = os.path.join(cfg.log_dir, f'{args.split}_losses.csv')
@@ -76,6 +79,14 @@ if __name__ == '__main__':
 
     ax.set_xticks(new_epochs_tb_x, minor=True)
     ax.xaxis.grid(True, which='minor')
+    fig.set_size_inches(16, 9)
     plt.legend(loc='upper right')
-    plt.show()
+
+    if args.save:
+        save_path = os.path.join(cfg.log_dir, f'{args.split}_losses.png')
+        print(f"saving loss graph under:\n{save_path}")
+
+        plt.savefig(save_path, bbox_inches='tight', transparent=True, dpi=100)
+    if args.show:
+        plt.show()
     print("Goodbye!")
