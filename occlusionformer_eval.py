@@ -89,7 +89,6 @@ if __name__ == '__main__':
     parser.add_argument('--checkpoint_name', default=None)
     parser.add_argument('--tmp', action='store_true', default=False)
     parser.add_argument('--gpu', type=int, default=0)
-    # parser.add_argument('--log_file', default=None)
     args = parser.parse_args()
 
     split = args.data_split
@@ -163,7 +162,7 @@ if __name__ == '__main__':
         out_dict = dict()
         with torch.no_grad():
             model.set_data(data)
-            recon_pred, _ = model.inference(mode='recon', sample_num=1)         # [B, P, 2]
+            # recon_pred, _ = model.inference(mode='recon', sample_num=1)         # [B, P, 2]   # unused
             samples_pred, model_data = model.inference(
                 mode='infer', sample_num=cfg.sample_k, need_weights=False
             )                                                                   # [B * sample_k, P, 2]
@@ -239,18 +238,12 @@ if __name__ == '__main__':
             assert len(df_row) == len(df_columns)
             score_df.loc[len(score_df)] = df_row
 
-        # # TODO: DO IT FOR RECON TOO NOW
-        # recon_pred_identities = pred_data['recon_dec_agents'][0]        # [P]
-        # recon_pred_timesteps = pred_data['recon_dec_timesteps']         # [P]
-        # recon_pred_positions = pred_data['recon_dec_motion']            # [1, P, 2]
-        # recon_pred_past_mask = pred_data['recon_dec_past_mask']         # [P]
-
     # postprocessing on the table
     score_df[['idx', 'agent_id']] = score_df[['idx', 'agent_id']].astype(int)
     score_df.set_index(keys=['idx', 'agent_id'], inplace=True)
-    score_df['min_ADE'] = score_df[mode_ades].mean(axis=1)
+    score_df['min_ADE'] = score_df[mode_ades].min(axis=1)
     score_df['mean_ADE'] = score_df[mode_ades].mean(axis=1)
-    score_df['min_FDE'] = score_df[mode_fdes].mean(axis=1)
+    score_df['min_FDE'] = score_df[mode_fdes].min(axis=1)
     score_df['mean_FDE'] = score_df[mode_fdes].mean(axis=1)
     score_df['rF'] = score_df['mean_FDE'] / score_df['min_FDE']
     score_df['rF'] = score_df['rF'].fillna(value=1.0)
