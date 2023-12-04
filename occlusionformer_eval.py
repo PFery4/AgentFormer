@@ -153,10 +153,10 @@ if __name__ == '__main__':
     for i, data in enumerate(test_loader):
 
         seq_name, frame, filename = data['seq'][0], int(data['frame'][0]), data['filename'][0]
-        log_str = f'saving predictions of instance #{i}\t\t| ' \
-                  f'file name: {filename}\t\t| ' \
-                  f'sequence name: {seq_name}\t\t| ' \
-                  f'frame number: {frame}'
+        log_str = f"saving predictions of instance #{i}\t\t| " \
+                  f"file name: {filename}\t\t| " \
+                  f"sequence name: {seq_name.ljust(20, ' ')}\t\t| " \
+                  f"frame number: {frame}"
         print_log(log_str, log=log)
 
         out_dict = dict()
