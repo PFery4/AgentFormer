@@ -1,9 +1,10 @@
-import glob
 import sys
 import argparse
 import os.path
 import pickle
+import yaml
 
+import pandas as pd
 import torch
 from torch.utils.data import DataLoader
 
@@ -19,7 +20,7 @@ Tensor = torch.Tensor
 # METRICS #############################################################################################################
 
 
-def compute_sequence_ADE(
+def compute_samples_ADE(
         pred_positions: Tensor,         # [K, P, 2]
         gt_positions: Tensor,           # [P, 2]
         identities: Tensor,             # [N]
@@ -38,7 +39,7 @@ def compute_sequence_ADE(
     return scores_tensor        # [N, K]
 
 
-def compute_sequence_FDE(
+def compute_samples_FDE(
         pred_positions: Tensor,         # [K, P, 2]
         gt_positions: Tensor,           # [P, 2]
         identities: Tensor,             # [N]
@@ -69,6 +70,16 @@ def compute_occlusion_area_count():
 
 def compute_rf():
     pass
+
+
+def compute_mean_score(scores_tensor: Tensor) -> Tensor:
+    # [N agents, K modes] -> [N agents]
+    return torch.mean(scores_tensor, dim=-1)
+
+
+def compute_min_score(scores_tensor: Tensor) -> Tensor:
+    # [N agents, K modes] -> [N agents]
+    return torch.min(scores_tensor, dim=-1)[0]
 
 
 if __name__ == '__main__':
@@ -164,6 +175,13 @@ if __name__ == '__main__':
         with open(os.path.join(save_dir, filename), 'wb') as f:
             pickle.dump(out_dict, f, protocol=pickle.HIGHEST_PROTOCOL)
 
+    # preparing the table of outputs
+    df_indices = ['idx', 'agent_id']
+    mode_ades = [f'K{i}_ADE' for i in range(cfg.sample_k)]
+    mode_fdes = [f'K{i}_FDE' for i in range(cfg.sample_k)]
+    df_columns = df_indices + mode_ades + mode_fdes
+    score_df = pd.DataFrame(columns=df_columns)
+
     # computing performance metrics from saved predictions
     for i, in_data in enumerate(test_loader):
 
@@ -196,33 +214,30 @@ if __name__ == '__main__':
         assert torch.all(infer_pred_identities == gt_identities)
         assert torch.all(infer_pred_timesteps == gt_timesteps)
 
-        identity_mask = valid_ids.unsqueeze(1) == infer_pred_identities.unsqueeze(0)
+        identity_mask = valid_ids.unsqueeze(1) == infer_pred_identities.unsqueeze(0)        # [N, P]
 
-        # print(f"{valid_ids=}")
-        # print(f"{infer_pred_identities=}")
-        # print(f"{identity_mask, identity_mask.shape=}")
-
-        # PERFORM METRIC MEASUREMENTS
-
-        infer_ade_scores = compute_sequence_ADE(
+        # COMPUTE SCORES
+        infer_ade_scores = compute_samples_ADE(
             pred_positions=infer_pred_positions,
             gt_positions=gt_positions,
             identities=valid_ids,
             identity_mask=identity_mask
-        )
-
-        infer_fde_scores = compute_sequence_FDE(
+        )           # [N, K]
+        infer_fde_scores = compute_samples_FDE(
             pred_positions=infer_pred_positions,
             gt_positions=gt_positions,
             identities=valid_ids,
             identity_mask=identity_mask
-        )
+        )           # [N, K]
 
-        print(f"{infer_ade_scores=}")
-        print(f"{infer_fde_scores=}")
-
-        # TODO: CONTINUE HERE
-        raise NotImplementedError
+        # APPEND SCORE VALUES TO TABLE
+        for i_agent, valid_id in enumerate(valid_ids):
+            # i, agent_id, K{i}
+            df_row = [i, int(valid_id)]
+            df_row.extend(infer_ade_scores[i_agent].tolist())
+            df_row.extend(infer_fde_scores[i_agent].tolist())
+            assert len(df_row) == len(df_columns)
+            score_df.loc[len(score_df)] = df_row
 
         # # TODO: DO IT FOR RECON TOO NOW
         # recon_pred_identities = pred_data['recon_dec_agents'][0]        # [P]
@@ -230,5 +245,26 @@ if __name__ == '__main__':
         # recon_pred_positions = pred_data['recon_dec_motion']            # [1, P, 2]
         # recon_pred_past_mask = pred_data['recon_dec_past_mask']         # [P]
 
+    # postprocessing on the table
+    score_df[['idx', 'agent_id']] = score_df[['idx', 'agent_id']].astype(int)
+    score_df.set_index(keys=['idx', 'agent_id'], inplace=True)
+    score_df['min_ADE'] = score_df[mode_ades].mean(axis=1)
+    score_df['mean_ADE'] = score_df[mode_ades].mean(axis=1)
+    score_df['min_FDE'] = score_df[mode_fdes].mean(axis=1)
+    score_df['mean_FDE'] = score_df[mode_fdes].mean(axis=1)
+    score_df['rF'] = score_df['mean_FDE'] / score_df['min_FDE']
+    score_df['rF'] = score_df['rF'].fillna(value=1.0)
 
+    # saving the table, and the score summary
+    df_save_name = os.path.join(save_dir, 'prediction_scores.csv')
+    print(f"saving prediction scores table under:\n{df_save_name}")
+    score_df.to_csv(df_save_name, sep=',', encoding='utf-8')
 
+    score_dict = {x: float(score_df[x].mean()) for x in score_df.columns}
+    yml_save_name = os.path.join(save_dir, 'prediction_scores.yml')
+    print(f"saving prediction scores summary under:\n{yml_save_name}")
+    with open(yml_save_name, 'w') as f:
+        yaml.dump(score_dict, f)
+
+    print(score_df)
+    [print(f"{key}:\t\t{val}") for key, val in score_dict.items()]
