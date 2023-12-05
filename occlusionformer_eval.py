@@ -58,13 +58,91 @@ def compute_samples_FDE(
     return scores_tensor        # [N, K]
 
 
-def compute_occlusion_area_occupancy():
-    # Park et al.'s DAO applied on the occlusion map
-    pass
+def compute_occlusion_area_occupancy(
+        occlusion_map: Tensor,      # [H, W]
+        pred_positions: Tensor,     # [K, P, 2]
+        identities: Tensor,         # [N]
+        identity_mask: Tensor,      # [N, P]
+):
+    # TODO: WE NEED TO CHECK SOMEWHERE THAT THERE *IS* AN OCCLUSION ZONE
+    #   MAYBE CHECK WITH THE PRED POSITIONS TENSOR. IF P==0 WE MIGHT JUST SKIP THE FUNCTION ALTOGETHER
+    # Park et al.'s Drivable Area Occupancy metric, applied to the occlusion map
+    # We assume that the predictions are already expressed in pixel coordinates
 
+    # outputs are: (DAO for each agent, Bool tensor telling us which agents have Out-Of-Map predictions)
+
+    in_occl_zone = occlusion_map <= 0.0
+
+    scores_tensor = torch.zeros([identities.shape[0]])
+    is_oom_tensor = torch.full([identities.shape[0]], False)
+    oom_agents_tensor = torch.logical_or(
+        pred_positions < torch.tensor([0, 0]),
+        pred_positions >= torch.tensor([occlusion_map.shape[0], occlusion_map.shape[1]])
+    ).any(-1).any(0)        # [P]
+    print(f"{oom_agents_tensor, oom_agents_tensor.shape=}")
+
+    agent_preds_pixel_locations = pred_positions.to(torch.int64)
+
+    for i, (mask, identity) in enumerate(zip(identity_mask, identities)):
+        if torch.any(oom_agents_tensor[mask]):
+            print(f"AGENT {i} is OOM!!!")
+            is_oom_tensor[i] = True
+            continue
+
+        print(f"{mask, mask.shape=}")
+        agent_preds = agent_preds_pixel_locations[:, mask, :]       # [K, p, 2]        # p can be 0
+        agent_preds = agent_preds.reshape(-1, 2)                    # [K * p, 2]
+        print(f"{agent_preds, agent_preds.shape=}")
+
+        preds_in_occl_zone = in_occl_zone[agent_preds[:, 0], agent_preds[:, 1]]                   # [K * p]
+        print(f"{preds_in_occl_zone, preds_in_occl_zone.shape=}")
+
+        print(f"{torch.sum(preds_in_occl_zone)=}")
+        print(f"{torch.sum(in_occl_zone)=}")
+        scores_tensor[i] = torch.sum(preds_in_occl_zone) / torch.sum(in_occl_zone)
+
+    return scores_tensor, is_oom_tensor   # [N], [N], [N]
+
+dummy_H = 20
+dummy_W = 25
+dummy_occl_map = torch.meshgrid(torch.arange(dummy_H), torch.arange(dummy_W))        # [H, W]
+dummy_occl_map = 3 * dummy_occl_map[0] + 5 * dummy_occl_map[1] - 60
+
+print(f"{dummy_occl_map=}")
+dummy_identities = torch.tensor([1, 2, 3])
+dummy_identity_mask = torch.tensor([[False, False, False, False, False],
+                                    [True, False, True, False, False],
+                                    [False, True, False, True, True]])
+
+dummy_pred_pos = torch.tensor([[[-5000, 30],
+                                [3.3, 3.3],
+                                [10, 10],
+                                [5.3, 5.3],
+                                [7.3, 7.3]],
+
+                               [[10, 10],
+                                [3.3, 3.3],
+                                [10, 10],
+                                [6.3, 6.3],
+                                [19.3, 19.3]]])         # [2, 5, 2]
+
+
+score, is_oom = compute_occlusion_area_occupancy(
+    occlusion_map=dummy_occl_map,
+    pred_positions=dummy_pred_pos,
+    identities=dummy_identities,
+    identity_mask=dummy_identity_mask
+)
+
+print(f"{score, score.shape=}")
+print(f"{is_oom, is_oom.shape=}")
+print(f"{is_oom, is_oom.shape=}")
+
+raise NotImplementedError
 
 def compute_occlusion_area_count():
-    # Park et al.'s DAC applied on the occlusion map
+    # Park et al.'s Drivable Area Count, applied to the occlusion map
+    # We assume that the predictions are already expressed in pixel coordinates
     pass
 
 
@@ -83,6 +161,8 @@ def compute_min_score(scores_tensor: Tensor) -> Tensor:
 
 
 if __name__ == '__main__':
+    raise NotImplementedError
+
     parser = argparse.ArgumentParser()
     parser.add_argument('--cfg', default=None)
     parser.add_argument('--data_split', type=str, default='test')
