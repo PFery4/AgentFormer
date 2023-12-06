@@ -38,6 +38,27 @@ def logging(cfg, epoch, total_epoch, iter, total_iter, ep, seq, frame, losses_st
         print(prnt_str)
 
 
+def report_losses(loss_meter, epoch_idx, batch_idx, split='train'):
+    tb_x = epoch_idx * len(training_loader) + batch_idx + 1
+    for name, meter in loss_meter.items():
+        tb_logger.add_scalar(f'model_{split}_{name}', meter.avg, tb_x)
+    tb_logger.flush()
+    with open(csv_val_logfile, 'a') as f:
+        dict_writer = DictWriter(f, fieldnames=csv_field_names)
+        meter_dict = {name: meter.avg for name, meter in loss_meter.items()}
+        row_dict = {**{'tb_x': tb_x, 'epoch': epoch_idx, 'batch': batch_idx}, **meter_dict}
+        dict_writer.writerow(row_dict)
+        f.close()
+
+
+def mark_epoch_end_in_csv(csv_logfile, epoch_idx):
+    with open(csv_logfile, 'a') as f:
+        dict_writer = DictWriter(f, fieldnames=csv_field_names)
+        row_dict = {name: f"END OF EPOCH {epoch_idx}" for name in csv_field_names}
+        dict_writer.writerow(row_dict)
+        f.close()
+
+
 def train_one_batch(model, data, optimizer):
     # providing the data dictionary to the model
     model.set_data(data=data)
@@ -48,7 +69,7 @@ def train_one_batch(model, data, optimizer):
     # making a prediction
     model_data = model()
 
-    # computing loss and updating model parameters
+    # computing losses and updating model parameters
     total_loss, loss_dict, loss_unweighted_dict = model.compute_loss()
     total_loss.backward()
     optimizer.step()
@@ -62,72 +83,75 @@ def update_loss_meters(loss_meter, total_loss, loss_unweighted_dict):
         loss_meter[key].update(loss_unweighted_dict[key])
 
 
+def save_model(epoch_idx, batch_idx, train_loss_avg, val_loss_avg):
+    save_name = f"epoch_{epoch_idx}_batch_{batch_idx}"
+    cp_path = cfg.model_path % save_name
+    model_cp = {'model_dict': model.state_dict(), 'opt_dict': optimizer.state_dict(),
+                'scheduler_dict': scheduler.state_dict(),
+                'epoch_idx': epoch_idx, 'batch_idx': batch_idx,
+                'train_loss': train_loss_avg,
+                'val_loss': val_loss_avg}
+
+    log_str = f"saving model at:\n{cp_path}"
+    print_log(log_str, log=log)
+
+    torch.save(model_cp, cp_path)
+
+    with open(csv_models, 'a+') as f:
+        dict_writer = DictWriter(f, fieldnames=csv_models_field_names)
+        row_dict = {
+            'epoch': epoch_idx,
+            'batch': batch_idx,
+            'model_name': save_name,
+            'train_loss': train_loss_avg,
+            'val_loss': val_loss_avg
+        }
+        dict_writer.writerow(row_dict)
+
+
 def train(epoch_index: int, batch_idx: int = 0):
     since_train = time.time()
+
     train_loss_meter = {x: AverageMeter() for x in cfg.loss_cfg.keys()}
     train_loss_meter['total_loss'] = AverageMeter()
+
+    val_loss_meter = {x: AverageMeter() for x in cfg.loss_cfg.keys()}
+    val_loss_meter['total_loss'] = AverageMeter()
+
+    data_iter = iter(training_loader)
 
     if batch_idx != 0:
         log_str = f"Continuing from where we last stopped! Skipping the first {batch_idx} instances for this epoch."
         print_log(log_str, log=log)
 
-    data_iter = iter(training_loader)
-    for i in range(batch_idx):
-        next(data_iter)
+        for i in range(batch_idx):
+            next(data_iter)
 
     for i, data in enumerate(data_iter, start=batch_idx):
-        # # providing the data dictionary to the model
-        # model.set_data(data=data)
-        #
-        # # zeroing the gradients
-        # optimizer.zero_grad()
-        #
-        # # making a prediction
-        # model_data = model()
-        #
-        # # computing loss and updating model parameters
-        # total_loss, loss_dict, loss_unweighted_dict = model.compute_loss()
-        # total_loss.backward()
-        # optimizer.step()
+
+        # training
         total_loss, loss_dict, loss_unweighted_dict = train_one_batch(model=model, data=data, optimizer=optimizer)
 
-        # memory_report('BEFORE UPDATING LOSS METERS')
-        # train_loss_meter['total_loss'].update(total_loss.item())
-        # for key in loss_unweighted_dict.keys():
-        #     train_loss_meter[key].update(loss_unweighted_dict[key])
+        # updating our training loss monitors
         update_loss_meters(
-            loss_meter=train_loss_meter,
-            total_loss=total_loss,
-            loss_unweighted_dict=loss_unweighted_dict
+            loss_meter=train_loss_meter, total_loss=total_loss, loss_unweighted_dict=loss_unweighted_dict
         )
-        # memory_report('AFTER UPDATING LOSS METERS')
 
+        # every <print_freq> step:
+        #   report the training losses
         if i % cfg.print_freq == cfg.print_freq - 1:
             ep = time.time() - since_train
             losses_str = ' '.join([f'{x}: {y.avg:.3f} ({y.val:.3f})' for x, y in train_loss_meter.items()])
             logging(
-                cfg=args.cfg,
-                epoch=epoch_index,
-                total_epoch=cfg.num_epochs,
-                iter=i,
-                total_iter=len(training_loader),
-                ep=ep,
-                seq=data['seq'][0],
-                frame=data['frame'][0],
-                losses_str=losses_str,
-                log=log
+                cfg=args.cfg, epoch=epoch_index, total_epoch=cfg.num_epochs, iter=i, total_iter=len(training_loader),
+                ep=ep, seq=data['seq'][0], frame=data['frame'][0], losses_str=losses_str, log=log
             )
-            tb_x = epoch_index * len(training_loader) + i + 1
-            for name, meter in train_loss_meter.items():
-                tb_logger.add_scalar(f'model_{name}', meter.avg, tb_x)
-            with open(csv_train_logfile, 'a') as f:
-                dict_writer = DictWriter(f, fieldnames=csv_field_names)
-                meter_dict = {name: meter.avg for name, meter in train_loss_meter.items()}
-                row_dict = {**{'tb_x': tb_x, 'epoch': epoch_index, 'batch': i}, **meter_dict}
-                dict_writer.writerow(row_dict)
-                f.close()
+            report_losses(
+                loss_meter=train_loss_meter, epoch_idx=epoch_index, batch_idx=i, split='train'
+            )
 
-        """ perform validation, and model saving """
+        # every <validation_freq> step:
+        #   advance the scheduler, perform validation, report validation losses, and save the model
         if (cfg.validation_freq > 0 and i % cfg.validation_freq == cfg.validation_freq - 1) or \
                 (i + 1) == len(training_loader):
 
@@ -135,77 +159,60 @@ def train(epoch_index: int, batch_idx: int = 0):
             print_log(log_str, log=log)
             val_time = time.time()
 
-            # TODO: figure out how frequently we should step the scheduler.
-            #   Does it make sense to have this bit of code here, in the validation section?
-            #   Or should we not define a new frequency parameter to manage this subprocess?
+            # advance the scheduler
             scheduler.step()
             model.step_annealer()
 
-            val_loss_meter = {x: AverageMeter() for x in cfg.loss_cfg.keys()}
-            val_loss_meter['total_loss'] = AverageMeter()
-
+            # make sure the model is not training
             model.eval()
 
+            # go over the validation dataset
             with torch.no_grad():
                 for i_val, val_data in enumerate(validation_loader):
-                    model.set_data(val_data)
+                    # providing the data dictionary to the model
+                    model.set_data(data=val_data)
+
+                    # making a prediction
                     model_data = model()
 
+                    # computing losses
                     total_val_loss, val_loss_dict, val_loss_unweighted_dict = model.compute_loss()
 
+                    # updating validation loss monitors
                     update_loss_meters(
                         loss_meter=val_loss_meter,
                         total_loss=total_val_loss,
                         loss_unweighted_dict=val_loss_unweighted_dict
                     )
 
-            tb_x = epoch_index * len(training_loader) + i + 1
-            for name, meter in val_loss_meter.items():
-                tb_logger.add_scalar(f'model_val_{name}', meter.avg, tb_x)
-            tb_logger.flush()
-            with open(csv_val_logfile, 'a') as f:
-                dict_writer = DictWriter(f, fieldnames=csv_field_names)
-                meter_dict = {name: meter.avg for name, meter in val_loss_meter.items()}
-                row_dict = {**{'tb_x': tb_x, 'epoch': epoch_index, 'batch': i}, **meter_dict}
-                dict_writer.writerow(row_dict)
-                f.close()
+            # report the validation losses
+            report_losses(
+                loss_meter=val_loss_meter, epoch_idx=epoch_index, batch_idx=i, split='val'
+            )
 
             val_duration = time.time() - val_time
             log_str = f"Epoch {epoch_index}, batch {i}: Validation loss is {val_loss_meter['total_loss'].avg}\n" \
                       f"Validation took: {convert_secs2time(val_duration)}"
             print_log(log_str, log=log)
 
-            save_name = f"epoch_{epoch_index}_batch_{i}"
-            cp_path = cfg.model_path % save_name
-            model_cp = {'model_dict': model.state_dict(), 'opt_dict': optimizer.state_dict(),
-                        'scheduler_dict': scheduler.state_dict(),
-                        'epoch_idx': epoch_index, 'batch_idx': i,
-                        'val_loss': val_loss_meter['total_loss'].avg}
-            log_str = f"saving model at:\n{cp_path}"
-            print_log(log_str, log=log)
-            torch.save(model_cp, cp_path)
-            with open(csv_models, 'a+') as f:
-                dict_writer = DictWriter(f, fieldnames=csv_models_field_names)
-                row_dict = {
-                    'epoch': epoch_index,
-                    'batch': i,
-                    'model_name': save_name,
-                    'val_loss': val_loss_meter['total_loss'].avg
-                }
-                dict_writer.writerow(row_dict)
+            # save the model
+            save_model(
+                epoch_idx=epoch_index, batch_idx=i,
+                train_loss_avg=train_loss_meter['total_loss'].avg,
+                val_loss_avg=val_loss_meter['total_loss'].avg
+            )
+
+            # reset losses monitors
+            [meter.reset() for meter in train_loss_meter.values()]
+            [meter.reset() for meter in val_loss_meter.values()]
+
+            # make sure the model can train again
+            model.train(True)
 
             print_log("\n\n", log=log)
 
-    with open(csv_train_logfile, 'a') as f:
-        dict_writer = DictWriter(f, fieldnames=csv_field_names)
-        row_dict = {name: f"END OF EPOCH {epoch_index}" for name in csv_field_names}
-        dict_writer.writerow(row_dict)
-        f.close()
-    with open(csv_val_logfile, 'a') as f:
-        dict_writer = DictWriter(f, fieldnames=csv_field_names)
-        row_dict = {name: f"END OF EPOCH {epoch_index}" for name in csv_field_names}
-        dict_writer.writerow(row_dict)
-        f.close()
+    mark_epoch_end_in_csv(csv_logfile=csv_train_logfile, epoch_idx=epoch_index)
+    mark_epoch_end_in_csv(csv_logfile=csv_val_logfile, epoch_idx=epoch_index)
 
 
 if __name__ == '__main__':
@@ -278,7 +285,7 @@ if __name__ == '__main__':
             row_dict = {name: name for name in csv_field_names}
             dict_writer.writerow(row_dict)
     csv_models = os.path.join(cfg.model_dir, 'models.csv')
-    csv_models_field_names = ['epoch', 'batch', 'model_name', 'val_loss']
+    csv_models_field_names = ['epoch', 'batch', 'model_name', 'train_loss', 'val_loss']
     with open(csv_models, 'a+') as f:
         dict_writer = DictWriter(f, fieldnames=csv_models_field_names)
         row_dict = {name: name for name in csv_models_field_names}
