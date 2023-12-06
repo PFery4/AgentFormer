@@ -13,6 +13,7 @@ if __name__ == '__main__':
     parser.add_argument('--split', nargs='+', default=None)
     parser.add_argument('--save', type=bool, default=False)
     parser.add_argument('--show', type=bool, default=False)
+    parser.add_argument('--weighted_losses', type=bool, default=True)
     args = parser.parse_args()
 
     print(args.split)
@@ -66,6 +67,12 @@ if __name__ == '__main__':
         loss_names = [name for name in df.columns.tolist() if name not in ['tb_x', 'epoch', 'batch']]
         df = df.astype({'tb_x': int, 'epoch': int, 'batch': int})
         df = df.astype({name: float for name in loss_names})
+
+        # multiply unweighted loss values by their weight factor
+        loss_weights = {name: loss_dict['weight'] for name, loss_dict in cfg.loss_cfg.items()}
+        if args.weighted_losses:
+            for name, weight in loss_weights.items():
+                df[name] *= weight
 
         # get the x-axis values corresponding to the beginning of a new epoch
         new_epochs_tb_x = df['tb_x'][~(df['epoch'].eq(df['epoch'].shift()))].to_numpy()
