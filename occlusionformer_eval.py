@@ -23,15 +23,14 @@ Tensor = torch.Tensor
 def compute_samples_ADE(
         pred_positions: Tensor,         # [K, P, 2]
         gt_positions: Tensor,           # [P, 2]
-        identities: Tensor,             # [N]
         identity_mask: Tensor,          # [N, P]
-) -> Tensor:        # [N, K]
+) -> Tensor:                            # [N, K]
 
     diff = gt_positions - pred_positions        # [K, P, 2]
     dists = diff.pow(2).sum(-1).sqrt()          # [K, P]
 
-    scores_tensor = torch.zeros([identities.shape[0], pred_positions.shape[0]])     # [N, K]
-    for i, (mask, identity) in enumerate(zip(identity_mask, identities)):
+    scores_tensor = torch.zeros([identity_mask.shape[0], pred_positions.shape[0]])     # [N, K]
+    for i, mask in enumerate(identity_mask):
         masked_dist = dists[:, mask]                # [K, p]
         ades = torch.mean(masked_dist, dim=-1)      # [K]
         scores_tensor[i, :] = ades
@@ -42,108 +41,231 @@ def compute_samples_ADE(
 def compute_samples_FDE(
         pred_positions: Tensor,         # [K, P, 2]
         gt_positions: Tensor,           # [P, 2]
-        identities: Tensor,             # [N]
         identity_mask: Tensor,          # [N, P]
-) -> Tensor:        # [N, K]
+) -> Tensor:                            # [N, K]
 
     diff = gt_positions - pred_positions        # [K, P, 2]
     dists = diff.pow(2).sum(-1).sqrt()          # [K, P]
 
-    scores_tensor = torch.zeros([identities.shape[0], pred_positions.shape[0]])     # [N, K]
-    for i, (mask, identity) in enumerate(zip(identity_mask, identities)):
+    scores_tensor = torch.zeros([identity_mask.shape[0], pred_positions.shape[0]])     # [N, K]
+    for i, mask in enumerate(identity_mask):
         masked_dist = dists[:, mask]            # [K, p]
-        fdes = masked_dist[:, -1]               # [K]
+        try:
+            fdes = masked_dist[:, -1]               # [K]
+        except IndexError:
+            fdes = torch.full([pred_positions.shape[0]], float('nan'))
         scores_tensor[i, :] = fdes
 
     return scores_tensor        # [N, K]
 
 
-def compute_occlusion_area_occupancy(
+def compute_pred_lengths(
+        identity_mask: Tensor           # [N, P]
+) -> Tensor:                            # [N, 1]
+    return torch.sum(identity_mask, dim=-1).unsqueeze(-1)
+
+
+def compute_points_out_of_map(
+        map_dims: torch.Size,   # (H, W)
+        points: Tensor          # [*, 2]
+) -> Tensor:                    # [*]
+    # returns a bool mask that is True for points that lie outside the map.
+    # we assume that <points> are already expressed in pixel coordinates.
+    return torch.logical_or(
+        points < torch.tensor([0., 0.]),
+        points >= torch.tensor(map_dims[::-1])
+    ).any(-1)
+
+
+def compute_points_in_occlusion_zone(
         occlusion_map: Tensor,      # [H, W]
-        pred_positions: Tensor,     # [K, P, 2]
-        identities: Tensor,         # [N]
+        points: Tensor              # [*, 2]
+) -> Tensor:                        # [*]
+    # returns a bool mask that is True for points that are in the occlusion zone.
+    # we assume that <points> are already expressed in pixel coordinates.
+    H, W = occlusion_map.shape
+
+    x = points[..., 0]          # [*]
+    y = points[..., 1]          # [*]
+    x = x.clamp(1e-4, W - 1e-4)
+    y = y.clamp(1e-4, H - 1e-4)
+    x = x.to(torch.int64)
+    y = y.to(torch.int64)
+
+    points_in_occlusion_zone = occlusion_map[y, x]     # [*]
+
+    return points_in_occlusion_zone <= 0.0
+
+
+def compute_samples_out_of_map(
+        points_out_of_map: Tensor,      # [K, P]
+        identity_mask: Tensor           # [N, P]
+) -> Tensor:
+    identity_ooms = torch.logical_and(
+        identity_mask.unsqueeze(1),         # [N, 1, P]
+        points_out_of_map.unsqueeze(0)      # [1, K, P]
+    )                                       # [N, K, P]
+    return torch.any(identity_ooms, dim=-1)        # [N, K]
+
+
+def compute_samples_out_of_occlusion_zone(
+        points_in_occlusion_zone: Tensor,       # [K, P]
+        identity_mask: Tensor                   # [N, P]
+) -> Tensor:
+    identity_out_of_zone = torch.logical_and(
+        identity_mask.unsqueeze(1),             # [N, 1, P]
+        ~points_in_occlusion_zone.unsqueeze(0)  # [1, K, P]
+    )                                           # [N, K, P]
+    return torch.any(identity_out_of_zone, dim=-1)  # [N, K]
+
+
+def agent_mode_sequence_tensor(
+        mode_tensor: Tensor,        # [K, P]
         identity_mask: Tensor,      # [N, P]
-):
-    # TODO: WE NEED TO CHECK SOMEWHERE THAT THERE *IS* AN OCCLUSION ZONE
-    #   MAYBE CHECK WITH THE PRED POSITIONS TENSOR. IF P==0 WE MIGHT JUST SKIP THE FUNCTION ALTOGETHER
-    # Park et al.'s Drivable Area Occupancy metric, applied to the occlusion map
-    # We assume that the predictions are already expressed in pixel coordinates
+) -> Tensor:                        # [N, K]
+    return torch.logical_and(
+        identity_mask.unsqueeze(1),         # [N, 1, P]
+        mode_tensor.unsqueeze(0)            # [1, K, P]
+    )                                       # [N, K, P]
 
-    # outputs are: (DAO for each agent, Bool tensor telling us which agents have Out-Of-Map predictions)
 
-    in_occl_zone = occlusion_map <= 0.0
+def compute_occlusion_area_count(
+        pred_positions: Tensor,         # [K, P, 2]
+        occlusion_map: Tensor,          # [H, W]
+        identity_mask: Tensor,          # [N, P]
+) -> Tensor:                            # [N, 1]
+    """
+    Park et al.'s Drivable Area Count metric, applied to the occlusion map.
+    Note that we dismiss all modes that go outside the map; i.e., for each agent we first look at
+    which modes go outside the map. From the remaining "legal" predictions (L), we compute the number of
+    predictions which go out of the occlusion zone (M). The OAC is then equal to:
+    (L-M)/L
 
-    scores_tensor = torch.zeros([identities.shape[0]])
-    is_oom_tensor = torch.full([identities.shape[0]], False)
-    oom_agents_tensor = torch.logical_or(
-        pred_positions < torch.tensor([0, 0]),
-        pred_positions >= torch.tensor([occlusion_map.shape[0], occlusion_map.shape[1]])
-    ).any(-1).any(0)        # [P]
-    print(f"{oom_agents_tensor, oom_agents_tensor.shape=}")
+    Note that L might be a smaller number than the originally predicted amount of modes (K), as some of them might
+    leave the map, and therefore be considered "illegal".
+    """
+    # we assume that <pred_positions> are already expressed in pixel coordinates.
 
-    agent_preds_pixel_locations = pred_positions.to(torch.int64)
+    points_out_of_map = compute_points_out_of_map(
+        map_dims=occlusion_map.shape, points=pred_positions
+    )       # [K, P]
+    points_out_of_occlusion_zone = ~compute_points_in_occlusion_zone(
+        occlusion_map=occlusion_map, points=pred_positions
+    )       # [K, P]
+    samples_out_of_map = agent_mode_sequence_tensor(
+        mode_tensor=points_out_of_map, identity_mask=identity_mask
+    ).any(dim=-1)       # [N, P]
+    samples_out_of_occlusion_zone = agent_mode_sequence_tensor(
+        mode_tensor=points_out_of_occlusion_zone, identity_mask=identity_mask
+    ).any(dim=-1)       # [N, P]
 
-    for i, (mask, identity) in enumerate(zip(identity_mask, identities)):
-        if torch.any(oom_agents_tensor[mask]):
-            print(f"AGENT {i} is OOM!!!")
-            is_oom_tensor[i] = True
-            continue
+    l_tensor = torch.sum(~samples_out_of_map, dim=-1)        # [N]
+    m_tensor = torch.sum(torch.logical_and(samples_out_of_occlusion_zone, ~samples_out_of_map), dim=-1)     # [N]
+    oac = ((l_tensor - m_tensor) / l_tensor)
 
-        print(f"{mask, mask.shape=}")
-        agent_preds = agent_preds_pixel_locations[:, mask, :]       # [K, p, 2]        # p can be 0
-        agent_preds = agent_preds.reshape(-1, 2)                    # [K * p, 2]
-        print(f"{agent_preds, agent_preds.shape=}")
+    oac[identity_mask.sum(-1) == 0] = float('nan')
 
-        preds_in_occl_zone = in_occl_zone[agent_preds[:, 0], agent_preds[:, 1]]                   # [K * p]
-        print(f"{preds_in_occl_zone, preds_in_occl_zone.shape=}")
+    return oac.unsqueeze(-1)     # [N, 1]
 
-        print(f"{torch.sum(preds_in_occl_zone)=}")
-        print(f"{torch.sum(in_occl_zone)=}")
-        scores_tensor[i] = torch.sum(preds_in_occl_zone) / torch.sum(in_occl_zone)
 
-    return scores_tensor, is_oom_tensor   # [N], [N], [N]
+def compute_occlusion_area_occupancy(
+        pred_positions: Tensor,             # [K, P, 2]
+        occlusion_map: Tensor,              # [H, W]
+        identity_mask: Tensor,              # [N, P]
+) -> Tensor:                                # [N, 1]
+    """
+    Park et al.'s Drivable Area Occupancy metric, applied to the occlusion map.
+    Note that we dismiss all modes that go outside the map; i.e., for each agent we first look at
+    which modes go outside the map. From the remaining "legal" predictions (L), we compute the OAO as:
+                count_traj / (len(past_traj) * count_occlusion_zone * L)
 
-dummy_H = 20
-dummy_W = 25
-dummy_occl_map = torch.meshgrid(torch.arange(dummy_H), torch.arange(dummy_W))        # [H, W]
-dummy_occl_map = 3 * dummy_occl_map[0] + 5 * dummy_occl_map[1] - 60
+    where:
+        - count_traj is the number of points lying within the occlusion zone across all predictions made for
+        the agent in question
+        - len(past_traj) is equal to the number of timesteps predicted over the past for that prediction
+        (we do need to normalize by that number, as we have varying past sequence lengths)
+        - count_occlusion_zone is the number of pixels of the occlusion zone
+
+    Note that L might be a smaller number than the originally predicted amount of modes (K), as some of them might
+    leave the map, and therefore be considered "illegal".
+    """
+    # we assume that <pred_positions> are already expressed in pixel coordinates
+    points_out_of_map = compute_points_out_of_map(
+        map_dims=occlusion_map.shape, points=pred_positions
+    )       # [K, P]
+    samples_out_of_map = agent_mode_sequence_tensor(
+        mode_tensor=points_out_of_map, identity_mask=identity_mask
+    ).any(dim=-1)       # [N, K]
+    points_in_occlusion_zone = compute_points_in_occlusion_zone(
+        occlusion_map=occlusion_map, points=pred_positions
+    )       # [K, P]
+    count_traj = agent_mode_sequence_tensor(
+        mode_tensor=points_in_occlusion_zone, identity_mask=identity_mask
+    ).sum(dim=-1)       # [N, K]
+    count_traj[samples_out_of_map] = 0.0       # [N, K]
+
+    l_tensor = torch.sum(~samples_out_of_map, dim=-1)       # [N]
+    len_past_traj = torch.sum(identity_mask, dim=-1)        # [N]
+    count_occlusion_zone = torch.sum(occlusion_map <= 0.0)  # []
+
+    oao = count_traj.sum(dim=-1) / (l_tensor * len_past_traj * count_occlusion_zone)
+
+    return oao.unsqueeze(-1)        # [N, 1]
+
+dummy_H = 10
+dummy_W = 10
+# dummy_occl_map = torch.meshgrid(torch.arange(dummy_H), torch.arange(dummy_W))        # [H, W]
+# dummy_occl_map = dummy_occl_map[0] + 2 * dummy_occl_map[1] - 15
+
+dummy_occl_map = torch.full([dummy_H, dummy_W], -10.)
+dummy_occl_map[:, 5:] = 8.
+dummy_occl_map[5:, :] = 8.
+
+# dummy_occl_map += torch.randn_like(dummy_occl_map)
 
 print(f"{dummy_occl_map=}")
-dummy_identities = torch.tensor([1, 2, 3])
+print()
 dummy_identity_mask = torch.tensor([[False, False, False, False, False],
-                                    [True, False, True, False, False],
-                                    [False, True, False, True, True]])
+                                    [True, True, True, False, False],
+                                    [False, False, False, True, True]])
 
-dummy_pred_pos = torch.tensor([[[-5000, 30],
-                                [3.3, 3.3],
-                                [10, 10],
-                                [5.3, 5.3],
-                                [7.3, 7.3]],
+dummy_pred_pos = torch.tensor([[[3.5, 3.5],
+                                [4.5, 3.5],
+                                [4.5, 3.5],
+                                [2.2, 2.2],
+                                [2.2, 2.2]],
 
-                               [[10, 10],
-                                [3.3, 3.3],
-                                [10, 10],
-                                [6.3, 6.3],
-                                [19.3, 19.3]]])         # [2, 5, 2]
+                               [[2.5, 3.5],
+                                [2.5, 3.5],
+                                [12000, 9.],
+                                [-4, 2.2],
+                                [7., 2.2]],
 
+                               [[2.5, 2.5],
+                                [2.5, 2.5],
+                                [2.5, 2.5],
+                                [2.2, 2.2],
+                                [7., 2.2]]])         # [3, 5, 2]
 
-score, is_oom = compute_occlusion_area_occupancy(
-    occlusion_map=dummy_occl_map,
+print(f"{dummy_pred_pos=}")
+print()
+
+oac = compute_occlusion_area_count(
     pred_positions=dummy_pred_pos,
-    identities=dummy_identities,
+    occlusion_map=dummy_occl_map,
     identity_mask=dummy_identity_mask
 )
 
-print(f"{score, score.shape=}")
-print(f"{is_oom, is_oom.shape=}")
-print(f"{is_oom, is_oom.shape=}")
+oao = compute_occlusion_area_occupancy(
+    pred_positions=dummy_pred_pos,
+    occlusion_map=dummy_occl_map,
+    identity_mask=dummy_identity_mask
+)
+
+print(f"{oac=}")
+print(f"{oao=}")
 
 raise NotImplementedError
-
-def compute_occlusion_area_count():
-    # Park et al.'s Drivable Area Count, applied to the occlusion map
-    # We assume that the predictions are already expressed in pixel coordinates
-    pass
 
 
 def compute_rf():
@@ -161,8 +283,6 @@ def compute_min_score(scores_tensor: Tensor) -> Tensor:
 
 
 if __name__ == '__main__':
-    raise NotImplementedError
-
     parser = argparse.ArgumentParser()
     parser.add_argument('--cfg', default=None)
     parser.add_argument('--data_split', type=str, default='test')
@@ -255,10 +375,34 @@ if __name__ == '__main__':
             pickle.dump(out_dict, f, protocol=pickle.HIGHEST_PROTOCOL)
 
     # preparing the table of outputs
+    metrics_to_compute = [
+        'ADE',
+        'FDE',
+        'pred_length',
+        'past_pred_length',
+        # 'past_ADE',
+        # 'past_FDE',
+        # 'out_of_map',
+        # 'in_occlusion_zone'
+    ]
+
+    metric_columns = {
+        'ADE': [f'K{i}_ADE' for i in range(cfg.sample_k)],
+        'FDE': [f'K{i}_FDE' for i in range(cfg.sample_k)],
+        'pred_length': ['pred_length'],
+        'past_pred_length': ['past_pred_length'],
+        'past_ADE': [f'K{i}_past_ADE' for i in range(cfg.sample_k)],
+        'past_FDE': [f'K{i}_past_FDE' for i in range(cfg.sample_k)],
+        'out_of_map': [f'K{i}_out_of_map' for i in range(cfg.sample_k)],
+        'in_occlusion_zone': [f'K{i}_in_occlusion_zone' for i in range(cfg.sample_k)],
+    }
+
     df_indices = ['idx', 'agent_id']
-    mode_ades = [f'K{i}_ADE' for i in range(cfg.sample_k)]
-    mode_fdes = [f'K{i}_FDE' for i in range(cfg.sample_k)]
-    df_columns = df_indices + mode_ades + mode_fdes
+    df_columns = df_indices.copy()
+
+    for metric_name in metrics_to_compute:
+        df_columns.extend(metric_columns[metric_name])
+
     score_df = pd.DataFrame(columns=df_columns)
 
     # computing performance metrics from saved predictions
@@ -295,49 +439,89 @@ if __name__ == '__main__':
 
         identity_mask = valid_ids.unsqueeze(1) == infer_pred_identities.unsqueeze(0)        # [N, P]
 
-        # COMPUTE SCORES
-        infer_ade_scores = compute_samples_ADE(
-            pred_positions=infer_pred_positions,
-            gt_positions=gt_positions,
-            identities=valid_ids,
-            identity_mask=identity_mask
-        )           # [N, K]
-        infer_fde_scores = compute_samples_FDE(
-            pred_positions=infer_pred_positions,
-            gt_positions=gt_positions,
-            identities=valid_ids,
-            identity_mask=identity_mask
-        )           # [N, K]
+        if 'past_pred_length' in metrics_to_compute:
+            past_mask = infer_pred_timesteps <= 0                                               # [P]
+            identity_and_past_mask = torch.logical_and(identity_mask, past_mask)                # [N, P]
+
+        computed_metrics = {metric_name: None for metric_name in metrics_to_compute}
+
+        for metric_name in metrics_to_compute:
+            if metric_name == 'ADE':
+                computed_metrics['ADE'] = compute_samples_ADE(
+                    pred_positions=infer_pred_positions,
+                    gt_positions=gt_positions,
+                    identity_mask=identity_mask
+                )       # [N, K]
+
+            if metric_name == 'FDE':
+                computed_metrics['FDE'] = compute_samples_FDE(
+                    pred_positions=infer_pred_positions,
+                    gt_positions=gt_positions,
+                    identity_mask=identity_mask
+                )       # [N, K]
+
+            if metric_name == 'pred_length':
+                computed_metrics['pred_length'] = compute_pred_lengths(
+                    identity_mask=identity_mask
+                )       # [N, 1]
+
+            if metric_name == 'past_pred_length':
+                computed_metrics['past_pred_length'] = compute_pred_lengths(
+                    identity_mask=identity_and_past_mask
+                )       # [N, 1]
+
+            if metric_name == 'past_ADE':
+                computed_metrics['past_ADE'] = compute_samples_ADE(
+                    pred_positions=infer_pred_positions,
+                    gt_positions=gt_positions,
+                    identity_mask=identity_and_past_mask
+                )       # [N, K]
+
+            if metric_name == 'past_FDE':
+                computed_metrics['past_FDE'] = compute_samples_FDE(
+                    pred_positions=infer_pred_positions,
+                    gt_positions=gt_positions,
+                    identity_mask=identity_and_past_mask
+                )       # [N, K]
+
+        assert all([val is not None for val in computed_metrics.values()])
 
         # APPEND SCORE VALUES TO TABLE
         for i_agent, valid_id in enumerate(valid_ids):
             # i, agent_id, K{i}
             df_row = [i, int(valid_id)]
-            df_row.extend(infer_ade_scores[i_agent].tolist())
-            df_row.extend(infer_fde_scores[i_agent].tolist())
+
+            for metric_name in metrics_to_compute:
+                df_row.extend(computed_metrics[metric_name][i_agent].tolist())
+
             assert len(df_row) == len(df_columns)
             score_df.loc[len(score_df)] = df_row
 
     # postprocessing on the table
     score_df[['idx', 'agent_id']] = score_df[['idx', 'agent_id']].astype(int)
     score_df.set_index(keys=['idx', 'agent_id'], inplace=True)
-    score_df['min_ADE'] = score_df[mode_ades].min(axis=1)
-    score_df['mean_ADE'] = score_df[mode_ades].mean(axis=1)
-    score_df['min_FDE'] = score_df[mode_fdes].min(axis=1)
-    score_df['mean_FDE'] = score_df[mode_fdes].mean(axis=1)
-    score_df['rF'] = score_df['mean_FDE'] / score_df['min_FDE']
-    score_df['rF'] = score_df['rF'].fillna(value=1.0)
 
-    # saving the table, and the score summary
-    df_save_name = os.path.join(save_dir, 'prediction_scores.csv')
-    print(f"saving prediction scores table under:\n{df_save_name}")
-    score_df.to_csv(df_save_name, sep=',', encoding='utf-8')
+    if 'ADE' in metrics_to_compute:
+        mode_ades = metric_columns['ADE']
+        score_df['min_ADE'] = score_df[mode_ades].min(axis=1)
+        score_df['mean_ADE'] = score_df[mode_ades].mean(axis=1)
+    if 'FDE' in metrics_to_compute:
+        mode_fdes = metric_columns['FDE']
+        score_df['min_FDE'] = score_df[mode_fdes].min(axis=1)
+        score_df['mean_FDE'] = score_df[mode_fdes].mean(axis=1)
+        score_df['rF'] = score_df['mean_FDE'] / score_df['min_FDE']
+        # score_df['rF'] = score_df['rF'].fillna(value=1.0)
 
+    # # saving the table, and the score summary
+    # df_save_name = os.path.join(save_dir, 'prediction_scores.csv')
+    # print(f"saving prediction scores table under:\n{df_save_name}")
+    # score_df.to_csv(df_save_name, sep=',', encoding='utf-8')
+    #
     score_dict = {x: float(score_df[x].mean()) for x in score_df.columns}
-    yml_save_name = os.path.join(save_dir, 'prediction_scores.yml')
-    print(f"saving prediction scores summary under:\n{yml_save_name}")
-    with open(yml_save_name, 'w') as f:
-        yaml.dump(score_dict, f)
+    # yml_save_name = os.path.join(save_dir, 'prediction_scores.yml')
+    # print(f"saving prediction scores summary under:\n{yml_save_name}")
+    # with open(yml_save_name, 'w') as f:
+    #     yaml.dump(score_dict, f)
 
     print(score_df)
     [print(f"{key}:\t\t{val}") for key, val in score_dict.items()]
