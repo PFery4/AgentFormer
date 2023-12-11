@@ -72,8 +72,8 @@ def compute_points_out_of_map(
     # returns a bool mask that is True for points that lie outside the map.
     # we assume that <points> are already expressed in pixel coordinates.
     return torch.logical_or(
-        points < torch.tensor([0., 0.]),
-        points >= torch.tensor(map_dims[::-1])
+        points < torch.tensor([0., 0.], device=points.device),
+        points >= torch.tensor(map_dims[::-1], device=points.device)
     ).any(-1)
 
 
@@ -212,60 +212,60 @@ def compute_occlusion_area_occupancy(
 
     return oao.unsqueeze(-1)        # [N, 1]
 
-dummy_H = 10
-dummy_W = 10
-# dummy_occl_map = torch.meshgrid(torch.arange(dummy_H), torch.arange(dummy_W))        # [H, W]
-# dummy_occl_map = dummy_occl_map[0] + 2 * dummy_occl_map[1] - 15
-
-dummy_occl_map = torch.full([dummy_H, dummy_W], -10.)
-dummy_occl_map[:, 5:] = 8.
-dummy_occl_map[5:, :] = 8.
-
-# dummy_occl_map += torch.randn_like(dummy_occl_map)
-
-print(f"{dummy_occl_map=}")
-print()
-dummy_identity_mask = torch.tensor([[False, False, False, False, False],
-                                    [True, True, True, False, False],
-                                    [False, False, False, True, True]])
-
-dummy_pred_pos = torch.tensor([[[3.5, 3.5],
-                                [4.5, 3.5],
-                                [4.5, 3.5],
-                                [2.2, 2.2],
-                                [2.2, 2.2]],
-
-                               [[2.5, 3.5],
-                                [2.5, 3.5],
-                                [12000, 9.],
-                                [-4, 2.2],
-                                [7., 2.2]],
-
-                               [[2.5, 2.5],
-                                [2.5, 2.5],
-                                [2.5, 2.5],
-                                [2.2, 2.2],
-                                [7., 2.2]]])         # [3, 5, 2]
-
-print(f"{dummy_pred_pos=}")
-print()
-
-oac = compute_occlusion_area_count(
-    pred_positions=dummy_pred_pos,
-    occlusion_map=dummy_occl_map,
-    identity_mask=dummy_identity_mask
-)
-
-oao = compute_occlusion_area_occupancy(
-    pred_positions=dummy_pred_pos,
-    occlusion_map=dummy_occl_map,
-    identity_mask=dummy_identity_mask
-)
-
-print(f"{oac=}")
-print(f"{oao=}")
-
-raise NotImplementedError
+# dummy_H = 10
+# dummy_W = 10
+# # dummy_occl_map = torch.meshgrid(torch.arange(dummy_H), torch.arange(dummy_W))        # [H, W]
+# # dummy_occl_map = dummy_occl_map[0] + 2 * dummy_occl_map[1] - 15
+#
+# dummy_occl_map = torch.full([dummy_H, dummy_W], -10.)
+# dummy_occl_map[:, 5:] = 8.
+# dummy_occl_map[5:, :] = 8.
+#
+# # dummy_occl_map += torch.randn_like(dummy_occl_map)
+#
+# print(f"{dummy_occl_map=}")
+# print()
+# dummy_identity_mask = torch.tensor([[False, False, False, False, False],
+#                                     [True, True, True, False, False],
+#                                     [False, False, False, True, True]])
+#
+# dummy_pred_pos = torch.tensor([[[3.5, 3.5],
+#                                 [4.5, 3.5],
+#                                 [4.5, 3.5],
+#                                 [2.2, 2.2],
+#                                 [2.2, 2.2]],
+#
+#                                [[2.5, 3.5],
+#                                 [2.5, 3.5],
+#                                 [12000, 9.],
+#                                 [-4, 2.2],
+#                                 [7., 2.2]],
+#
+#                                [[2.5, 2.5],
+#                                 [2.5, 2.5],
+#                                 [2.5, 2.5],
+#                                 [2.2, 2.2],
+#                                 [7., 2.2]]])         # [3, 5, 2]
+#
+# print(f"{dummy_pred_pos=}")
+# print()
+#
+# oac = compute_occlusion_area_count(
+#     pred_positions=dummy_pred_pos,
+#     occlusion_map=dummy_occl_map,
+#     identity_mask=dummy_identity_mask
+# )
+#
+# oao = compute_occlusion_area_occupancy(
+#     pred_positions=dummy_pred_pos,
+#     occlusion_map=dummy_occl_map,
+#     identity_mask=dummy_identity_mask
+# )
+#
+# print(f"{oac=}")
+# print(f"{oao=}")
+#
+# raise NotImplementedError
 
 
 def compute_rf():
@@ -380,10 +380,10 @@ if __name__ == '__main__':
         'FDE',
         'pred_length',
         'past_pred_length',
-        # 'past_ADE',
-        # 'past_FDE',
-        # 'out_of_map',
-        # 'in_occlusion_zone'
+        'past_ADE',
+        'past_FDE',
+        'OAC',
+        'OAO'
     ]
 
     metric_columns = {
@@ -393,9 +393,10 @@ if __name__ == '__main__':
         'past_pred_length': ['past_pred_length'],
         'past_ADE': [f'K{i}_past_ADE' for i in range(cfg.sample_k)],
         'past_FDE': [f'K{i}_past_FDE' for i in range(cfg.sample_k)],
-        'out_of_map': [f'K{i}_out_of_map' for i in range(cfg.sample_k)],
-        'in_occlusion_zone': [f'K{i}_in_occlusion_zone' for i in range(cfg.sample_k)],
+        'OAO': ['OAO'],
+        'OAC': ['OAC'],
     }
+    oao_factor = 100_000.
 
     df_indices = ['idx', 'agent_id']
     df_columns = df_indices.copy()
@@ -439,9 +440,46 @@ if __name__ == '__main__':
 
         identity_mask = valid_ids.unsqueeze(1) == infer_pred_identities.unsqueeze(0)        # [N, P]
 
-        if 'past_pred_length' in metrics_to_compute:
+        if {'past_pred_length', 'past_ADE', 'past_FDE', 'OAO', 'OAC'}.intersection(metrics_to_compute):
             past_mask = infer_pred_timesteps <= 0                                               # [P]
             identity_and_past_mask = torch.logical_and(identity_mask, past_mask)                # [N, P]
+
+        if {'OAO', 'OAC'}.intersection(metrics_to_compute):
+
+            print(f"{in_data.keys()=}")
+
+            occlusion_map = in_data['dist_transformed_occlusion_map'][0].to(model.device)
+            map_homography = in_data['map_homography'][0].to(model.device)
+
+            map_infer_pred_positions = torch.cat(
+                [
+                    infer_pred_positions,
+                    torch.ones((*infer_pred_positions.shape[:-1], 1), device=model.device)
+                ], dim=-1
+            ).transpose(-1, -2)
+
+            map_infer_pred_positions = (map_homography @ map_infer_pred_positions).transpose(-1, -2)[..., :-1]
+            print(f"{occlusion_map, occlusion_map.shape=}")
+            print(f"{map_homography, map_homography.shape=}")
+            print(f"{map_infer_pred_positions, map_infer_pred_positions.shape=}")
+
+            # import matplotlib.pyplot as plt
+            #
+            # fig, ax = plt.subplots()
+            # ax.imshow(occlusion_map)
+            #
+            # map_infer_pred_positions = map_infer_pred_positions.cpu()
+            # past_pos = in_data['obs_position_sequence'].to(model.device)
+            # past_pos = torch.cat([past_pos, torch.ones((*past_pos.shape[:-1], 1), device=model.device)], dim=-1).transpose(-1, -2)
+            # past_pos = (map_homography @ past_pos).transpose(-1, -2)[..., :-1]
+            # past_pos = past_pos.cpu()
+            #
+            # ax.plot(past_pos[..., 0], past_pos[..., 1], c='r')
+            # ax.scatter(past_pos[..., 0], past_pos[..., 1], c='r', marker='x', alpha=0.5)
+            # ax.plot(map_infer_pred_positions[..., 0], map_infer_pred_positions[..., 1], c='b')
+            # ax.scatter(map_infer_pred_positions[..., 0], map_infer_pred_positions[..., 1], c='b', marker='x', alpha=0.5)
+            #
+            # plt.show()
 
         computed_metrics = {metric_name: None for metric_name in metrics_to_compute}
 
@@ -484,6 +522,22 @@ if __name__ == '__main__':
                     identity_mask=identity_and_past_mask
                 )       # [N, K]
 
+            if metric_name == 'OAO':
+                computed_metrics['OAO'] = oao_factor * compute_occlusion_area_occupancy(
+                    pred_positions=map_infer_pred_positions,
+                    occlusion_map=occlusion_map,
+                    identity_mask=identity_and_past_mask
+                )        # [N, 1]
+
+            if metric_name == 'OAC':
+                print(f"{map_infer_pred_positions.device, occlusion_map.device, identity_and_past_mask.device=}")
+
+                computed_metrics['OAC'] = compute_occlusion_area_count(
+                    pred_positions=map_infer_pred_positions,
+                    occlusion_map=occlusion_map,
+                    identity_mask=identity_and_past_mask
+                )        # [N, 1]
+
         assert all([val is not None for val in computed_metrics.values()])
 
         # APPEND SCORE VALUES TO TABLE
@@ -511,6 +565,14 @@ if __name__ == '__main__':
         score_df['mean_FDE'] = score_df[mode_fdes].mean(axis=1)
         score_df['rF'] = score_df['mean_FDE'] / score_df['min_FDE']
         # score_df['rF'] = score_df['rF'].fillna(value=1.0)
+    if 'past_ADE' in metrics_to_compute:
+        mode_min_ades = metric_columns['past_ADE']
+        score_df['min_past_ADE'] = score_df[mode_min_ades].min(axis=1)
+        score_df['mean_past_ADE'] = score_df[mode_min_ades].mean(axis=1)
+    if 'past_FDE' in metrics_to_compute:
+        mode_min_fdes = metric_columns['past_FDE']
+        score_df['min_past_FDE'] = score_df[mode_min_fdes].min(axis=1)
+        score_df['mean_past_FDE'] = score_df[mode_min_fdes].mean(axis=1)
 
     # # saving the table, and the score summary
     # df_save_name = os.path.join(save_dir, 'prediction_scores.csv')
