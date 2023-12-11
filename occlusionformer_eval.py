@@ -315,7 +315,7 @@ if __name__ == '__main__':
         model_cp = torch.load(cp_path, map_location='cpu')
         model.load_state_dict(model_cp['model_dict'])
 
-    # saving model predictions
+    # loading model predictions
     if checkpoint_name is not None:
         saved_preds_dir = os.path.join(cfg.result_dir, sdd_test_set.dataset_name, checkpoint_name, split)
     else:
