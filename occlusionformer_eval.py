@@ -97,28 +97,6 @@ def compute_points_in_occlusion_zone(
     return points_in_occlusion_zone <= 0.0
 
 
-def compute_samples_out_of_map(
-        points_out_of_map: Tensor,      # [K, P]
-        identity_mask: Tensor           # [N, P]
-) -> Tensor:
-    identity_ooms = torch.logical_and(
-        identity_mask.unsqueeze(1),         # [N, 1, P]
-        points_out_of_map.unsqueeze(0)      # [1, K, P]
-    )                                       # [N, K, P]
-    return torch.any(identity_ooms, dim=-1)        # [N, K]
-
-
-def compute_samples_out_of_occlusion_zone(
-        points_in_occlusion_zone: Tensor,       # [K, P]
-        identity_mask: Tensor                   # [N, P]
-) -> Tensor:
-    identity_out_of_zone = torch.logical_and(
-        identity_mask.unsqueeze(1),             # [N, 1, P]
-        ~points_in_occlusion_zone.unsqueeze(0)  # [1, K, P]
-    )                                           # [N, K, P]
-    return torch.any(identity_out_of_zone, dim=-1)  # [N, K]
-
-
 def agent_mode_sequence_tensor(
         mode_tensor: Tensor,        # [K, P]
         identity_mask: Tensor,      # [N, P]
@@ -266,10 +244,6 @@ def compute_occlusion_area_occupancy(
 # print(f"{oao=}")
 #
 # raise NotImplementedError
-
-
-def compute_rf():
-    pass
 
 
 def compute_mean_score(scores_tensor: Tensor) -> Tensor:
@@ -445,23 +419,14 @@ if __name__ == '__main__':
             identity_and_past_mask = torch.logical_and(identity_mask, past_mask)                # [N, P]
 
         if {'OAO', 'OAC'}.intersection(metrics_to_compute):
-
-            print(f"{in_data.keys()=}")
-
             occlusion_map = in_data['dist_transformed_occlusion_map'][0].to(model.device)
             map_homography = in_data['map_homography'][0].to(model.device)
 
             map_infer_pred_positions = torch.cat(
-                [
-                    infer_pred_positions,
-                    torch.ones((*infer_pred_positions.shape[:-1], 1), device=model.device)
-                ], dim=-1
+                [infer_pred_positions,
+                 torch.ones((*infer_pred_positions.shape[:-1], 1), device=model.device)], dim=-1
             ).transpose(-1, -2)
-
             map_infer_pred_positions = (map_homography @ map_infer_pred_positions).transpose(-1, -2)[..., :-1]
-            print(f"{occlusion_map, occlusion_map.shape=}")
-            print(f"{map_homography, map_homography.shape=}")
-            print(f"{map_infer_pred_positions, map_infer_pred_positions.shape=}")
 
             # import matplotlib.pyplot as plt
             #
@@ -530,8 +495,6 @@ if __name__ == '__main__':
                 )        # [N, 1]
 
             if metric_name == 'OAC':
-                print(f"{map_infer_pred_positions.device, occlusion_map.device, identity_and_past_mask.device=}")
-
                 computed_metrics['OAC'] = compute_occlusion_area_count(
                     pred_positions=map_infer_pred_positions,
                     occlusion_map=occlusion_map,
@@ -586,4 +549,4 @@ if __name__ == '__main__':
     #     yaml.dump(score_dict, f)
 
     print(score_df)
-    [print(f"{key}:\t\t{val}") for key, val in score_dict.items()]
+    [print(f"{key}{' '.ljust(20-len(key))}| {val}") for key, val in score_dict.items()]
