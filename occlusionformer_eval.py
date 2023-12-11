@@ -317,36 +317,12 @@ if __name__ == '__main__':
 
     # saving model predictions
     if checkpoint_name is not None:
-        save_dir = os.path.join(cfg.result_dir, sdd_test_set.dataset_name, checkpoint_name, split)
+        saved_preds_dir = os.path.join(cfg.result_dir, sdd_test_set.dataset_name, checkpoint_name, split)
     else:
-        save_dir = os.path.join(cfg.result_dir, sdd_test_set.dataset_name, 'untrained', split)
-    log_str = f'saving predictions under the following directory:\n{save_dir}\n\n'
+        saved_preds_dir = os.path.join(cfg.result_dir, sdd_test_set.dataset_name, 'untrained', split)
+    assert os.path.exists(saved_preds_dir)
+    log_str = f'loading predictions from the following directory:\n{saved_preds_dir}\n\n'
     print_log(log_str, log=log)
-    mkdir_if_missing(save_dir)
-
-    for i, data in enumerate(test_loader):
-
-        seq_name, frame, filename = data['seq'][0], int(data['frame'][0]), data['filename'][0]
-        log_str = f"saving predictions of instance #{i}\t\t| " \
-                  f"file name: {filename}\t\t| " \
-                  f"sequence name: {seq_name.ljust(20, ' ')}\t\t| " \
-                  f"frame number: {frame}"
-        print_log(log_str, log=log)
-
-        out_dict = dict()
-        with torch.no_grad():
-            model.set_data(data)
-            # recon_pred, _ = model.inference(mode='recon', sample_num=1)         # [B, P, 2]   # unused
-            samples_pred, model_data = model.inference(
-                mode='infer', sample_num=cfg.sample_k, need_weights=False
-            )                                                                   # [B * sample_k, P, 2]
-
-        for key, value in model_data.items():
-            if key == 'valid_id' or 'last_obs_' in key or 'pred_' in key or '_dec_' in key:
-                out_dict[key] = value
-
-        with open(os.path.join(save_dir, filename), 'wb') as f:
-            pickle.dump(out_dict, f, protocol=pickle.HIGHEST_PROTOCOL)
 
     # preparing the table of outputs
     metrics_to_compute = [
@@ -397,7 +373,7 @@ if __name__ == '__main__':
 
         filename = in_data['filename'][0]
 
-        with open(os.path.join(save_dir, filename), 'rb') as f:
+        with open(os.path.join(saved_preds_dir, filename), 'rb') as f:
             pred_data = pickle.load(f)
 
         valid_ids = pred_data['valid_id'][0]                        # [N]
@@ -584,15 +560,17 @@ if __name__ == '__main__':
         score_df['mean_past_FDE_px'] = score_df[mode_min_fdes].mean(axis=1)
 
     # saving the table, and the score summary
-    df_save_name = os.path.join(save_dir, 'prediction_scores.csv')
+    df_save_name = os.path.join(saved_preds_dir, 'prediction_scores.csv')
     print(f"saving prediction scores table under:\n{df_save_name}")
     score_df.to_csv(df_save_name, sep=',', encoding='utf-8')
 
     score_dict = {x: float(score_df[x].mean()) for x in score_df.columns}
-    yml_save_name = os.path.join(save_dir, 'prediction_scores.yml')
+    yml_save_name = os.path.join(saved_preds_dir, 'prediction_scores.yml')
     print(f"saving prediction scores summary under:\n{yml_save_name}")
     with open(yml_save_name, 'w') as f:
         yaml.dump(score_dict, f)
 
+    print("\n\n")
     print(score_df)
+    print()
     [print(f"{key}{' '.ljust(20-len(key))}| {val}") for key, val in score_dict.items()]
