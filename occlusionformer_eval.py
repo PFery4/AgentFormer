@@ -8,7 +8,7 @@ import pandas as pd
 import torch
 from torch.utils.data import DataLoader
 
-from utils.config import Config
+from utils.config import Config, REPO_ROOT
 from utils.utils import prepare_seed, print_log, mkdir_if_missing
 from data.sdd_dataloader import PresavedDatasetSDD
 from model.agentformer_loss import index_mapping_gt_seq_pred_seq
@@ -352,10 +352,14 @@ if __name__ == '__main__':
     metrics_to_compute = [
         'ADE',
         'FDE',
+        'ADE_px',
+        'FDE_px',
         'pred_length',
         'past_pred_length',
         'past_ADE',
         'past_FDE',
+        'past_ADE_px',
+        'past_FDE_px',
         'OAC',
         'OAO'
     ]
@@ -363,14 +367,22 @@ if __name__ == '__main__':
     metric_columns = {
         'ADE': [f'K{i}_ADE' for i in range(cfg.sample_k)],
         'FDE': [f'K{i}_FDE' for i in range(cfg.sample_k)],
+        'ADE_px': [f'K{i}_ADE_px' for i in range(cfg.sample_k)],
+        'FDE_px': [f'K{i}_FDE_px' for i in range(cfg.sample_k)],
         'pred_length': ['pred_length'],
         'past_pred_length': ['past_pred_length'],
         'past_ADE': [f'K{i}_past_ADE' for i in range(cfg.sample_k)],
         'past_FDE': [f'K{i}_past_FDE' for i in range(cfg.sample_k)],
+        'past_ADE_px': [f'K{i}_past_ADE_px' for i in range(cfg.sample_k)],
+        'past_FDE_px': [f'K{i}_past_FDE_px' for i in range(cfg.sample_k)],
         'OAO': ['OAO'],
         'OAC': ['OAC'],
     }
     oao_factor = 100_000.
+    coord_conv_table = pd.read_csv(
+        os.path.join(REPO_ROOT, '..', 'occlusion_prediction', 'config', 'coordinates_conversion.txt'),
+        sep=';', index_col=('scene', 'video')
+    )
 
     df_indices = ['idx', 'agent_id']
     df_columns = df_indices.copy()
@@ -455,6 +467,10 @@ if __name__ == '__main__':
                     gt_positions=gt_positions,
                     identity_mask=identity_mask
                 )       # [N, K]
+                if 'ADE_px' in metrics_to_compute:
+                    scene, video = in_data['seq'][0].split('_')
+                    px_by_m = coord_conv_table.loc[scene, video]['px/m']
+                    computed_metrics['ADE_px'] = computed_metrics['ADE'] * px_by_m
 
             if metric_name == 'FDE':
                 computed_metrics['FDE'] = compute_samples_FDE(
@@ -462,6 +478,10 @@ if __name__ == '__main__':
                     gt_positions=gt_positions,
                     identity_mask=identity_mask
                 )       # [N, K]
+                if 'FDE_px' in metrics_to_compute:
+                    scene, video = in_data['seq'][0].split('_')
+                    px_by_m = coord_conv_table.loc[scene, video]['px/m']
+                    computed_metrics['FDE_px'] = computed_metrics['FDE'] * px_by_m
 
             if metric_name == 'pred_length':
                 computed_metrics['pred_length'] = compute_pred_lengths(
@@ -479,6 +499,10 @@ if __name__ == '__main__':
                     gt_positions=gt_positions,
                     identity_mask=identity_and_past_mask
                 )       # [N, K]
+                if 'past_ADE_px' in metrics_to_compute:
+                    scene, video = in_data['seq'][0].split('_')
+                    px_by_m = coord_conv_table.loc[scene, video]['px/m']
+                    computed_metrics['past_ADE_px'] = computed_metrics['past_ADE'] * px_by_m
 
             if metric_name == 'past_FDE':
                 computed_metrics['past_FDE'] = compute_samples_FDE(
@@ -486,6 +510,10 @@ if __name__ == '__main__':
                     gt_positions=gt_positions,
                     identity_mask=identity_and_past_mask
                 )       # [N, K]
+                if 'past_FDE_px' in metrics_to_compute:
+                    scene, video = in_data['seq'][0].split('_')
+                    px_by_m = coord_conv_table.loc[scene, video]['px/m']
+                    computed_metrics['past_FDE_px'] = computed_metrics['past_FDE'] * px_by_m
 
             if metric_name == 'OAO':
                 computed_metrics['OAO'] = oao_factor * compute_occlusion_area_occupancy(
@@ -522,31 +550,49 @@ if __name__ == '__main__':
         mode_ades = metric_columns['ADE']
         score_df['min_ADE'] = score_df[mode_ades].min(axis=1)
         score_df['mean_ADE'] = score_df[mode_ades].mean(axis=1)
+    if 'ADE_px' in metrics_to_compute:
+        mode_ades = metric_columns['ADE_px']
+        score_df['min_ADE_px'] = score_df[mode_ades].min(axis=1)
+        score_df['mean_ADE_px'] = score_df[mode_ades].mean(axis=1)
     if 'FDE' in metrics_to_compute:
         mode_fdes = metric_columns['FDE']
         score_df['min_FDE'] = score_df[mode_fdes].min(axis=1)
         score_df['mean_FDE'] = score_df[mode_fdes].mean(axis=1)
         score_df['rF'] = score_df['mean_FDE'] / score_df['min_FDE']
         # score_df['rF'] = score_df['rF'].fillna(value=1.0)
+    if 'FDE_px' in metrics_to_compute:
+        mode_fdes = metric_columns['FDE_px']
+        score_df['min_FDE_px'] = score_df[mode_fdes].min(axis=1)
+        score_df['mean_FDE_px'] = score_df[mode_fdes].mean(axis=1)
+        score_df['rF_px'] = score_df['mean_FDE_px'] / score_df['min_FDE_px']
+        # score_df['rF_px'] = score_df['rF_px'].fillna(value=1.0)
     if 'past_ADE' in metrics_to_compute:
         mode_min_ades = metric_columns['past_ADE']
         score_df['min_past_ADE'] = score_df[mode_min_ades].min(axis=1)
         score_df['mean_past_ADE'] = score_df[mode_min_ades].mean(axis=1)
+    if 'past_ADE_px' in metrics_to_compute:
+        mode_min_ades = metric_columns['past_ADE_px']
+        score_df['min_past_ADE_px'] = score_df[mode_min_ades].min(axis=1)
+        score_df['mean_past_ADE_px'] = score_df[mode_min_ades].mean(axis=1)
     if 'past_FDE' in metrics_to_compute:
         mode_min_fdes = metric_columns['past_FDE']
         score_df['min_past_FDE'] = score_df[mode_min_fdes].min(axis=1)
         score_df['mean_past_FDE'] = score_df[mode_min_fdes].mean(axis=1)
+    if 'past_FDE_px' in metrics_to_compute:
+        mode_min_fdes = metric_columns['past_FDE_px']
+        score_df['min_past_FDE_px'] = score_df[mode_min_fdes].min(axis=1)
+        score_df['mean_past_FDE_px'] = score_df[mode_min_fdes].mean(axis=1)
 
-    # # saving the table, and the score summary
-    # df_save_name = os.path.join(save_dir, 'prediction_scores.csv')
-    # print(f"saving prediction scores table under:\n{df_save_name}")
-    # score_df.to_csv(df_save_name, sep=',', encoding='utf-8')
-    #
+    # saving the table, and the score summary
+    df_save_name = os.path.join(save_dir, 'prediction_scores.csv')
+    print(f"saving prediction scores table under:\n{df_save_name}")
+    score_df.to_csv(df_save_name, sep=',', encoding='utf-8')
+
     score_dict = {x: float(score_df[x].mean()) for x in score_df.columns}
-    # yml_save_name = os.path.join(save_dir, 'prediction_scores.yml')
-    # print(f"saving prediction scores summary under:\n{yml_save_name}")
-    # with open(yml_save_name, 'w') as f:
-    #     yaml.dump(score_dict, f)
+    yml_save_name = os.path.join(save_dir, 'prediction_scores.yml')
+    print(f"saving prediction scores summary under:\n{yml_save_name}")
+    with open(yml_save_name, 'w') as f:
+        yaml.dump(score_dict, f)
 
     print(score_df)
     [print(f"{key}{' '.ljust(20-len(key))}| {val}") for key, val in score_dict.items()]
