@@ -14,6 +14,59 @@ from utils.config import Config
 from utils.utils import prepare_seed, get_timestring, AverageMeter
 from train import print_log
 
+
+def analyze_cProfile(filename):
+    # This script might come in handy when it comes to optimizing model performance
+
+    import re
+    import pandas as pd
+
+    def remove_extraneaous_semi_colons(string):
+        start_idx = string.replace(';', 'Γ', 4).find(';') + 1
+        string = string[:start_idx] + string[start_idx:].replace(';', ' ')
+        return string
+
+    with open(filename) as f:
+        lines = f.readlines()
+
+    lines.pop(-1)
+    # print(f"{lines=}")
+
+    clean_lines = []
+
+    columns = lines[0]
+    columns = re.sub('[ \t]+', ';', columns)
+    columns = columns.replace('\n', '')
+    columns = columns[1:]
+    columns = columns.split(';')
+    columns[4] = 'percall2'
+
+    data_dict = {x: [] for x in columns}
+
+    for line in lines[1:]:
+        clean_line = re.sub('[ \t]+', ';', line)
+        if clean_line[0] == ';':
+            clean_line = clean_line[1:]
+        clean_line = remove_extraneaous_semi_colons(clean_line)
+        clean_line = clean_line.replace('\n', '')
+        clean_lines.append(clean_line)
+        # print(f"{clean_line=}")
+        assert clean_line.count(';') == 5
+
+        data = clean_line.split(';')
+        for key, val in zip(columns, data):
+            data_dict[key].append(val)
+
+    df = pd.DataFrame(data=data_dict)
+
+    df[['tottime', 'percall', 'cumtime', 'percall2']] = df[['tottime', 'percall', 'cumtime', 'percall2']].astype(float)
+
+    with pd.option_context('display.max_rows', None,
+                           'display.max_columns', None,
+                           'display.width', 150):
+        print(df.sort_values(by=['cumtime'], ascending=False))
+
+
 if __name__ == '__main__':
 
     model_runs = 50
