@@ -360,9 +360,8 @@ if __name__ == '__main__':
         sep=';', index_col=('scene', 'video')
     )
 
-    df_indices = ['idx', 'agent_id']
+    df_indices = ['idx', 'filename', 'agent_id']
     df_columns = df_indices.copy()
-
     for metric_name in metrics_to_compute:
         df_columns.extend(metric_columns[metric_name])
 
@@ -372,6 +371,7 @@ if __name__ == '__main__':
     for i, in_data in enumerate(test_loader):
 
         filename = in_data['filename'][0]
+        print(f"Processing: {filename}")
 
         with open(os.path.join(saved_preds_dir, filename), 'rb') as f:
             pred_data = pickle.load(f)
@@ -510,7 +510,7 @@ if __name__ == '__main__':
         # APPEND SCORE VALUES TO TABLE
         for i_agent, valid_id in enumerate(valid_ids):
             # i, agent_id, K{i}
-            df_row = [i, int(valid_id)]
+            df_row = [i, filename, int(valid_id)]
 
             for metric_name in metrics_to_compute:
                 df_row.extend(computed_metrics[metric_name][i_agent].tolist())
@@ -520,7 +520,7 @@ if __name__ == '__main__':
 
     # postprocessing on the table
     score_df[['idx', 'agent_id']] = score_df[['idx', 'agent_id']].astype(int)
-    score_df.set_index(keys=['idx', 'agent_id'], inplace=True)
+    score_df.set_index(keys=df_indices, inplace=True)
 
     if 'ADE' in metrics_to_compute:
         mode_ades = metric_columns['ADE']
