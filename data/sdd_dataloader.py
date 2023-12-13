@@ -81,6 +81,13 @@ class TorchDataGeneratorSDD(Dataset):
         else:
             raise NotImplementedError
 
+    ######################################################################
+        # # TODO: MAKE THE IMPUTATION PROCESS FUNCTIONAL
+        # self.impute = parser.get('impute', False)
+        # if self.impute:
+        #     assert self.occlusion_process != 'fully_observed'
+    ######################################################################
+
         # we are preparing reflect padded versions of the dataset, so that it becomes quicker to process the dataset.
         # the reason why we need to produce reflect padded images is that we will need a full representation of the
         # scene image (as the model requires a global map). With the known SDD pixel to meter ratios and a desired
@@ -183,15 +190,17 @@ class TorchDataGeneratorSDD(Dataset):
             traj[obs_idx:] = extra_seq
         return xtrpl_trajs
 
-    def impute_and_cv_predict(self, trajs: Tensor, obs_mask: Tensor) -> Tensor:
+    @staticmethod
+    def impute_and_cv_predict(trajs: Tensor, obs_mask: Tensor, timesteps: Tensor) -> Tensor:
         # trajs [N, T, 2]
         # obs_mask [N, T]
+        # timesteps [T]
         imputed_trajs = torch.zeros_like(trajs)
         for i, (traj, mask) in enumerate(zip(trajs, obs_mask)):
             # print(f"{self.timesteps[mask]=}")
             # print(f"{traj[mask]=}")
-            f = interp1d(self.timesteps[mask], traj[mask], axis=0, fill_value='extrapolate')
-            interptraj = f(self.timesteps)
+            f = interp1d(timesteps[mask], traj[mask], axis=0, fill_value='extrapolate')
+            interptraj = f(timesteps)
             # print(f"{interptraj=}")
             imputed_trajs[i, ...] = torch.from_numpy(interptraj)
         return imputed_trajs
@@ -340,7 +349,7 @@ class TorchDataGeneratorSDD(Dataset):
             )
             # print(f"{close_keep_mask=}")
 
-        keep_agent_mask = torch.logical_and(sufficiently_observed_mask, close_keep_mask)
+        keep_agent_mask = torch.logical_and(sufficiently_observed_mask, close_keep_mask)        # [N]
 
         center_point = torch.mean(last_obs_positions[keep_agent_mask], dim=0)
 
@@ -465,6 +474,27 @@ class TorchDataGeneratorSDD(Dataset):
         last_obs_indices = last_obs_indices[keep_mask]
 
         obs_mask = obs_mask.to(torch.bool)
+
+    #############################################################################################################
+        # # TODO: FIGURE OUT THE MOST ADEQUATE WAY OF PERFORMING IMPUTATION
+        # # imputing if necessary: # WE CANNOT IMPUTE HERE, WE MUST IMPUTE IN THE PIPELINE.
+        # if self.impute:
+        #     print("\n\n\nHEY, WE ARE GOING TO IMPUTE NOW\n\n\n")
+        #     print(f"BEFORE {trajs.shape=}")
+        #     print(f"BEFORE {obs_mask=}")
+        #     print(f"{self.T_obs, self.T_pred=}")
+        #     imputed_trajs = self.impute_and_cv_predict(
+        #         trajs=trajs[:, :self.T_obs, :],
+        #         obs_mask=obs_mask[:, :self.T_obs],
+        #         timesteps=self.timesteps[:self.T_obs]
+        #     )
+        #     trajs[:, :self.T_obs, :] = imputed_trajs
+        #     obs_mask = torch.full(trajs.shape[:-1], True)
+        #     obs_mask[..., self.T_obs:] = False
+        #     print(f"AFTER {trajs.shape=}")
+        #     print(f"AFTER {obs_mask=}")
+    #############################################################################################################
+
         pred_mask = self.predict_mask(last_obs_indices=last_obs_indices)
         agent_grid = self.agent_grid(ids=ids)
         timestep_grid = self.timestep_grid(ids=ids)
@@ -604,20 +634,6 @@ class PresavedDatasetSDD(Dataset):
         prnt_str = f'------------------------------ done --------------------------------\n'
         print_log(prnt_str, log=log) if log is not None else print(prnt_str)
 
-    # TODO: WIP ON THE IMPUTATION APPROACH
-    def impute_and_cv_predict(self, trajs: Tensor, obs_mask: Tensor) -> Tensor:
-        # trajs [N, T, 2]
-        # obs_mask [N, T]
-        imputed_trajs = torch.zeros_like(trajs)
-        for i, (traj, mask) in enumerate(zip(trajs, obs_mask)):
-            # print(f"{self.timesteps[mask]=}")
-            # print(f"{traj[mask]=}")
-            f = interp1d(self.timesteps[mask], traj[mask], axis=0, fill_value='extrapolate')
-            interptraj = f(self.timesteps)
-            # print(f"{interptraj=}")
-            imputed_trajs[i, ...] = torch.from_numpy(interptraj)
-        return imputed_trajs
-
     def __len__(self):
         return len(self.pickle_files)
 
@@ -637,17 +653,31 @@ class PresavedDatasetSDD(Dataset):
 
 if __name__ == '__main__':
 
+    ###################################################################################################################
+    # cfg = Config('sdd_baseline_copy_for_test_pre')
+    # presaved_dataset = PresavedDatasetSDD(parser=cfg, log=None, split='train')
+    # print(f"{presaved_dataset.pickle_files=}")
+    ###################################################################################################################
+
+    ###################################################################################################################
+    import utils.sdd_visualize
+    from utils.utils import prepare_seed
     cfg = Config('sdd_baseline_copy_for_test_pre')
-    presaved_dataset = PresavedDatasetSDD(parser=cfg, log=None, split='train')
+    prepare_seed(cfg.seed)
+    torch_dataset = TorchDataGeneratorSDD(parser=cfg, log=None, split='train')
 
-    # TODO: WIP ON THIS IMPUTATION METHOD
-    def simple_imputer(data_dict: Dict) -> None:
-        print(f"{data_dict['trajectories']=}")
-        print(f"{data_dict['observation_mask']=}")
+    out_dict = torch_dataset.__getitem__(50)
 
-    for i, data in enumerate(presaved_dataset):
-
-        print(f"{data.keys()=}")
-        simple_imputer(data)
-        print(zblu)
-
+    # print(f"{out_dict=}")
+    fig, ax = plt.subplots(1, 2)
+    utils.sdd_visualize.visualize(
+        data_dict=out_dict,
+        draw_ax=ax[0],
+        draw_ax_sequences=ax[1],
+        # draw_ax_dist_transformed_map=ax[2],
+        # draw_ax_probability_map=ax[3],
+        # draw_ax_nlog_probability_map=ax[4]
+    )
+    plt.show()
+    ###################################################################################################################
+    print("Goodbye!")
