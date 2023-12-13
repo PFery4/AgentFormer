@@ -23,6 +23,7 @@ global_map_resolution         : 800      # [px]
 rand_rot_scene                : true
 max_train_agent               : 32
 occlusion_process             : 'occlusion_simulation'      # can be either 'fully_observed' or 'occlusion_simulation'
+impute                        : false
 
 # ------------------- Model -------------------------
 
