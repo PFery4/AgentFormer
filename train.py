@@ -9,7 +9,6 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from csv import DictWriter
 
-from data.dataloader import data_generator
 from data.sdd_dataloader import TorchDataGeneratorSDD, PresavedDatasetSDD
 from model.model_lib import model_dict
 from utils.torch import get_scheduler
@@ -292,6 +291,7 @@ if __name__ == '__main__':
         dict_writer.writerow(row_dict)
 
     """ data """
+    assert cfg.dataset == "sdd"
     if cfg.dataset == "sdd":
         # sdd_dataset = TorchDataGeneratorSDD(parser=cfg, log=log, split='train')
         sdd_train_set = PresavedDatasetSDD(parser=cfg, log=log, split='train')
@@ -299,9 +299,6 @@ if __name__ == '__main__':
 
         sdd_val_set = PresavedDatasetSDD(parser=cfg, log=log, split='val')
         validation_loader = DataLoader(dataset=sdd_val_set, shuffle=False, num_workers=2)
-    else:
-        generator = data_generator(cfg, log, split='train', phase='training')
-        raise NotImplementedError
 
     """ model """
     model_id = cfg.get('model_id', 'agentformer')
