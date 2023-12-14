@@ -82,12 +82,9 @@ class TorchDataGeneratorSDD(Dataset):
         else:
             raise NotImplementedError
 
-    ######################################################################
-        # # TODO: MAKE THE IMPUTATION PROCESS FUNCTIONAL
-        # self.impute = parser.get('impute', False)
-        # if self.impute:
-        #     assert self.occlusion_process != 'fully_observed'
-    ######################################################################
+        self.impute = parser.get('impute', False)
+        if self.impute:
+            assert self.occlusion_process != 'fully_observed'
 
         # we are preparing reflect padded versions of the dataset, so that it becomes quicker to process the dataset.
         # the reason why we need to produce reflect padded images is that we will need a full representation of the
@@ -342,8 +339,22 @@ class TorchDataGeneratorSDD(Dataset):
         ).reshape(trajs.shape[:-1])  # [N, T]
         obs_mask[..., self.T_obs:] = False
 
-        # checking for all agents that they have at least 2 observations available for the model to process
-        sufficiently_observed_mask = (torch.sum(obs_mask, dim=1) >= 2)
+        if self.impute:
+            # copying the unaltered trajectories before we perform the imputation
+            true_trajs = trajs.detach().clone()
+            true_obs_mask = obs_mask.detach().clone()
+
+            # performing the imputation
+            trajs = self.impute_and_cv_predict(trajs=trajs, obs_mask=obs_mask.to(torch.bool), timesteps=self.timesteps)
+            obs_mask = torch.full_like(obs_mask, True)
+            obs_mask[..., self.T_obs:] = False
+            trajs[~obs_mask.to(torch.bool), :] = true_trajs[~obs_mask.to(torch.bool), :]
+
+            # consider every agent as sufficiently observed
+            sufficiently_observed_mask = torch.full([obs_mask.shape[0]], True)                      # [N]
+        else:
+            # checking for all agents that they have at least 2 observations available for the model to process
+            sufficiently_observed_mask = (torch.sum(obs_mask, dim=1) >= 2)                          # [N]
 
         # computing agents' last observed positions
         last_obs_indices = self.last_observed_indices(obs_mask=obs_mask)
@@ -371,6 +382,8 @@ class TorchDataGeneratorSDD(Dataset):
         scaling = self.traj_scale * m_by_px
 
         trajs = (trajs - center_point) * scaling
+        if self.impute:
+            true_trajs = (true_trajs - center_point) * scaling
         ego_visipoly = sg.Polygon((torch.from_numpy(ego_visipoly.coords) - center_point) * scaling)
         scene_map.homography_translation(center_point)
         scene_map.homography_scaling(1 / scaling)
@@ -406,7 +419,9 @@ class TorchDataGeneratorSDD(Dataset):
         process_dict['probability_map'] = probability_map
         process_dict['nlog_probability_map'] = nlog_probability_map
         process_dict['scene_map_image'] = scene_map.image
-
+        if self.impute:
+            process_dict['true_trajs'] = true_trajs
+            process_dict['true_obs_mask'] = true_obs_mask
         return process_dict
 
     def process_cases_with_simulated_occlusions(
@@ -498,30 +513,15 @@ class TorchDataGeneratorSDD(Dataset):
         # removing agent surplus
         ids = ids[process_dict['keep_agent_mask']]
         trajs = process_dict['trajs'][process_dict['keep_agent_mask']]
+        if self.impute:
+            true_trajs = process_dict['true_trajs'][process_dict['keep_agent_mask']]
+            true_obs_mask = process_dict['true_obs_mask'][process_dict['keep_agent_mask']].to(torch.bool)
+        else:
+            true_trajs, true_obs_mask = None, None
         obs_mask = process_dict['obs_mask'][process_dict['keep_agent_mask']]
         last_obs_indices = process_dict['last_obs_indices'][process_dict['keep_agent_mask']]
 
         obs_mask = obs_mask.to(torch.bool)
-
-    #############################################################################################################
-        # # TODO: FIGURE OUT THE MOST ADEQUATE WAY OF PERFORMING IMPUTATION
-        # # imputing if necessary: # WE CANNOT IMPUTE HERE, WE MUST IMPUTE IN THE PIPELINE.
-        # if self.impute:
-        #     print("\n\n\nHEY, WE ARE GOING TO IMPUTE NOW\n\n\n")
-        #     print(f"BEFORE {trajs.shape=}")
-        #     print(f"BEFORE {obs_mask=}")
-        #     print(f"{self.T_obs, self.T_pred=}")
-        #     imputed_trajs = self.impute_and_cv_predict(
-        #         trajs=trajs[:, :self.T_obs, :],
-        #         obs_mask=obs_mask[:, :self.T_obs],
-        #         timesteps=self.timesteps[:self.T_obs]
-        #     )
-        #     trajs[:, :self.T_obs, :] = imputed_trajs
-        #     obs_mask = torch.full(trajs.shape[:-1], True)
-        #     obs_mask[..., self.T_obs:] = False
-        #     print(f"AFTER {trajs.shape=}")
-        #     print(f"AFTER {obs_mask=}")
-    #############################################################################################################
 
         pred_mask = self.predict_mask(last_obs_indices=last_obs_indices)
         agent_grid = self.agent_grid(ids=ids)
@@ -573,7 +573,10 @@ class TorchDataGeneratorSDD(Dataset):
             'map_homography': self.map_homography,
 
             'seq': f'{scene}_{video}',
-            'frame': timestep
+            'frame': timestep,
+
+            'true_trajectories': true_trajs if self.impute else None,
+            'true_observation_mask': true_obs_mask if self.impute else None
         }
 
         # # visualization stuff
