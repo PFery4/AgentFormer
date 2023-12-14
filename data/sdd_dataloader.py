@@ -18,6 +18,7 @@ import numpy as np
 import skgeom as sg
 from scipy.interpolate import interp1d
 from scipy.ndimage import distance_transform_edt
+from collections import defaultdict
 
 from data.map import TorchGeometricMap
 from utils.config import Config, REPO_ROOT
@@ -412,7 +413,7 @@ class TorchDataGeneratorSDD(Dataset):
         )
 
     def __getitem__(self, idx: int) -> Dict:
-        # lookup the row in the occlusion_table
+        # look up the row in the occlusion_table
         occlusion_case = self.occlusion_table.iloc[idx]
         sim_id, scene, video, timestep, trial = occlusion_case.name
 
@@ -456,6 +457,11 @@ class TorchDataGeneratorSDD(Dataset):
 
         # mapping the trajectories to scene map coordinate system
         trajs = scene_map.to_map_points(trajs)
+
+        # REFRAMING THE PROCESSING STRATEGY BY MODIFYING A DEFAULTDICT
+        # print("Starting to go through processing strategy function:")
+        # process_dict = defaultdict(None)
+        # self.trajectory_processing_strategy()
 
         trajs, obs_mask, last_obs_indices, keep_mask, \
         occlusion_map, dist_transformed_occlusion_map, \
