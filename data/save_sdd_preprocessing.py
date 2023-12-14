@@ -27,6 +27,8 @@ if __name__ == '__main__':
     parser.add_argument('--start_idx', type=int, default=0)
     parser.add_argument('--end_idx', type=int, default=-10)
     parser.add_argument('--tiny_dataset', type=bool, default=False)
+    parser.add_argument('--no_rgb_map', type=bool, default=False)
+    parser.add_argument('--save_directory', default=None)
     args = parser.parse_args()
 
     assert args.split in ['train', 'val', 'test']
@@ -57,6 +59,13 @@ if __name__ == '__main__':
              'scene_map',
              'map_homography']
         )
+    elif args.no_rgb_map:
+        del_keys.extend(['scene_map'])
+    if not config.get('impute', False):
+        del_keys.extend(
+            ['true_trajectories',
+             'true_observation_mask']
+        )
 
     print(f"Presaving a dataset from the \'{cfg}\' file.")
     print(f"Beginning saving process of {split} split.")
@@ -67,7 +76,11 @@ if __name__ == '__main__':
 
     save_dir_name = f"{config.occlusion_process}_tiny" if tiny else config.occlusion_process
 
-    save_path = os.path.join(presaved_datasets_dir, save_dir_name, split)
+    if args.save_directory is None:
+        save_path = os.path.join(presaved_datasets_dir, save_dir_name, split)
+    else:
+        save_path = os.path.normpath(args.save_directory)
+
     print(f"root directory of the dataset will be:\n{save_path}")
     os.makedirs(save_path, exist_ok=True)
 
