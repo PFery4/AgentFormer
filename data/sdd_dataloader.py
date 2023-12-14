@@ -256,7 +256,9 @@ class TorchDataGeneratorSDD(Dataset):
         keep_mask[idx_sort[final_mask]] = True
         return keep_mask
 
-    def trajectory_processing_without_occlusion(self, trajs: Tensor, scene_map: TorchGeometricMap, m_by_px: float):
+    def trajectory_processing_without_occlusion(
+            self, process_dict: defaultdict, trajs: Tensor, scene_map: TorchGeometricMap, m_by_px: float
+    ) -> defaultdict:
         obs_mask = torch.ones(trajs.shape[:-1])
         obs_mask[..., self.T_obs:] = False
         scene_map.set_homography(torch.eye(3))
@@ -284,14 +286,20 @@ class TorchDataGeneratorSDD(Dataset):
         # cropping the scene map
         self.crop_scene_map(scene_map=scene_map)
 
-        return trajs, obs_mask, keep_agent_mask, scene_map.image
+        process_dict['trajs'] = trajs
+        process_dict['obs_mask'] = obs_mask
+        process_dict['keep_agent_mask'] = keep_agent_mask
+        process_dict['scene_map_image'] = scene_map.image
+
+        return process_dict
 
     def wrapped_trajectory_processing_without_occlusion(
-            self, trajs: Tensor,
+            self, process_dict: defaultdict, trajs: Tensor,
             scene_map: TorchGeometricMap, m_by_px: float
-    ):
-        trajs, obs_mask, keep_mask, scene_map_image = self.trajectory_processing_without_occlusion(
-            trajs=trajs, scene_map=scene_map, m_by_px=m_by_px
+    ) -> defaultdict:
+
+        process_dict = self.trajectory_processing_without_occlusion(
+            process_dict=process_dict, trajs=trajs, scene_map=scene_map, m_by_px=m_by_px
         )
 
         last_obs_indices = torch.full([trajs.shape[0]], self.T_obs - 1)
@@ -301,11 +309,16 @@ class TorchDataGeneratorSDD(Dataset):
         probability_map = torch.zeros([self.map_resolution, self.map_resolution])
         nlog_probability_map = torch.zeros([self.map_resolution, self.map_resolution])
 
-        return trajs, obs_mask, last_obs_indices, keep_mask, \
-               occlusion_map, dist_transformed_occlusion_map, probability_map, nlog_probability_map, scene_map.image
+        process_dict['last_obs_indices'] = last_obs_indices
+        process_dict['occlusion_map'] = occlusion_map
+        process_dict['dist_transformed_occlusion_map'] = dist_transformed_occlusion_map
+        process_dict['probability_map'] = probability_map
+        process_dict['nlog_probability_map'] = nlog_probability_map
+
+        return process_dict
 
     def trajectory_processing_with_occlusion(
-            self, trajs: Tensor,
+            self, process_dict: defaultdict, trajs: Tensor,
             ego: Tensor, occluder: Tensor, tgt_idx: Tensor,
             scene_map: TorchGeometricMap, px_by_m: float, m_by_px: float
     ):
@@ -384,19 +397,29 @@ class TorchDataGeneratorSDD(Dataset):
         probability_map = torch.nn.functional.softmax(clipped_map.view(-1), dim=0).view(clipped_map.shape)
         nlog_probability_map = -torch.nn.functional.log_softmax(clipped_map.view(-1), dim=0).view(clipped_map.shape)
 
-        return trajs, obs_mask, last_obs_indices, keep_agent_mask, \
-               occlusion_map, dist_transformed_occlusion_map, probability_map, nlog_probability_map, scene_map.image
+        process_dict['trajs'] = trajs
+        process_dict['obs_mask'] = obs_mask
+        process_dict['last_obs_indices'] = last_obs_indices
+        process_dict['keep_agent_mask'] = keep_agent_mask
+        process_dict['occlusion_map'] = occlusion_map
+        process_dict['dist_transformed_occlusion_map'] = dist_transformed_occlusion_map
+        process_dict['probability_map'] = probability_map
+        process_dict['nlog_probability_map'] = nlog_probability_map
+        process_dict['scene_map_image'] = scene_map.image
+
+        return process_dict
 
     def process_cases_with_simulated_occlusions(
-            self, occlusion_case: Dict, trajs: Tensor, scene_map: TorchGeometricMap, px_by_m: float, m_by_px: float
+            self, process_dict: defaultdict, occlusion_case: Dict, trajs: Tensor, scene_map: TorchGeometricMap, px_by_m: float, m_by_px: float
     ):
         if np.isnan(occlusion_case['ego_point']).any():
             return self.wrapped_trajectory_processing_without_occlusion(
-                trajs=trajs, scene_map=scene_map, m_by_px=m_by_px
+                process_dict=process_dict, trajs=trajs, scene_map=scene_map, m_by_px=m_by_px
             )
         else:
             tgt_idx = torch.from_numpy(occlusion_case['target_agent_indices']).squeeze()
             return self.trajectory_processing_with_occlusion(
+                process_dict=process_dict,
                 trajs=trajs,
                 ego=torch.from_numpy(occlusion_case['ego_point']).to(torch.float32).unsqueeze(0),
                 occluder=torch.from_numpy(np.vstack(occlusion_case['occluders'][0])).to(torch.float32),
@@ -406,10 +429,10 @@ class TorchDataGeneratorSDD(Dataset):
             )
 
     def process_fully_observed_cases(
-            self, occlusion_case: Dict, trajs: Tensor, scene_map: TorchGeometricMap, px_by_m: float, m_by_px: float
+            self, process_dict: defaultdict, occlusion_case: Dict, trajs: Tensor, scene_map: TorchGeometricMap, px_by_m: float, m_by_px: float
     ):
         return self.wrapped_trajectory_processing_without_occlusion(
-            trajs=trajs, scene_map=scene_map, m_by_px=m_by_px
+            process_dict=process_dict, trajs=trajs, scene_map=scene_map, m_by_px=m_by_px
         )
 
     def __getitem__(self, idx: int) -> Dict:
@@ -458,15 +481,14 @@ class TorchDataGeneratorSDD(Dataset):
         # mapping the trajectories to scene map coordinate system
         trajs = scene_map.to_map_points(trajs)
 
-        # REFRAMING THE PROCESSING STRATEGY BY MODIFYING A DEFAULTDICT
-        # print("Starting to go through processing strategy function:")
-        # process_dict = defaultdict(None)
-        # self.trajectory_processing_strategy()
-
-        trajs, obs_mask, last_obs_indices, keep_mask, \
-        occlusion_map, dist_transformed_occlusion_map, \
-        probability_map, nlog_probability_map, scene_map_image = self.trajectory_processing_strategy(
-            occlusion_case=occlusion_case, trajs=trajs, scene_map=scene_map, px_by_m=px_by_m, m_by_px=m_by_px
+        process_dict = defaultdict(None)
+        process_dict = self.trajectory_processing_strategy(
+            process_dict=process_dict,
+            occlusion_case=occlusion_case,
+            trajs=trajs,
+            scene_map=scene_map,
+            px_by_m=px_by_m,
+            m_by_px=m_by_px
         )
 
         # identifying agents who are outside the global scene map
@@ -474,10 +496,10 @@ class TorchDataGeneratorSDD(Dataset):
         # print(f"{inside_map_mask=}")
 
         # removing agent surplus
-        ids = ids[keep_mask]
-        trajs = trajs[keep_mask]
-        obs_mask = obs_mask[keep_mask]
-        last_obs_indices = last_obs_indices[keep_mask]
+        ids = ids[process_dict['keep_agent_mask']]
+        trajs = process_dict['trajs'][process_dict['keep_agent_mask']]
+        obs_mask = process_dict['obs_mask'][process_dict['keep_agent_mask']]
+        last_obs_indices = process_dict['last_obs_indices'][process_dict['keep_agent_mask']]
 
         obs_mask = obs_mask.to(torch.bool)
 
@@ -543,10 +565,10 @@ class TorchDataGeneratorSDD(Dataset):
 
             'scene_orig': torch.zeros([2]),
 
-            'occlusion_map': occlusion_map,
-            'dist_transformed_occlusion_map': dist_transformed_occlusion_map,
-            'probability_occlusion_map': probability_map,
-            'nlog_probability_occlusion_map': nlog_probability_map,
+            'occlusion_map': process_dict['occlusion_map'],
+            'dist_transformed_occlusion_map': process_dict['dist_transformed_occlusion_map'],
+            'probability_occlusion_map': process_dict['probability_map'],
+            'nlog_probability_occlusion_map': process_dict['nlog_probability_map'],
             'scene_map': scene_map.image,
             'map_homography': self.map_homography,
 
@@ -672,17 +694,18 @@ if __name__ == '__main__':
     prepare_seed(cfg.seed)
     torch_dataset = TorchDataGeneratorSDD(parser=cfg, log=None, split='train')
 
-    out_dict = torch_dataset.__getitem__(50)
+    out_dict = torch_dataset.__getitem__(50)      # occluded
+    # out_dict = torch_dataset.__getitem__(72)        # fully observed
 
     # print(f"{out_dict=}")
-    fig, ax = plt.subplots(1, 2)
+    fig, ax = plt.subplots(1, 5)
     utils.sdd_visualize.visualize(
         data_dict=out_dict,
         draw_ax=ax[0],
         draw_ax_sequences=ax[1],
-        # draw_ax_dist_transformed_map=ax[2],
-        # draw_ax_probability_map=ax[3],
-        # draw_ax_nlog_probability_map=ax[4]
+        draw_ax_dist_transformed_map=ax[2],
+        draw_ax_probability_map=ax[3],
+        draw_ax_nlog_probability_map=ax[4]
     )
     plt.show()
     ###################################################################################################################
