@@ -37,12 +37,12 @@ def logging(cfg, epoch, total_epoch, iter, total_iter, ep, seq, frame, losses_st
         print(prnt_str)
 
 
-def report_losses(loss_meter, epoch_idx, batch_idx, split='train'):
+def report_losses(logfile, loss_meter, epoch_idx, batch_idx, split='train'):
     tb_x = epoch_idx * len(training_loader) + batch_idx + 1
     for name, meter in loss_meter.items():
         tb_logger.add_scalar(f'model_{split}_{name}', meter.avg, tb_x)
     tb_logger.flush()
-    with open(csv_val_logfile, 'a') as f:
+    with open(logfile, 'a') as f:
         dict_writer = DictWriter(f, fieldnames=csv_field_names)
         meter_dict = {name: meter.avg for name, meter in loss_meter.items()}
         row_dict = {**{'tb_x': tb_x, 'epoch': epoch_idx, 'batch': batch_idx}, **meter_dict}
@@ -146,7 +146,11 @@ def train(epoch_index: int, batch_idx: int = 0):
                 ep=ep, seq=data['seq'][0], frame=data['frame'][0], losses_str=losses_str, log=log
             )
             report_losses(
-                loss_meter=train_loss_meter, epoch_idx=epoch_index, batch_idx=i, split='train'
+                logfile=csv_train_logfile,
+                loss_meter=train_loss_meter,
+                epoch_idx=epoch_index,
+                batch_idx=i,
+                split='train'
             )
 
         # every <validation_freq> step:
@@ -186,7 +190,11 @@ def train(epoch_index: int, batch_idx: int = 0):
 
             # report the validation losses
             report_losses(
-                loss_meter=val_loss_meter, epoch_idx=epoch_index, batch_idx=i, split='val'
+                logfile=csv_val_logfile,
+                loss_meter=val_loss_meter,
+                epoch_idx=epoch_index,
+                batch_idx=i,
+                split='val'
             )
 
             val_duration = time.time() - val_time
