@@ -97,6 +97,18 @@ def visualize_trajectories(data_dict: Dict, draw_ax: matplotlib.axes.Axes) -> No
     homogeneous_trajs = torch.cat((trajs, torch.ones([*trajs.shape[:-1], 1])), dim=-1).transpose(-1, -2)
     plot_trajs = (homography @ homogeneous_trajs).transpose(-1, -2)[..., :-1]
 
+    if 'true_trajectories' in data_dict.keys() and data_dict['true_trajectories'] is not None:
+        assert 'true_observation_mask' in data_dict.keys() and data_dict['true_observation_mask'] is not None
+        true_trajs = data_dict['true_trajectories']
+        homogeneous_true_trajs = torch.cat((true_trajs, torch.ones([*true_trajs.shape[:-1], 1])), dim=-1).transpose(-1, -2)
+        plot_true_trajs = (homography @ homogeneous_true_trajs).transpose(-1, -2)[..., :-1]
+
+        color_iter = iter(plt.cm.rainbow(np.linspace(0, 1, ids.shape[0])))
+        impute_mask = (obs_mask != data_dict['true_observation_mask'])
+        for true_traj, mask in zip(plot_true_trajs, impute_mask):
+            c = next(color_iter).reshape(1, -1)
+            draw_ax.scatter(true_traj[:, 0][mask], true_traj[:, 1][mask], marker='x', s=20, color=c, alpha=0.5)
+
     color_iter = iter(plt.cm.rainbow(np.linspace(0, 1, ids.shape[0])))
     for traj, mask in zip(plot_trajs, obs_mask):
         c = next(color_iter).reshape(1, -1)
