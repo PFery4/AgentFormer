@@ -195,6 +195,9 @@ class TorchDataGeneratorSDD(Dataset):
         # timesteps [T]
         imputed_trajs = torch.zeros_like(trajs)
         for i, (traj, mask) in enumerate(zip(trajs, obs_mask)):
+            # if none of the values are observed, then skip this trajectory altogether
+            if mask.sum() == 0:
+                continue
             # print(f"{self.timesteps[mask]=}")
             # print(f"{traj[mask]=}")
             f = interp1d(timesteps[mask], traj[mask], axis=0, fill_value='extrapolate')
@@ -351,7 +354,7 @@ class TorchDataGeneratorSDD(Dataset):
             trajs[~obs_mask.to(torch.bool), :] = true_trajs[~obs_mask.to(torch.bool), :]
 
             # consider every agent as sufficiently observed
-            sufficiently_observed_mask = torch.full([obs_mask.shape[0]], True)                      # [N]
+            sufficiently_observed_mask = (torch.sum(true_obs_mask, dim=1) >= 2)                          # [N]
         else:
             # checking for all agents that they have at least 2 observations available for the model to process
             sufficiently_observed_mask = (torch.sum(obs_mask, dim=1) >= 2)                          # [N]
@@ -513,7 +516,7 @@ class TorchDataGeneratorSDD(Dataset):
         # removing agent surplus
         ids = ids[process_dict['keep_agent_mask']]
         trajs = process_dict['trajs'][process_dict['keep_agent_mask']]
-        if self.impute:
+        if self.impute and 'true_trajs' in process_dict.keys():
             true_trajs = process_dict['true_trajs'][process_dict['keep_agent_mask']]
             true_obs_mask = process_dict['true_obs_mask'][process_dict['keep_agent_mask']].to(torch.bool)
         else:
