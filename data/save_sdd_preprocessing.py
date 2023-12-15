@@ -80,7 +80,11 @@ if __name__ == '__main__':
 
     generator = TorchDataGeneratorSDD(parser=config, log=None, split=split)
 
-    save_dir_name = f"{config.occlusion_process}_tiny" if tiny else config.occlusion_process
+    save_dir_name = config.occlusion_process
+    if config.get('impute', False):
+        save_dir_name += '_imputed'
+    if tiny:
+        save_dir_name += '_tiny'
 
     if args.save_directory is None:
         save_path = os.path.join(presaved_datasets_dir, save_dir_name, split)
