@@ -28,6 +28,7 @@ if __name__ == '__main__':
     parser.add_argument('--end_idx', type=int, default=-10)
     parser.add_argument('--tiny_dataset', type=bool, default=False)
     parser.add_argument('--no_rgb_map', type=bool, default=False)
+    parser.add_argument('--no_prob_map', type=bool, default=False)
     parser.add_argument('--save_directory', default=None)
     args = parser.parse_args()
 
@@ -59,13 +60,18 @@ if __name__ == '__main__':
              'scene_map',
              'map_homography']
         )
-    elif args.no_rgb_map:
+    if args.no_rgb_map:
         del_keys.extend(['scene_map'])
+    if args.no_prob_map:
+        del_keys.extend(['probability_occlusion_map'])
     if not config.get('impute', False):
         del_keys.extend(
             ['true_trajectories',
              'true_observation_mask']
         )
+
+    # removing eventual duplicates
+    del_keys = list(dict.fromkeys(del_keys))
 
     print(f"Presaving a dataset from the \'{cfg}\' file.")
     print(f"Beginning saving process of {split} split.")
