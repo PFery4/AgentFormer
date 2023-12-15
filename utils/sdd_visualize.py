@@ -116,6 +116,45 @@ def visualize_trajectories(data_dict: Dict, draw_ax: matplotlib.axes.Axes) -> No
         draw_ax.scatter(traj[:, 0][~mask], traj[:, 1][~mask], marker='*', s=20, color=c)
 
 
+def visualize_predictions(pred_dict: Dict, draw_ax: matplotlib.axes.Axes) -> None:
+    assert 'valid_id' in pred_dict.keys()
+    assert 'infer_dec_agents' in pred_dict.keys()
+    # assert 'infer_dec_timesteps' in pred_dict.keys()
+    assert 'infer_dec_motion' in pred_dict.keys()
+
+    valid_ids = pred_dict['valid_id'][0]                    # [N]
+    pred_ids = pred_dict['infer_dec_agents']                # [K, P]
+    # pred_timesteps = pred_dict['infer_dec_timesteps']       # [P]
+    pred_trajs = pred_dict['infer_dec_motion']              # [K, P, 2]
+
+    homography = torch.eye(3)
+    if 'map_homography' in pred_dict.keys():
+        homography = pred_dict['map_homography']
+    homography = homography.to(pred_trajs.device)
+
+    color = plt.cm.rainbow(np.linspace(0, 1, valid_ids.shape[0]))
+
+    homogeneous_pred_trajs = torch.cat(
+        (pred_trajs, torch.ones([*pred_trajs.shape[:-1], 1], device=pred_trajs.device)), dim=-1
+    ).transpose(-1, -2)
+
+    plot_pred_trajs = (homography @ homogeneous_pred_trajs).transpose(-1, -2)[..., :-1].cpu()
+    valid_ids = valid_ids.cpu()
+    pred_ids = pred_ids.cpu()
+
+    for i, ag_id in enumerate(valid_ids):
+
+        c = color[i].reshape(1, -1)
+
+        for k, (pred_traj, agent_sequence) in enumerate(zip(plot_pred_trajs, pred_ids)):
+            agent_mask = (agent_sequence == ag_id)
+            agent_traj = pred_traj[agent_mask]
+
+            draw_ax.plot(agent_traj[..., 0], agent_traj[..., 1], color=c, alpha=0.5)
+            draw_ax.scatter(agent_traj[..., 0], agent_traj[..., 1], marker='x', s=10, color=c, alpha=0.5)
+            draw_ax.annotate(f"{k}", (agent_traj[-1, 0], agent_traj[-1, 1]))
+
+
 def visualize_scene_map_and_occlusion_map(data_dict: Dict, draw_ax: matplotlib.axes.Axes) -> None:
     assert 'scene_map' in data_dict.keys()
     assert 'occlusion_map' in data_dict.keys()
@@ -185,6 +224,8 @@ def visualize(
     has_scene_map = 'scene_map' in data_dict.keys()
     if has_scene_map:
         visualize_scene_map_and_occlusion_map(data_dict=data_dict, draw_ax=draw_ax)
+    else:
+        draw_ax.set_aspect('equal')
     visualize_trajectories(data_dict=data_dict, draw_ax=draw_ax)
 
     if draw_ax_sequences is not None:
