@@ -700,6 +700,10 @@ if __name__ == '__main__':
     prepare_seed(cfg.seed)
     torch_dataset = TorchDataGeneratorSDD(parser=cfg, log=None, split='train')
 
+    # for i in range(len(torch_dataset)):
+    #     out_dict = torch_dataset.__getitem__(i)
+    #     print(f"{i, out_dict.keys()=}\n\n")
+
     out_dict = torch_dataset.__getitem__(50)      # occluded
     # out_dict = torch_dataset.__getitem__(72)        # fully observed
 
