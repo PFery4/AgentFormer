@@ -611,16 +611,23 @@ class PresavedDatasetSDD(Dataset):
         print_log(prnt_str, log=log) if log is not None else print(prnt_str)
 
         self.occlusion_process = parser.get('occlusion_process', 'fully_observed')
+        dataset_name = self.occlusion_process
 
-        dataset_dir = os.path.join(self.presaved_datasets_dir, self.occlusion_process, split)
+        self.impute = parser.get('impute', False)
+        if self.impute:
+            dataset_name += '_imputed'
+            assert self.occlusion_process != 'fully_observed'
+
+        dataset_dir = os.path.join(self.presaved_datasets_dir, dataset_name, split)
         self.dataset_dir = None
         if os.path.exists(dataset_dir):
-            self.dataset_name = self.occlusion_process
+            self.dataset_name = dataset_name
             self.dataset_dir = dataset_dir
         else:
             prnt_str = "Couldn't find full dataset path, trying with tiny instead..."
             print_log(prnt_str, log=log) if log is not None else print(prnt_str)
-            self.dataset_name = f"{self.occlusion_process}_tiny"
+            dataset_name += '_tiny'
+            self.dataset_name = dataset_name
             self.dataset_dir = os.path.join(self.presaved_datasets_dir, self.dataset_name, split)
         assert os.path.exists(self.dataset_dir)
 
@@ -699,6 +706,11 @@ if __name__ == '__main__':
     cfg = Config('sdd_baseline_copy_for_test_pre')
     prepare_seed(cfg.seed)
     torch_dataset = TorchDataGeneratorSDD(parser=cfg, log=None, split='train')
+
+    # torch_dataset = PresavedDatasetSDD(parser=cfg, log=None, split='train')
+    # print(f"{torch_dataset.occlusion_process=}")
+    # print(f"{torch_dataset.impute=}")
+    # print(f"{torch_dataset.dataset_name=}")
 
     # for i in range(len(torch_dataset)):
     #     out_dict = torch_dataset.__getitem__(i)
