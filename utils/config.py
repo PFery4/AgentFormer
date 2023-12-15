@@ -36,16 +36,6 @@ class Config:
         if create_dirs:
             recreate_dirs(self.tb_dir)
 
-    def get_last_epoch(self) -> Union[int, None]:
-        # TODO: THIS NEEDS FIXING
-        model_files = sorted(glob.glob(os.path.join(self.model_dir, 'model_*.p')))
-        if len(model_files) == 0:
-            return None
-        else:
-            model_file = os.path.basename(model_files[-1])
-            epoch = int(os.path.splitext(model_file)[0].split('model_')[-1])
-            return epoch
-
     def __getattribute__(self, name):
         yml_dict = super().__getattribute__('yml_dict')
         if name in yml_dict:
