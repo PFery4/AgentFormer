@@ -3,7 +3,7 @@ import argparse
 import os.path
 import pickle
 import yaml
-
+from tqdm import tqdm
 import pandas as pd
 import torch
 from torch.utils.data import DataLoader
@@ -330,14 +330,14 @@ if __name__ == '__main__':
         'FDE',
         'ADE_px',
         'FDE_px',
-        'pred_length',
-        'past_pred_length',
-        'past_ADE',
-        'past_FDE',
-        'past_ADE_px',
-        'past_FDE_px',
-        'OAC',
-        'OAO'
+        # 'pred_length',
+        # 'past_pred_length',
+        # 'past_ADE',
+        # 'past_FDE',
+        # 'past_ADE_px',
+        # 'past_FDE_px',
+        # 'OAC',
+        # 'OAO'
     ]
 
     metric_columns = {
@@ -368,10 +368,10 @@ if __name__ == '__main__':
     score_df = pd.DataFrame(columns=df_columns)
 
     # computing performance metrics from saved predictions
-    for i, in_data in enumerate(test_loader):
+    for i, in_data in enumerate(pbar := tqdm(test_loader)):
 
         filename = in_data['filename'][0]
-        print(f"Processing: {filename}")
+        pbar.set_description(f"Processing: {filename}")
 
         with open(os.path.join(saved_preds_dir, filename), 'rb') as f:
             pred_data = pickle.load(f)
