@@ -112,8 +112,11 @@ def visualize_trajectories(data_dict: Dict, draw_ax: matplotlib.axes.Axes) -> No
     color_iter = iter(plt.cm.rainbow(np.linspace(0, 1, ids.shape[0])))
     for traj, mask in zip(plot_trajs, obs_mask):
         c = next(color_iter).reshape(1, -1)
-        draw_ax.scatter(traj[:, 0][mask], traj[:, 1][mask], marker='x', s=20, color=c)
-        draw_ax.scatter(traj[:, 0][~mask], traj[:, 1][~mask], marker='*', s=20, color=c)
+        draw_ax.plot(traj[:, 0][mask], traj[:, 1][mask], color=c)
+        draw_ax.plot(traj[:, 0][~mask], traj[:, 1][~mask], color='black')
+        draw_ax.scatter(traj[:, 0][mask], traj[:, 1][mask], marker='x', s=25, color=c)
+        draw_ax.scatter(traj[:, 0][~mask][:-1], traj[:, 1][~mask][:-1], marker='*', s=40, color='black')
+        draw_ax.scatter(traj[:, 0][~mask][-1], traj[:, 1][~mask][-1], marker='*', s=40, color=c)
 
 
 def visualize_predictions(pred_dict: Dict, draw_ax: matplotlib.axes.Axes) -> None:
@@ -150,8 +153,8 @@ def visualize_predictions(pred_dict: Dict, draw_ax: matplotlib.axes.Axes) -> Non
             agent_mask = (agent_sequence == ag_id)
             agent_traj = pred_traj[agent_mask]
 
-            draw_ax.plot(agent_traj[..., 0], agent_traj[..., 1], color=c, alpha=0.5)
-            draw_ax.scatter(agent_traj[..., 0], agent_traj[..., 1], marker='x', s=10, color=c, alpha=0.5)
+            draw_ax.plot(agent_traj[..., 0], agent_traj[..., 1], color=c, alpha=0.4)
+            draw_ax.scatter(agent_traj[..., 0], agent_traj[..., 1], marker='*', s=10, color=c, alpha=0.4)
             draw_ax.annotate(f"{k}", (agent_traj[-1, 0], agent_traj[-1, 1]))
 
 
