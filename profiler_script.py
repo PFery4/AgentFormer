@@ -71,9 +71,9 @@ if __name__ == '__main__':
 
     model_runs = 50
     cfg_str = 'sdd_baseline_copy_for_test_pre'
-    profile_model = False
-    profile_dataset = True
-    presaved_dataset = False
+    profile_model = True
+    profile_dataset = False
+    presaved_dataset = True
 
     cfg = Config(cfg_id=cfg_str, tmp=True, create_dirs=True)
 
