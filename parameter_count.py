@@ -64,6 +64,11 @@ if __name__ == '__main__':
         param_count = param.numel()
         param_df.loc[i] = {'module': name, 'params': param_count}
 
-    with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.max_colwidth', None):
+    with pd.option_context(
+            'display.max_rows', None,
+            'display.max_columns', None,
+            'display.max_colwidth', None,
+            'display.width', None
+    ):
         print(param_df)
     print(f"\nTOTAL PARAMETER COUNT:\n{param_df['params'].sum()}")
