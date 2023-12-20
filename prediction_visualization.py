@@ -64,6 +64,7 @@ if __name__ == '__main__':
             pred_dict = pickle.load(f)
 
         fig, ax = plt.subplots()
+        fig.canvas.manager.set_window_title(f"{args.cfg}/{checkpoint_name}: {instance}")
 
         visualize(data_dict=data_dict, draw_ax=ax)
         visualize_predictions(pred_dict=pred_dict, draw_ax=ax)
