@@ -4,6 +4,7 @@ import argparse
 import pickle
 import torch
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 from data.sdd_dataloader import PresavedDatasetSDD, TorchDataGeneratorSDD
 from model.model_lib import model_dict
@@ -78,14 +79,16 @@ if __name__ == '__main__':
     print_log(log_str, log=log)
     mkdir_if_missing(save_dir)
 
-    for i, data in enumerate(test_loader):
+    for i, data in enumerate(pbar := tqdm(test_loader)):
 
-        seq_name, frame, filename = data['seq'][0], int(data['frame'][0]), data['filename'][0]
-        log_str = f"saving predictions of instance #{i}\t\t| " \
-                  f"file name: {filename}\t\t| " \
-                  f"sequence name: {seq_name.ljust(20, ' ')}\t\t| " \
-                  f"frame number: {frame}"
-        print_log(log_str, log=log)
+        # seq_name, frame, filename = data['seq'][0], int(data['frame'][0]), data['filename'][0]
+        # log_str = f"saving predictions of instance #{i}\t\t| " \
+        #           f"file name: {filename}\t\t| " \
+        #           f"sequence name: {seq_name.ljust(20, ' ')}\t\t| " \
+        #           f"frame number: {frame}"
+        # print_log(log_str, log=log)
+        filename = data['filename'][0]
+        pbar.set_description(f"Saving: {filename}")
 
         out_dict = dict()
         with torch.no_grad():
