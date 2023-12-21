@@ -48,9 +48,9 @@ global_map_encoder:
   use_occlusion_map: true
   output_dim: 256
   layers:
-    - [conv2d, 4, 7, 3]     # [out_channels, kernel_size, stride]   (in_channels=None, padding=None, padding_mode=None, dilation=None, groups=None, bias=None)
+    - [conv2d, 4, 11, 4]     # [out_channels, kernel_size, stride]   (in_channels=None, padding=None, padding_mode=None, dilation=None, groups=None, bias=None)
     - [maxpool, 2, 2]       # [kernel_size, stride]                 (padding=None, dilation=None, return_indices=None, ceil_mode=None)
-    - [conv2d, 8, 5, 2]
+    - [conv2d, 8, 9, 3]
     - [maxpool, 2, 2]
     - [conv2d, 8, 3, 1]
     - [maxpool, 2, 2]
