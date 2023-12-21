@@ -25,7 +25,7 @@ model_id: agentformer
 tf_version: v2
 tf_model_dim: 256
 tf_ff_dim: 512
-tf_nhead: 8
+tf_n_head: 8
 tf_dropout: 0.1
 input_type: ['scene_norm', 'vel']
 pred_type: 'scene_norm'

@@ -26,7 +26,7 @@ scene_side_length            : 80.0     # [m]
 model_id: agentformer
 tf_model_dim: 256
 tf_ff_dim: 512
-tf_nhead: 8
+tf_n_head: 8
 #tf_model_dim: 64
 #tf_ff_dim: 128
 #tf_nhead: 8
