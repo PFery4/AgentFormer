@@ -41,4 +41,27 @@ if __name__ == '__main__':
     scores_df = pd.read_csv(score_csv_file)
 
     # WE CAN PERFORM EXTRA SORTING / ANALYSIS ON <scores_df>
-    
+    print(f"{scores_df.columns=}")
+    print(f"{scores_df.index=}")
+    print(scores_df[['idx', 'agent_id', 'min_ADE', 'mean_ADE', 'min_FDE', 'mean_FDE']]
+          .head(10))
+    print(scores_df[['idx', 'agent_id', 'min_ADE', 'mean_ADE', 'min_FDE', 'mean_FDE']]
+          .mean())
+
+    print(f"{scores_df['idx'].value_counts()=}")
+    # print(scores_df[['idx', 'agent_id', 'min_ADE', 'mean_ADE', 'min_FDE', 'mean_FDE']]
+    #       .sort_values('min_ADE', ascending=True).head(5))
+    #
+    # instances_df = instance_collapse(scores_df)
+    # print(f"{instances_df.columns=}")
+    # print(f"{instances_df.index=}")
+    # print(instances_df[['idx', 'agent_id', 'min_ADE', 'mean_ADE', 'min_FDE', 'mean_FDE']]
+    #       .sort_values('min_ADE', ascending=True).head(5))
+
+    instances_df = scores_df.set_index(['idx', 'agent_id'])
+    instances_df = instances_df.groupby(level=0)
+    instances_df = instances_df.agg('mean')
+    print(instances_df[['min_ADE', 'mean_ADE', 'min_FDE', 'mean_FDE']]
+          .head(5))
+    print(instances_df[['min_ADE', 'mean_ADE', 'min_FDE', 'mean_FDE']]
+          .mean())
