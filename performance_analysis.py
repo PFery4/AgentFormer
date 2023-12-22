@@ -12,7 +12,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--cfg', default=None)
     parser.add_argument('--data_split', type=str, default='test')
-    parser.add_argument('--checkpoint_name', default=None)
+    parser.add_argument('--checkpoint_name', default='best_val')        # can be 'best_val' / 'untrained' / <model_id>
     parser.add_argument('--tmp', action='store_true', default=False)
     args = parser.parse_args()
 
@@ -28,11 +28,14 @@ if __name__ == '__main__':
         sdd_test_set = PresavedDatasetSDD(parser=cfg, log=None, split=split)
     else:
         raise NotImplementedError
-    if checkpoint_name is not None:
-        saved_preds_dir = os.path.join(cfg.result_dir, sdd_test_set.dataset_name, checkpoint_name, split)
-    else:
-        saved_preds_dir = os.path.join(cfg.result_dir, sdd_test_set.dataset_name, 'untrained', split)
 
+    if checkpoint_name == 'best_val':
+        checkpoint_name = cfg.get_best_val_checkpoint_name()
+        print(f"Best validation checkpoint name is: {checkpoint_name}")
+    if checkpoint_name == 'untrained':
+        saved_preds_dir = os.path.join(cfg.result_dir, sdd_test_set.dataset_name, 'untrained', split)
+    else:
+        saved_preds_dir = os.path.join(cfg.result_dir, sdd_test_set.dataset_name, checkpoint_name, split)
     assert os.path.exists(saved_preds_dir)
 
     score_csv_file = os.path.join(saved_preds_dir, 'prediction_scores.csv')

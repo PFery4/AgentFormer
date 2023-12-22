@@ -11,7 +11,7 @@ from utils.utils import prepare_seed
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--cfg', default=None)
-    parser.add_argument('--checkpoint_name', default=None)
+    parser.add_argument('--checkpoint_name', default=None)        # can be None / 'best_val' / 'untrained' / <model_id>
     parser.add_argument('--gpu', type=int, default=0)
     args = parser.parse_args()
 
@@ -44,6 +44,10 @@ if __name__ == '__main__':
         sys.exit()
 
     # model
+    if checkpoint_name == 'best_val':
+        checkpoint_name = cfg.get_best_val_checkpoint_name()
+        print(f"Best validation checkpoint name is: {checkpoint_name}")
+
     model_id = cfg.get('model_id', 'agentformer')
     model = model_dict[model_id](cfg)
     model.set_device(device)
