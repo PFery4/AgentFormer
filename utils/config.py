@@ -3,7 +3,7 @@ import os
 import os.path
 import glob
 from easydict import EasyDict
-from typing import Union
+import pandas as pd
 
 from utils.utils import recreate_dirs
 
@@ -35,6 +35,13 @@ class Config:
         os.makedirs(self.log_dir, exist_ok=True)
         if create_dirs:
             recreate_dirs(self.tb_dir)
+
+    def get_best_val_checkpoint_name(self):
+        val_csv_path = os.path.join(self.model_dir, 'models.csv')
+        assert os.path.exists(val_csv_path)
+        val_csv = pd.read_csv(val_csv_path)
+        checkpoint_name = str(val_csv[val_csv['val_loss'] == val_csv['val_loss'].min()]['model_name'].item())
+        return checkpoint_name
 
     def __getattribute__(self, name):
         yml_dict = super().__getattribute__('yml_dict')
