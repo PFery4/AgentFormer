@@ -23,6 +23,23 @@ def rotation_2d_torch(x, theta, origin=None):
     return rot_x, norm_rot_x
 
 
+def most_diverse_modes(final_pred_points: torch.Tensor, n: int = 5):
+    # final_pred_points     [K, 2]
+    assert 1 < n < final_pred_points.shape[0]
+    combo_candidates = torch.combinations(torch.arange(final_pred_points.shape[0]), r=n)
+    dist_matrix = (final_pred_points.unsqueeze(0) - final_pred_points.unsqueeze(1)).pow(2).sum(-1).sqrt()   # [K, K]
+    print(f"{dist_matrix=}")
+    print(f"{combo_candidates=}")
+
+    combo_masks = torch.full([combo_candidates.shape[0], final_pred_points.shape[0]], False)
+    combo_masks[combo_candidates] = True
+
+    print(f"{combo_masks=}")
+
+    # WIP
+    raise NotImplementedError
+
+
 class to_cpu:
 
     def __init__(self, *models):
