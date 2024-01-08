@@ -4,6 +4,7 @@ import os.path
 from io import TextIOWrapper
 
 import cv2
+import h5py
 import matplotlib.axes
 import matplotlib.pyplot as plt
 import mpl_toolkits.axes_grid1
@@ -610,30 +611,63 @@ class PresavedDatasetSDD(Dataset):
         prnt_str = "\n-------------------------- loading %s data --------------------------" % split
         print_log(prnt_str, log=log) if log is not None else print(prnt_str)
 
+        # occlusion process specific parameters
         self.occlusion_process = parser.get('occlusion_process', 'fully_observed')
-        dataset_name = self.occlusion_process
-
         self.impute = parser.get('impute', False)
-        if self.impute:
-            dataset_name += '_imputed'
-            assert self.occlusion_process != 'fully_observed'
+        assert not self.impute or self.occlusion_process != 'fully_observed'
 
-        dataset_dir = os.path.join(self.presaved_datasets_dir, dataset_name, split)
+        # dataset identification
+        self.dataset_name = None
         self.dataset_dir = None
-        if os.path.exists(dataset_dir):
-            self.dataset_name = dataset_name
-            self.dataset_dir = dataset_dir
-        else:
-            prnt_str = "Couldn't find full dataset path, trying with tiny instead..."
-            print_log(prnt_str, log=log) if log is not None else print(prnt_str)
-            dataset_name += '_tiny'
-            self.dataset_name = dataset_name
-            self.dataset_dir = os.path.join(self.presaved_datasets_dir, self.dataset_name, split)
+        self.set_dataset_name_and_dir(log=log)
         assert os.path.exists(self.dataset_dir)
 
-        prnt_str = f"Extracting data from the following directory:\n{self.dataset_dir}"
+        prnt_str = f"Dataset directory is:\n{self.dataset_dir}"
         print_log(prnt_str, log=log) if log is not None else print(prnt_str)
-        self.pickle_files = glob.glob1(self.dataset_dir, "*.pickle")
+
+        # map specific parameters
+        self.map_side = parser.get('scene_side_length', 80.0)               # [m]
+        self.map_resolution = parser.get('global_map_resolution', 800)      # [px]
+        self.map_homography = torch.Tensor(
+            [[self.map_resolution / self.map_side, 0., self.map_resolution / 2],
+             [0., self.map_resolution / self.map_side, self.map_resolution / 2],
+             [0., 0., 1.]]
+        )
+
+        # timesteps specific parameters
+        self.T_obs = parser.past_frames
+        self.T_pred = parser.future_frames
+        self.T_total = self.T_obs + self.T_pred
+        self.timesteps = torch.arange(-self.T_obs, self.T_pred) + 1
+
+    def set_dataset_name_and_dir(self, log: Optional[TextIOWrapper] = None):
+        try_name = self.occlusion_process
+        if self.impute:
+            try_name += '_imputed'
+        try_dir = os.path.join(self.presaved_datasets_dir, try_name, self.split)
+        if os.path.exists(try_dir):
+            self.dataset_name = try_name
+            self.dataset_dir = try_dir
+        else:
+            prnt_str = "Couldn't find full dataset path, trying with tiny dataset instead..."
+            print_log(prnt_str, log=log) if log is not None else print(prnt_str)
+            try_name += '_tiny'
+            self.dataset_name = try_name
+            self.dataset_dir = os.path.join(self.presaved_datasets_dir, self.dataset_name, self.split)
+
+    def __len__(self):
+        raise NotImplementedError
+
+    def __getitem__(self, idx: int) -> Dict:
+        raise NotImplementedError
+
+
+class PickleDatasetSDD(PresavedDatasetSDD):
+
+    def __init__(self, parser: Config, log: Optional[TextIOWrapper] = None, split: str = 'train'):
+        super().__init__(parser=parser, log=log, split=split)
+
+        self.pickle_files = sorted(glob.glob1(self.dataset_dir, "*.pickle"))
 
         if self.split == 'val' and len(self.pickle_files) > parser.validation_freq // 4:
             # Training set might be quite large. When that is the case, we prefer to validate after every
@@ -656,20 +690,6 @@ class PresavedDatasetSDD(Dataset):
             self.pickle_files = keep_pickle_files
             assert len(self.pickle_files) == required_val_set_size
 
-        self.map_side = parser.get('scene_side_length', 80.0)               # [m]
-        self.map_resolution = parser.get('global_map_resolution', 800)      # [px]
-        self.map_homography = torch.Tensor(
-            [[self.map_resolution / self.map_side, 0., self.map_resolution / 2],
-             [0., self.map_resolution / self.map_side, self.map_resolution / 2],
-             [0., 0., 1.]]
-        )
-
-        self.T_obs = parser.past_frames
-        self.T_pred = parser.future_frames
-        self.T_total = self.T_obs + self.T_pred
-
-        self.timesteps = torch.arange(-self.T_obs, self.T_pred) + 1
-
         prnt_str = f'total number of samples: {self.__len__()}'
         print_log(prnt_str, log=log) if log is not None else print(prnt_str)
         prnt_str = f'------------------------------ done --------------------------------\n'
@@ -678,16 +698,98 @@ class PresavedDatasetSDD(Dataset):
     def __len__(self):
         return len(self.pickle_files)
 
-    def __getitem__(self, idx):
-
+    def __getitem__(self, idx: int) -> Dict:
         filename = self.pickle_files[idx]
 
         with open(os.path.join(self.dataset_dir, filename), 'rb') as f:
             data_dict = pickle.load(f)
 
-        data_dict['filename'] = filename
+        data_dict['instance_name'] = filename
         data_dict['timesteps'] = self.timesteps
         data_dict['scene_orig'] = torch.zeros([2])
+
+        return data_dict
+
+
+class HDF5DatasetSDD(PresavedDatasetSDD):
+
+    def __init__(self, parser: Config, log: Optional[TextIOWrapper] = None, split: str = 'train'):
+        super().__init__(parser=parser, log=log, split=split)
+
+        self.hdf5_file = os.path.join(self.dataset_dir, 'dataset.h5')
+        assert os.path.exists(self.hdf5_file)
+
+        # For integrating the hdf5 dataset into the Pytorch class,
+        # we follow the principles recommended by Piotr Januszewski:
+        # https://discuss.pytorch.org/t/dataloader-when-num-worker-0-there-is-bug/25643/16
+        self.h5_dataset = None
+        with h5py.File(self.hdf5_file, 'r') as h5_file:
+            instances = sorted([int(key) for key in h5_file.keys() if key.isdecimal()])
+            self.instance_names = [f'{instance:08}' for instance in instances]
+            self.instance_nums = list(range(len(self.instance_names)))
+
+            self.separate_dataset_keys = [key for key in h5_file.keys() if not key.isdecimal() and key not in ['seq', 'frame']]
+
+        if self.split == 'val' and len(self.instance_names) > parser.validation_freq // 4:
+            # Training set might be quite large. When that is the case, we prefer to validate after every
+            # <parser.validation_freq> batches rather than every epoch (i.e., validating multiple times per epoch).
+            # train / val split size ratios are typically ~80/20. Our desired validation set size should then be:
+            #       <parser.validation_freq> * 20/80
+            # If we check that the validation split contains more instances than desired, we artificially
+            # reduce the dataset size by discarding instances, in order to reach the desired val set size.
+            required_val_set_size = parser.validation_freq // 4
+            keep_instances = np.linspace(0, len(self.instance_names)-1, num=required_val_set_size).round().astype(int)
+
+            assert np.all(keep_instances[1:] != keep_instances[:-1])        # verifying no duplicates
+
+            keep_instance_names = [self.instance_names[i] for i in keep_instances]
+            keep_instance_nums = [self.instance_nums[i] for i in keep_instances]
+
+            prnt_str = f"Val set size too large! --> {len(self.instance_names)} " \
+                       f"(validating after every {parser.validation_freq} batch).\n" \
+                       f"Reducing val set size to {len(keep_instances)}."
+            print_log(prnt_str, log=log) if log is not None else print(prnt_str)
+            self.instance_names = keep_instance_names
+            self.instance_nums = keep_instance_nums
+            assert len(self.instance_names) == required_val_set_size
+
+        assert len(self.instance_names) == len(self.instance_nums)
+
+        prnt_str = f'total number of samples: {self.__len__()}'
+        print_log(prnt_str, log=log) if log is not None else print(prnt_str)
+        prnt_str = f'------------------------------ done --------------------------------\n'
+        print_log(prnt_str, log=log) if log is not None else print(prnt_str)
+
+    def __len__(self):
+        return len(self.instance_names)
+
+    def __getitem__(self, idx: int) -> Dict:
+        instance_name = self.instance_names[idx]
+        instance_num = self.instance_nums[idx]
+
+        if self.h5_dataset is None:
+            self.h5_dataset = h5py.File(self.hdf5_file, 'r')
+
+        data_dict = dict()
+
+        data_dict['seq'] = self.h5_dataset['seq'].asstr()[instance_num]
+        data_dict['frame'] = self.h5_dataset['frame'][instance_num]
+
+        # reading instance elements which do not change shapes from their respective datasets
+        for key in self.separate_dataset_keys:
+            data_dict[key] = torch.from_numpy(self.h5_dataset[key][instance_num])
+
+        # reading remaining instance elements from the corresponding group
+        for key in self.h5_dataset[instance_name].keys():
+            data_dict[key] = torch.from_numpy(self.h5_dataset[instance_name][key][()])
+
+        data_dict['instance_name'] = instance_name
+        data_dict['timesteps'] = self.timesteps
+        data_dict['scene_orig'] = torch.zeros([2])
+        if 'true_trajectories' not in data_dict.keys():
+            data_dict['true_trajectories'] = None
+        if 'true_observation_mask' not in data_dict.keys():
+            data_dict['true_observation_mask'] = None
 
         return data_dict
 
