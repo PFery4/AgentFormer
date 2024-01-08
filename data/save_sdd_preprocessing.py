@@ -20,8 +20,9 @@ we had no choice but to save the preprocessed data.
 def instantiate_hdf5_dataset(save_path, setup_dict: Dict):
     assert os.path.exists(save_path)
 
-    print(f"the setup dictionary for the hdf5 dataset is:")
+    print(f"\nthe setup dictionary for the hdf5 dataset is:")
     [print(f"{k}: {v}") for k, v in setup_dict.items()]
+    print()
 
     with h5py.File(os.path.join(save_path, 'dataset.h5'), 'w') as hdf5_file:
 
