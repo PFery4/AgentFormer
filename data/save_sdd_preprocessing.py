@@ -178,7 +178,11 @@ if __name__ == '__main__':
             if key in hdf5_setup_dict.keys():
                 del hdf5_setup_dict[key]
 
-        instantiate_hdf5_dataset(save_path=save_path, setup_dict=hdf5_setup_dict)
+        if not os.path.exists(os.path.join(save_path, 'dataset.h5')):
+            print("Dataset file does not exist, creating a new file")
+            instantiate_hdf5_dataset(save_path=save_path, setup_dict=hdf5_setup_dict)
+        else:
+            print(f"Will use the hdf5 dataset file 'dataset.h5' stored under:\n{save_path}")
 
         for i, idx in enumerate(tqdm(indices)):
 
