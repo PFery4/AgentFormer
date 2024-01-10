@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
 import train
-from data.sdd_dataloader import TorchDataGeneratorSDD, PresavedDatasetSDD
+from data.sdd_dataloader import TorchDataGeneratorSDD, PresavedDatasetSDD, PickleDatasetSDD, HDF5DatasetSDD
 from model.model_lib import model_dict
 from utils.torch import get_scheduler
 from utils.config import Config
@@ -70,10 +70,11 @@ def analyze_cProfile(filename):
 if __name__ == '__main__':
 
     model_runs = 50
-    cfg_str = 'sdd_baseline_copy_for_test_pre'
+    # cfg_str = 'sdd_baseline_copy_for_test_pre'
+    cfg_str = 'original_agentformer_pre'
     profile_model = True
     profile_dataset = False
-    presaved_dataset = True
+    dataset_class = PickleDatasetSDD        # [PickleDatasetSDD, HDF5DatasetSDD, TorchDataGeneratorSDD]
 
     cfg = Config(cfg_id=cfg_str, tmp=True, create_dirs=True)
 
@@ -112,7 +113,6 @@ if __name__ == '__main__':
     tb_logger = SummaryWriter(cfg.tb_dir)
     print(f"{cfg.tb_dir=}")
 
-    dataset_class = PresavedDatasetSDD if presaved_dataset else TorchDataGeneratorSDD
     sdd_dataset = dataset_class(parser=cfg, log=log, split='train')
     print(f"dataset class is of type: {type(sdd_dataset)}")
     training_loader = DataLoader(dataset=sdd_dataset, shuffle=True, num_workers=1)
