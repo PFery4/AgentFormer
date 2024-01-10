@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from csv import DictWriter
 
-from data.sdd_dataloader import TorchDataGeneratorSDD, PresavedDatasetSDD
+from data.sdd_dataloader import TorchDataGeneratorSDD, PresavedDatasetSDD, PickleDatasetSDD, HDF5DatasetSDD
 from model.model_lib import model_dict
 from utils.torch import get_scheduler
 from utils.config import Config
@@ -228,7 +228,10 @@ if __name__ == '__main__':
     parser.add_argument('--checkpoint_name', default=None)
     parser.add_argument('--tmp', action='store_true', default=False)
     parser.add_argument('--gpu', type=int, default=0)
+    parser.add_argument('--dataset_class', default='hdf5')          # [hdf5, pickle, torch_preprocess]
     args = parser.parse_args()
+
+    assert args.dataset_class in ['hdf5', 'pickle', 'torch_preprocess']
 
     """ setup """
     cfg = Config(args.cfg, args.tmp, create_dirs=False)
@@ -300,13 +303,21 @@ if __name__ == '__main__':
 
     """ data """
     assert cfg.dataset == "sdd"
+    dataset_classes = {
+        'hdf5': HDF5DatasetSDD,
+        'pickle': PickleDatasetSDD,
+        'torch_preprocess': TorchDataGeneratorSDD
+    }
+    dataset_class = dataset_classes[args.dataset_class]
+
     if cfg.dataset == "sdd":
         # sdd_dataset = TorchDataGeneratorSDD(parser=cfg, log=log, split='train')
-        sdd_train_set = PresavedDatasetSDD(parser=cfg, log=log, split='train')
+        sdd_train_set = dataset_class(parser=cfg, log=log, split='train')
         training_loader = DataLoader(dataset=sdd_train_set, shuffle=True, num_workers=2)
 
-        sdd_val_set = PresavedDatasetSDD(parser=cfg, log=log, split='val')
+        sdd_val_set = dataset_class(parser=cfg, log=log, split='val')
         validation_loader = DataLoader(dataset=sdd_val_set, shuffle=False, num_workers=2)
+        print_log(f"\nUsing dataset of class: {dataset_class}\n", log)
 
     """ model """
     model_id = cfg.get('model_id', 'agentformer')
