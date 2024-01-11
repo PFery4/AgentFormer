@@ -6,7 +6,7 @@ import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from data.sdd_dataloader import PresavedDatasetSDD, TorchDataGeneratorSDD
+from data.sdd_dataloader import dataset_dict
 from model.model_lib import model_dict
 from utils.config import Config
 from utils.utils import prepare_seed, print_log, mkdir_if_missing
@@ -18,6 +18,7 @@ if __name__ == '__main__':
     parser.add_argument('--checkpoint_name', default='best_val')        # can be 'best_val' / 'untrained' / <model_id>
     parser.add_argument('--tmp', action='store_true', default=False)
     parser.add_argument('--gpu', type=int, default=0)
+    parser.add_argument('--dataset_class', default='hdf5')          # [hdf5, pickle, torch_preprocess]
     args = parser.parse_args()
 
     split = args.data_split
@@ -53,22 +54,25 @@ if __name__ == '__main__':
     log = open(os.path.join(cfg.log_dir, 'log_test.txt'), 'w')
 
     # dataloader
+    assert cfg.dataset == 'sdd'
+    dataset_class = dataset_dict[args.dataset_class]
     if cfg.dataset == 'sdd':
-        sdd_test_set = PresavedDatasetSDD(parser=cfg, log=log, split=split)
+        sdd_test_set = dataset_class(parser=cfg, log=log, split=split)
         test_loader = DataLoader(dataset=sdd_test_set, shuffle=False, num_workers=2)
     else:
         raise NotImplementedError
 
     # model
-    if checkpoint_name == 'best_val':
-        checkpoint_name = cfg.get_best_val_checkpoint_name()
-        print(f"Best validation checkpoint name is: {checkpoint_name}")
 
     model_id = cfg.get('model_id', 'agentformer')
     model = model_dict[model_id](cfg)
     model.set_device(device)
     model.eval()
-    if checkpoint_name is not None:
+    if model_id in ['const_velocity', 'oracle']:
+        checkpoint_name = 'untrained'
+    elif checkpoint_name == 'best_val':
+        checkpoint_name = cfg.get_best_val_checkpoint_name()
+        print(f"Best validation checkpoint name is: {checkpoint_name}")
         cp_path = cfg.model_path % checkpoint_name
         print_log(f'loading model from checkpoint: {cp_path}', log, display=True)
         model_cp = torch.load(cp_path, map_location='cpu')
@@ -91,7 +95,7 @@ if __name__ == '__main__':
         #           f"sequence name: {seq_name.ljust(20, ' ')}\t\t| " \
         #           f"frame number: {frame}"
         # print_log(log_str, log=log)
-        filename = data['filename'][0]
+        filename = data['instance_name'][0]
         pbar.set_description(f"Saving: {filename}")
 
         out_dict = dict()
