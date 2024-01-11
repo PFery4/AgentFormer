@@ -315,6 +315,7 @@ if __name__ == '__main__':
     if model_id in ['const_velocity', 'oracle']:
         checkpoint_name = 'untrained'
     elif checkpoint_name == 'best_val':
+        # TODO: Make sure the loading will work in case we submit a checkpoint_name instead of 'best_val'
         checkpoint_name = cfg.get_best_val_checkpoint_name()
         print(f"Best validation checkpoint name is: {checkpoint_name}")
         cp_path = cfg.model_path % checkpoint_name
