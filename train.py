@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from csv import DictWriter
 
-from data.sdd_dataloader import TorchDataGeneratorSDD, PresavedDatasetSDD, PickleDatasetSDD, HDF5DatasetSDD
+from data.sdd_dataloader import dataset_dict
 from model.model_lib import model_dict
 from utils.torch import get_scheduler
 from utils.config import Config
@@ -303,12 +303,7 @@ if __name__ == '__main__':
 
     """ data """
     assert cfg.dataset == "sdd"
-    dataset_classes = {
-        'hdf5': HDF5DatasetSDD,
-        'pickle': PickleDatasetSDD,
-        'torch_preprocess': TorchDataGeneratorSDD
-    }
-    dataset_class = dataset_classes[args.dataset_class]
+    dataset_class = dataset_dict[args.dataset_class]
 
     if cfg.dataset == "sdd":
         # sdd_dataset = TorchDataGeneratorSDD(parser=cfg, log=log, split='train')
