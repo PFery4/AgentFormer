@@ -794,6 +794,13 @@ class HDF5DatasetSDD(PresavedDatasetSDD):
         return data_dict
 
 
+dataset_dict = {
+        'hdf5': HDF5DatasetSDD,
+        'pickle': PickleDatasetSDD,
+        'torch_preprocess': TorchDataGeneratorSDD
+    }
+
+
 if __name__ == '__main__':
 
     ###################################################################################################################
