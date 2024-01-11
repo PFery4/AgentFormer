@@ -41,7 +41,10 @@ def instantiate_hdf5_dataset(save_path, setup_dict: Dict):
 
 def write_to_hdf5_dataset(hdf5_file: h5py.File, instance_idx: int, instance_name: str, instance_dict: Dict):
     # creating a separate group for the instance, where all shape changing instance elements will be stored
-    group = hdf5_file.create_group(name=instance_name)
+    if instance_name in hdf5_file.keys():
+        group = hdf5_file[instance_name]
+    else:
+        group = hdf5_file.create_group(name=instance_name)
 
     for key in instance_dict.keys():
         # processing instance elements which do not change shapes into their respective datasets
