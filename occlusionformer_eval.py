@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader
 
 from utils.config import Config, REPO_ROOT
 from utils.utils import prepare_seed, print_log, mkdir_if_missing
-from data.sdd_dataloader import PresavedDatasetSDD
+from data.sdd_dataloader import dataset_dict
 from model.agentformer_loss import index_mapping_gt_seq_pred_seq
 from model.model_lib import model_dict
 
@@ -263,6 +263,7 @@ if __name__ == '__main__':
     parser.add_argument('--checkpoint_name', default='best_val')        # can be 'best_val' / 'untrained' / <model_id>
     parser.add_argument('--tmp', action='store_true', default=False)
     parser.add_argument('--gpu', type=int, default=0)
+    parser.add_argument('--dataset_class', default='hdf5')          # [hdf5, pickle, torch_preprocess]
     args = parser.parse_args()
 
     split = args.data_split
@@ -298,22 +299,24 @@ if __name__ == '__main__':
     log = open(os.path.join(cfg.log_dir, 'log_test.txt'), 'w')
 
     # dataloader
+    assert cfg.dataset == 'sdd'
+    dataset_class = dataset_dict[args.dataset_class]
     if cfg.dataset == 'sdd':
-        sdd_test_set = PresavedDatasetSDD(parser=cfg, log=log, split=split)
+        sdd_test_set = dataset_class(parser=cfg, log=log, split=split)
         test_loader = DataLoader(dataset=sdd_test_set, shuffle=False, num_workers=2)
     else:
         raise NotImplementedError
 
     # model
-    if checkpoint_name == 'best_val':
-        checkpoint_name = cfg.get_best_val_checkpoint_name()
-        print(f"Best validation checkpoint name is: {checkpoint_name}")
-
     model_id = cfg.get('model_id', 'agentformer')
     model = model_dict[model_id](cfg)
     model.set_device(device)
     model.eval()
-    if checkpoint_name is not None:
+    if model_id in ['const_velocity', 'oracle']:
+        checkpoint_name = 'untrained'
+    elif checkpoint_name == 'best_val':
+        checkpoint_name = cfg.get_best_val_checkpoint_name()
+        print(f"Best validation checkpoint name is: {checkpoint_name}")
         cp_path = cfg.model_path % checkpoint_name
         print_log(f'loading model from checkpoint: {cp_path}', log, display=True)
         model_cp = torch.load(cp_path, map_location='cpu')
@@ -334,15 +337,20 @@ if __name__ == '__main__':
         'FDE',
         'ADE_px',
         'FDE_px',
-        # 'pred_length',
-        # 'past_pred_length',
-        # 'past_ADE',
-        # 'past_FDE',
-        # 'past_ADE_px',
-        # 'past_FDE_px',
-        # 'OAC',
-        # 'OAO'
     ]
+    if cfg.occlusion_process == 'occlusion_simulation':
+        metrics_to_compute.extend(
+            [
+                'pred_length',
+                'past_pred_length',
+                'past_ADE',
+                'past_FDE',
+                'past_ADE_px',
+                'past_FDE_px',
+                'OAC',
+                'OAO'
+            ]
+        )
 
     metric_columns = {
         'ADE': [f'K{i}_ADE' for i in range(cfg.sample_k)],
@@ -374,7 +382,7 @@ if __name__ == '__main__':
     # computing performance metrics from saved predictions
     for i, in_data in enumerate(pbar := tqdm(test_loader)):
 
-        filename = in_data['filename'][0]
+        filename = in_data['instance_name'][0]
         pbar.set_description(f"Processing: {filename}")
 
         with open(os.path.join(saved_preds_dir, filename), 'rb') as f:
