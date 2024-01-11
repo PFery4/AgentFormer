@@ -12,18 +12,18 @@ import torch
 from torch import nn
 from collections import defaultdict
 
-from OriginalAgentFormer.model.agentformer import AgentFormer
-from OriginalAgentFormer.model.dlow import DLow
+from OriginalAgentFormer.model.model_lib import model_dict
 from utils.utils import memory_report
 
 
-class OrigModelBaseWrapper(nn.Module):
+class OrigModelWrapper(nn.Module):
 
     def __init__(self, cfg):
         super().__init__()
 
-        # self.orig_model = AgentFormer(cfg=cfg)
-        self.orig_model = None
+        assert '_' in cfg.model_id
+        self.model_id = cfg.model_id
+        self.orig_model = model_dict[self.model_id.split('_')[-1]](cfg=cfg)
         self.device = torch.device('cpu')
 
         self.traj_scale = cfg.traj_scale
@@ -135,18 +135,18 @@ class OrigModelBaseWrapper(nn.Module):
         return self.orig_model.compute_loss()
 
 
-class OrigAgentFormerWrapper(OrigModelBaseWrapper):
-
-    def __init__(self, cfg):
-        super().__init__(cfg=cfg)
-        self.orig_model = AgentFormer(cfg=cfg)
-
-
-class OrigDLowWrapper(OrigModelBaseWrapper):
-
-    def __init__(self, cfg):
-        super().__init__(cfg=cfg)
-        self.orig_model = DLow(cfg=cfg)
+# class OrigAgentFormerWrapper(OrigModelBaseWrapper):
+#
+#     def __init__(self, cfg):
+#         super().__init__(cfg=cfg)
+#         self.orig_model = AgentFormer(cfg=cfg)
+#
+#
+# class OrigDLowWrapper(OrigModelBaseWrapper):
+#
+#     def __init__(self, cfg):
+#         super().__init__(cfg=cfg)
+#         self.orig_model = DLow(cfg=cfg)
 
 
 # TODO: once verifications have been made for both AgentFormer and Dlow wrappers, delete this commented out code
