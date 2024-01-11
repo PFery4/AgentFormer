@@ -63,7 +63,6 @@ if __name__ == '__main__':
         raise NotImplementedError
 
     # model
-
     model_id = cfg.get('model_id', 'agentformer')
     model = model_dict[model_id](cfg)
     model.set_device(device)
