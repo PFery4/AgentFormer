@@ -4,7 +4,7 @@ import pickle
 import numpy as np
 import h5py
 from tqdm import tqdm
-from typing import Dict
+from typing import Dict, List
 from data.sdd_dataloader import TorchDataGeneratorSDD
 from utils.config import Config, REPO_ROOT
 from utils.utils import prepare_seed
@@ -39,12 +39,14 @@ def instantiate_hdf5_dataset(save_path, setup_dict: Dict):
         # hdf5_file.create_dataset('frame', len_dataset, dtype='i8')
 
 
+# maybe worth implementing
+# def delete_groups_from_hdf5_dataset(hdf5_file: h5py.File, del_groups: List):
+#     pass
+
+
 def write_to_hdf5_dataset(hdf5_file: h5py.File, instance_idx: int, instance_name: str, instance_dict: Dict):
     # creating a separate group for the instance, where all shape changing instance elements will be stored
-    if instance_name in hdf5_file.keys():
-        group = hdf5_file[instance_name]
-    else:
-        group = hdf5_file.create_group(name=instance_name)
+    group = hdf5_file.create_group(name=instance_name)
 
     for key in instance_dict.keys():
         # processing instance elements which do not change shapes into their respective datasets
