@@ -352,6 +352,9 @@ if __name__ == '__main__':
                 'OAO'
             ]
         )
+    if cfg.impute:
+        assert all([metric in metrics_to_compute for metric in ['past_ADE', 'past_FDE']])
+        metrics_to_compute.extend(['future_ADE', 'future_ADE_px'])
 
     metric_columns = {
         'ADE': [f'K{i}_ADE' for i in range(cfg.sample_k)],
@@ -364,6 +367,8 @@ if __name__ == '__main__':
         'past_FDE': [f'K{i}_past_FDE' for i in range(cfg.sample_k)],
         'past_ADE_px': [f'K{i}_past_ADE_px' for i in range(cfg.sample_k)],
         'past_FDE_px': [f'K{i}_past_FDE_px' for i in range(cfg.sample_k)],
+        'future_ADE': [f'K{i}_future_ADE' for i in range(cfg.sample_k)],
+        'future_ADE_px': [f'K{i}_future_ADE_px' for i in range(cfg.sample_k)],
         'OAO': ['OAO'],
         'OAC': ['OAC'],
     }
@@ -399,6 +404,77 @@ if __name__ == '__main__':
         infer_pred_positions = pred_data['infer_dec_motion']            # [K, P, 2]
         infer_pred_past_mask = pred_data['infer_dec_past_mask']         # [P]
 
+        if cfg.impute:
+            true_gt_pred_mask = ~in_data['true_observation_mask'][0]         # [N, T_total]
+            impute_mask = in_data['observation_mask'][0]                # [N, T_total]
+            true_last_obs_indices = in_data['true_observation_mask'][0].shape[1] - torch.argmax(torch.flip(
+                in_data['true_observation_mask'][0], dims=[1]
+            ).to(torch.float32), dim=1) - 1     # [N]
+            for i, true_last_obs_index in enumerate(true_last_obs_indices):
+                impute_mask[i, :true_last_obs_index+1] = False
+                true_gt_pred_mask[i, :true_last_obs_index+1] = False
+
+            # retrieving ground truth
+            true_gt_positions = in_data['true_trajectories'][0][true_gt_pred_mask].to(gt_positions.device)      # [P, 2]
+            identities_grid = torch.hstack([valid_ids.unsqueeze(1)] * in_data['timesteps'][0].shape[0])      # [N, T_total]
+            true_gt_identities = identities_grid[true_gt_pred_mask].to(gt_identities.device)                  # [P, 2]
+            timesteps_grid = torch.vstack([in_data['timesteps'][0]] * valid_ids.shape[0])                    # [N, T_total]
+            true_gt_timesteps = timesteps_grid[true_gt_pred_mask].to(gt_timesteps.device)                    # [P, 2]
+
+            # prediction, with the imputed part of the prediction appended to it
+            true_infer_pred_identities = identities_grid[impute_mask].to(infer_pred_identities.device)
+            true_infer_pred_timesteps = timesteps_grid[impute_mask].to(infer_pred_timesteps.device)
+            true_infer_pred_positions = in_data['trajectories'][0][impute_mask].repeat(cfg.sample_k, 1, 1).to(infer_pred_positions.device)
+            true_infer_pred_past_mask = (true_infer_pred_timesteps <= 0).to(infer_pred_past_mask.device)
+
+            true_infer_pred_identities = torch.cat([true_infer_pred_identities, infer_pred_identities], dim=-1)     # [P]
+            true_infer_pred_timesteps = torch.cat([true_infer_pred_timesteps, infer_pred_timesteps], dim=-1)        # [P]
+            true_infer_pred_positions = torch.cat([true_infer_pred_positions, infer_pred_positions], dim=-2)        # [K, P, 2]
+            true_infer_pred_past_mask = torch.cat([true_infer_pred_past_mask, infer_pred_past_mask], dim=-1)        # [P]
+
+            # TODO: once verified that the performance metrics (ADE and FDE) produce correct results, remove this commented out code
+            # import matplotlib.pyplot as plt
+            # import matplotlib.cm
+            # import numpy as np
+            #
+            # fig, ax = plt.subplots(1, 3)
+            # cmap = matplotlib.cm.get_cmap('viridis')
+            # cmap = cmap(np.linspace(0, 1, valid_ids.shape[0]))
+            #
+            # ax[0].scatter(in_data['true_trajectories'][0, ..., 0].cpu(), in_data['true_trajectories'][0, ..., 1].cpu(), c='black', alpha=0.1)
+            # ax[1].scatter(in_data['true_trajectories'][0, ..., 0].cpu(), in_data['true_trajectories'][0, ..., 1].cpu(), c='black', alpha=0.1)
+            # ax[2].scatter(in_data['true_trajectories'][0, ..., 0].cpu(), in_data['true_trajectories'][0, ..., 1].cpu(), c='black', alpha=0.1)
+            #
+            # for i, ag_id in enumerate(valid_ids):
+            #
+            #     c = cmap[i].reshape(1, -1)
+            #     print(f"{c=}")
+            #     ag_gt_traj = gt_positions[gt_identities == ag_id]
+            #     true_ag_gt_traj = true_gt_positions[true_gt_identities == ag_id]
+            #
+            #     ag_pred_traj = infer_pred_positions[:, infer_pred_identities == ag_id, :]
+            #     true_ag_pred_traj = true_infer_pred_positions[:, true_infer_pred_identities == ag_id, :]
+            #
+            #     ax[0].scatter(ag_gt_traj[..., 0].cpu(), ag_gt_traj[..., 1].cpu(), marker='x', c=c, label=ag_id.item())
+            #     ax[1].scatter(true_ag_gt_traj[..., 0].cpu(), true_ag_gt_traj[..., 1].cpu(), marker='x', c=c, label=ag_id.item())
+            #
+            #     for k in range(cfg.sample_k):
+            #         ax[0].scatter(ag_pred_traj[k, ..., 0].cpu(), ag_pred_traj[k, ..., 1].cpu(), marker='*', c=c)
+            #         ax[1].scatter(true_ag_pred_traj[k, ..., 0].cpu(), true_ag_pred_traj[k, ..., 1].cpu(), marker='*', c=c)
+            #
+            # ax[0].legend()
+            # ax[1].legend()
+            # plt.show()
+
+            gt_identities = true_gt_identities
+            gt_timesteps = true_gt_timesteps
+            gt_positions = true_gt_positions
+
+            infer_pred_identities = true_infer_pred_identities
+            infer_pred_timesteps = true_infer_pred_timesteps
+            infer_pred_positions = true_infer_pred_positions
+            infer_pred_past_mask = true_infer_pred_past_mask
+
         idx_map = index_mapping_gt_seq_pred_seq(
             ag_gt=gt_identities,
             tsteps_gt=gt_timesteps,
@@ -418,6 +494,10 @@ if __name__ == '__main__':
         if {'past_pred_length', 'past_ADE', 'past_FDE', 'OAO', 'OAC'}.intersection(metrics_to_compute):
             past_mask = infer_pred_timesteps <= 0                                               # [P]
             identity_and_past_mask = torch.logical_and(identity_mask, past_mask)                # [N, P]
+
+        if 'future_ADE' in metrics_to_compute:
+            future_mask = infer_pred_timesteps > 0                                              # [P]
+            identity_and_future_mask = torch.logical_and(identity_mask, future_mask)            # [N, P]
 
         if {'OAO', 'OAC'}.intersection(metrics_to_compute):
             occlusion_map = in_data['dist_transformed_occlusion_map'][0].to(model.device)
@@ -518,6 +598,17 @@ if __name__ == '__main__':
                     identity_mask=identity_and_past_mask
                 )        # [N, 1]
 
+            if metric_name == 'future_ADE':
+                computed_metrics['future_ADE'] = compute_samples_ADE(
+                    pred_positions=infer_pred_positions,
+                    gt_positions=gt_positions,
+                    identity_mask=identity_and_future_mask
+                )       # [N, K]
+                if 'future_ADE_px' in metrics_to_compute:
+                    scene, video = in_data['seq'][0].split('_')
+                    px_by_m = coord_conv_table.loc[scene, video]['px/m']
+                    computed_metrics['future_ADE_px'] = computed_metrics['future_ADE'] * px_by_m
+
         assert all([val is not None for val in computed_metrics.values()])
 
         # APPEND SCORE VALUES TO TABLE
@@ -571,6 +662,14 @@ if __name__ == '__main__':
         mode_min_fdes = metric_columns['past_FDE_px']
         score_df['min_past_FDE_px'] = score_df[mode_min_fdes].min(axis=1)
         score_df['mean_past_FDE_px'] = score_df[mode_min_fdes].mean(axis=1)
+    if 'future_ADE' in metrics_to_compute:
+        mode_min_ades = metric_columns['future_ADE']
+        score_df['min_future_ADE'] = score_df[mode_min_ades].min(axis=1)
+        score_df['mean_future_ADE'] = score_df[mode_min_ades].mean(axis=1)
+    if 'future_ADE_px' in metrics_to_compute:
+        mode_min_ades = metric_columns['future_ADE_px']
+        score_df['min_future_ADE_px'] = score_df[mode_min_ades].min(axis=1)
+        score_df['mean_future_ADE_px'] = score_df[mode_min_ades].mean(axis=1)
 
     # saving the table, and the score summary
     df_save_name = os.path.join(saved_preds_dir, 'prediction_scores.csv')
