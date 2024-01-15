@@ -708,6 +708,11 @@ class PickleDatasetSDD(PresavedDatasetSDD):
         data_dict['timesteps'] = self.timesteps
         data_dict['scene_orig'] = torch.zeros([2])
 
+        if data_dict['true_trajectories'] is None:
+            data_dict['true_trajectories'] = data_dict['trajectories']
+        if data_dict['true_observation_mask'] is None:
+            data_dict['true_observation_mask'] = data_dict['observation_mask']
+
         return data_dict
 
 
@@ -787,9 +792,9 @@ class HDF5DatasetSDD(PresavedDatasetSDD):
         data_dict['timesteps'] = self.timesteps
         data_dict['scene_orig'] = torch.zeros([2])
         if 'true_trajectories' not in data_dict.keys():
-            data_dict['true_trajectories'] = None
+            data_dict['true_trajectories'] = data_dict['trajectories']
         if 'true_observation_mask' not in data_dict.keys():
-            data_dict['true_observation_mask'] = None
+            data_dict['true_observation_mask'] = data_dict['observation_mask']
 
         return data_dict
 
