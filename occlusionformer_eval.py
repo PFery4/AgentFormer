@@ -417,54 +417,19 @@ if __name__ == '__main__':
             # retrieving ground truth
             true_gt_positions = in_data['true_trajectories'][0][true_gt_pred_mask].to(gt_positions.device)      # [P, 2]
             identities_grid = torch.hstack([valid_ids.unsqueeze(1)] * in_data['timesteps'][0].shape[0])      # [N, T_total]
-            true_gt_identities = identities_grid[true_gt_pred_mask].to(gt_identities.device)                  # [P, 2]
+            true_gt_identities = identities_grid[true_gt_pred_mask].to(gt_identities.device)                  # [P]
             timesteps_grid = torch.vstack([in_data['timesteps'][0]] * valid_ids.shape[0])                    # [N, T_total]
-            true_gt_timesteps = timesteps_grid[true_gt_pred_mask].to(gt_timesteps.device)                    # [P, 2]
+            true_gt_timesteps = timesteps_grid[true_gt_pred_mask].to(gt_timesteps.device)                    # [P]
 
             # prediction, with the imputed part of the prediction appended to it
             true_infer_pred_identities = identities_grid[impute_mask].to(infer_pred_identities.device)
             true_infer_pred_timesteps = timesteps_grid[impute_mask].to(infer_pred_timesteps.device)
             true_infer_pred_positions = in_data['trajectories'][0][impute_mask].repeat(cfg.sample_k, 1, 1).to(infer_pred_positions.device)
-            true_infer_pred_past_mask = (true_infer_pred_timesteps <= 0).to(infer_pred_past_mask.device)
 
             true_infer_pred_identities = torch.cat([true_infer_pred_identities, infer_pred_identities], dim=-1)     # [P]
             true_infer_pred_timesteps = torch.cat([true_infer_pred_timesteps, infer_pred_timesteps], dim=-1)        # [P]
             true_infer_pred_positions = torch.cat([true_infer_pred_positions, infer_pred_positions], dim=-2)        # [K, P, 2]
-            true_infer_pred_past_mask = torch.cat([true_infer_pred_past_mask, infer_pred_past_mask], dim=-1)        # [P]
-
-            # TODO: once verified that the performance metrics (ADE and FDE) produce correct results, remove this commented out code
-            # import matplotlib.pyplot as plt
-            # import matplotlib.cm
-            # import numpy as np
-            #
-            # fig, ax = plt.subplots(1, 3)
-            # cmap = matplotlib.cm.get_cmap('viridis')
-            # cmap = cmap(np.linspace(0, 1, valid_ids.shape[0]))
-            #
-            # ax[0].scatter(in_data['true_trajectories'][0, ..., 0].cpu(), in_data['true_trajectories'][0, ..., 1].cpu(), c='black', alpha=0.1)
-            # ax[1].scatter(in_data['true_trajectories'][0, ..., 0].cpu(), in_data['true_trajectories'][0, ..., 1].cpu(), c='black', alpha=0.1)
-            # ax[2].scatter(in_data['true_trajectories'][0, ..., 0].cpu(), in_data['true_trajectories'][0, ..., 1].cpu(), c='black', alpha=0.1)
-            #
-            # for i, ag_id in enumerate(valid_ids):
-            #
-            #     c = cmap[i].reshape(1, -1)
-            #     print(f"{c=}")
-            #     ag_gt_traj = gt_positions[gt_identities == ag_id]
-            #     true_ag_gt_traj = true_gt_positions[true_gt_identities == ag_id]
-            #
-            #     ag_pred_traj = infer_pred_positions[:, infer_pred_identities == ag_id, :]
-            #     true_ag_pred_traj = true_infer_pred_positions[:, true_infer_pred_identities == ag_id, :]
-            #
-            #     ax[0].scatter(ag_gt_traj[..., 0].cpu(), ag_gt_traj[..., 1].cpu(), marker='x', c=c, label=ag_id.item())
-            #     ax[1].scatter(true_ag_gt_traj[..., 0].cpu(), true_ag_gt_traj[..., 1].cpu(), marker='x', c=c, label=ag_id.item())
-            #
-            #     for k in range(cfg.sample_k):
-            #         ax[0].scatter(ag_pred_traj[k, ..., 0].cpu(), ag_pred_traj[k, ..., 1].cpu(), marker='*', c=c)
-            #         ax[1].scatter(true_ag_pred_traj[k, ..., 0].cpu(), true_ag_pred_traj[k, ..., 1].cpu(), marker='*', c=c)
-            #
-            # ax[0].legend()
-            # ax[1].legend()
-            # plt.show()
+            true_infer_pred_past_mask = (true_infer_pred_timesteps <= 0).to(infer_pred_past_mask.device)            # [P]
 
             gt_identities = true_gt_identities
             gt_timesteps = true_gt_timesteps
