@@ -352,7 +352,7 @@ if __name__ == '__main__':
                 'OAO'
             ]
         )
-    if cfg.impute:
+    if cfg.get('impute', False):
         assert all([metric in metrics_to_compute for metric in ['past_ADE', 'past_FDE']])
         metrics_to_compute.extend(['future_ADE', 'future_ADE_px'])
 
@@ -373,8 +373,9 @@ if __name__ == '__main__':
         'OAC': ['OAC'],
     }
     oao_factor = 100_000.
+    # TODO: fix path name here (become independent from occlusion_simulation repo)
     coord_conv_table = pd.read_csv(
-        os.path.join(REPO_ROOT, '..', 'occlusion_prediction', 'config', 'coordinates_conversion.txt'),
+        os.path.join(REPO_ROOT, '..', 'occlusion-prediction', 'config', 'coordinates_conversion.txt'),
         sep=';', index_col=('scene', 'video')
     )
 
@@ -404,7 +405,7 @@ if __name__ == '__main__':
         infer_pred_positions = pred_data['infer_dec_motion']            # [K, P, 2]
         infer_pred_past_mask = pred_data['infer_dec_past_mask']         # [P]
 
-        if cfg.impute:
+        if cfg.get('impute', False):
             true_gt_pred_mask = ~in_data['true_observation_mask'][0]         # [N, T_total]
             impute_mask = in_data['observation_mask'][0]                # [N, T_total]
             true_last_obs_indices = in_data['true_observation_mask'][0].shape[1] - torch.argmax(torch.flip(
