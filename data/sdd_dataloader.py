@@ -101,7 +101,8 @@ class TorchDataGeneratorSDD(Dataset):
         self.T_pred = dataset.T_pred
         self.T_total = self.T_obs + self.T_pred
         self.timesteps = torch.arange(-dataset.T_obs, dataset.T_pred) + 1
-        self.lookup_time_window = np.arange(0, self.T_total) * int(dataset.orig_fps // dataset.fps)
+        self.frame_skip = int(dataset.orig_fps // dataset.fps)
+        self.lookup_time_window = np.arange(0, self.T_total) * self.frame_skip
 
         prnt_str = f'total num samples: {len(dataset)}'
         print_log(prnt_str, log=log) if log is not None else print(prnt_str)
@@ -598,6 +599,23 @@ class TorchDataGeneratorSDD(Dataset):
         return data_dict
 
 
+class MomentaryTorchDataGeneratorSDD(TorchDataGeneratorSDD):
+
+    def __init__(self, parser: Config, log: Optional[TextIOWrapper] = None, split: str = 'train',
+                 momentary_t_obs: int = 2):
+        super().__init__(parser=parser, log=log, split=split)
+
+        assert 1 < momentary_t_obs < self.T_obs
+        assert self.occlusion_process == 'fully_observed'
+        assert not self.impute
+
+        timestep_shift = self.T_obs - momentary_t_obs
+        self.T_obs = momentary_t_obs
+        self.T_total = self.T_obs + self.T_pred
+        self.timesteps = torch.arange(-self.T_obs, self.T_pred) + 1
+        self.lookup_time_window = (np.arange(0, self.T_total) + timestep_shift) * self.frame_skip
+
+
 class PresavedDatasetSDD(Dataset):
     presaved_datasets_dir = os.path.join(REPO_ROOT, 'datasets', 'SDD', 'pre_saved_datasets')
 
@@ -615,15 +633,8 @@ class PresavedDatasetSDD(Dataset):
         self.occlusion_process = parser.get('occlusion_process', 'fully_observed')
         self.impute = parser.get('impute', False)
         assert not self.impute or self.occlusion_process != 'fully_observed'
-
-        # dataset identification
-        self.dataset_name = None
-        self.dataset_dir = None
-        self.set_dataset_name_and_dir(log=log)
-        assert os.path.exists(self.dataset_dir)
-
-        prnt_str = f"Dataset directory is:\n{self.dataset_dir}"
-        print_log(prnt_str, log=log) if log is not None else print(prnt_str)
+        self.momentary = parser.get('momentary', False)
+        assert not (self.momentary and self.occlusion_process != 'fully_observed')
 
         # map specific parameters
         self.map_side = parser.get('scene_side_length', 80.0)               # [m]
@@ -640,10 +651,20 @@ class PresavedDatasetSDD(Dataset):
         self.T_total = self.T_obs + self.T_pred
         self.timesteps = torch.arange(-self.T_obs, self.T_pred) + 1
 
+        # dataset identification
+        self.dataset_name = None
+        self.dataset_dir = None
+        self.set_dataset_name_and_dir(log=log)
+        assert os.path.exists(self.dataset_dir)
+        prnt_str = f"Dataset directory is:\n{self.dataset_dir}"
+        print_log(prnt_str, log=log) if log is not None else print(prnt_str)
+
     def set_dataset_name_and_dir(self, log: Optional[TextIOWrapper] = None):
         try_name = self.occlusion_process
         if self.impute:
             try_name += '_imputed'
+        if self.momentary:
+            try_name += f'_momentary_{self.T_obs}'
         try_dir = os.path.join(self.presaved_datasets_dir, try_name, self.split)
         if os.path.exists(try_dir):
             self.dataset_name = try_name
