@@ -5,7 +5,7 @@ import numpy as np
 import h5py
 from tqdm import tqdm
 from typing import Dict, List
-from data.sdd_dataloader import TorchDataGeneratorSDD
+from data.sdd_dataloader import TorchDataGeneratorSDD, MomentaryTorchDataGeneratorSDD
 from utils.config import Config, REPO_ROOT
 from utils.utils import prepare_seed
 
@@ -125,11 +125,17 @@ if __name__ == '__main__':
 
     prepare_seed(config.seed)
 
-    generator = TorchDataGeneratorSDD(parser=config, log=None, split=split)
+    if not config.get('momentary', False):
+        generator = TorchDataGeneratorSDD(parser=config, log=None, split=split)
+    else:
+        generator = MomentaryTorchDataGeneratorSDD(parser=config, log=None, split=split,
+                                                   momentary_t_obs=config.past_frames)
 
     save_dir_name = config.occlusion_process
     if config.get('impute', False):
         save_dir_name += '_imputed'
+    if config.get('momentary', False):
+        save_dir_name += f'_momentary_{config.past_frames}'
     if tiny:
         save_dir_name += '_tiny'
 
