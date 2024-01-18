@@ -1,70 +1,122 @@
 import argparse
 import os.path
-
+import yaml
 import pandas as pd
 import torch
 
+from typing import List
+
 from data.sdd_dataloader import PresavedDatasetSDD
 from utils.utils import prepare_seed
-from utils.config import Config
+from utils.config import Config, REPO_ROOT
+
+
+def generate_performance_summary_df(runs_of_interest: List, scores_of_interest: List) -> pd.DataFrame:
+    results_path = os.path.join(REPO_ROOT, 'results')
+    df_columns = ['experiment', 'dataset_used', 'model_name'] + scores_of_interest
+    performance_df = pd.DataFrame(columns=df_columns)
+
+    for run in runs_of_interest:
+        run_results_path = os.path.join(results_path, run, 'results')
+        dataset_used = os.listdir(run_results_path)[0]
+
+        for model_name in os.listdir(os.path.join(run_results_path, dataset_used)):
+            target_path = os.path.join(run_results_path, dataset_used, model_name, 'test', 'prediction_scores.yml')
+            score_values = [None] * len(scores_of_interest)
+
+            if os.path.exists(target_path):
+                with open(target_path, 'r') as f:
+                    scores_dict = yaml.safe_load(f)
+                    score_values = [scores_dict.get(key, 'N/A') for key in scores_of_interest]
+
+            performance_df.loc[len(performance_df)] = [run, dataset_used, model_name] + score_values
+
+    return performance_df
+
+
+def get_perf_scores_df(experiment_name: str) -> pd.DataFrame:
+
+    target_path = os.path.join(REPO_ROOT, 'results', experiment_name, 'results')
+
+    dataset_used = os.listdir(target_path)[0]
+    target_path = os.path.join(target_path, dataset_used)
+    assert os.path.exists(target_path)
+
+    default_model_name = os.listdir(target_path)[0]
+    target_path = os.path.join(target_path, default_model_name, 'test', 'prediction_scores.csv')
+    assert os.path.exists(target_path)
+
+    df = pd.read_csv(target_path)
+    return df
+
+
+def top_score_dataframe(df: pd.DataFrame, column_name: str, ascending: bool = True, n: int = 5) -> pd.DataFrame:
+    return df.sort_values(column_name, ascending=ascending).head(n)
+
+
+def remove_sample_columns(df: pd.DataFrame) -> pd.DataFrame:
+    keep_columns = [name for name in df.columns.tolist() if not name.startswith('K')]
+    return df[keep_columns]
+
+
+def compare_performance_tables():
+    pass
+
+
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', default=None)
-    parser.add_argument('--data_split', type=str, default='test')
-    parser.add_argument('--checkpoint_name', default='best_val')        # can be 'best_val' / 'untrained' / <model_id>
-    parser.add_argument('--tmp', action='store_true', default=False)
-    args = parser.parse_args()
+    pd.set_option('display.max_rows', 500)
+    pd.set_option('display.max_columns', 500)
+    pd.set_option('display.width', 1000)
 
-    split = args.data_split
-    checkpoint_name = args.checkpoint_name
+    scores_full_obs = [
+        'min_ADE',
+        'mean_ADE',
+        'min_FDE',
+        'mean_FDE',
+        'rF'
+    ]
+    runs_full_obs = [
+        'sdd_baseline_occlusionformer',
+        'baseline_no_pos_concat'
+    ]
+    full_obs_perf_df = generate_performance_summary_df(
+        runs_of_interest=runs_full_obs,
+        scores_of_interest=scores_full_obs
+    )
+    print(f"\nExperiments on fully observed dataset:")
+    print(full_obs_perf_df.sort_values('min_ADE'))
 
-    cfg = Config(cfg_id=args.cfg, tmp=args.tmp, create_dirs=False)
-    prepare_seed(cfg.seed)
-    torch.set_default_dtype(torch.float32)
+    runs_occl = [
+        'occlusionformer_no_map',
+        'occlusionformer_causal_attention',
+        'occlusionformer_with_occl_map'
+    ]
+    scores_occl = [
+        'min_ADE',
+        'mean_ADE',
+        'min_FDE',
+        'mean_FDE',
+        'mean_past_ADE',
+        'mean_past_FDE',
+        'past_pred_length',
+        'pred_length',
+        'rF',
+        'OAC',
+        'OAO'
+    ]
+    occluded_perf_df = generate_performance_summary_df(
+        runs_of_interest=runs_occl,
+        scores_of_interest=scores_occl
+    )
+    print(f"\nExperiments on occluded dataset:")
+    print(occluded_perf_df.sort_values('min_ADE'))
 
-    # dataloader
-    if cfg.dataset == 'sdd':
-        sdd_test_set = PresavedDatasetSDD(parser=cfg, log=None, split=split)
-    else:
-        raise NotImplementedError
+    experiment = 'occlusionformer_no_map'
+    exp_df = get_perf_scores_df(experiment_name=experiment)
+    exp_df = remove_sample_columns(exp_df)
+    exp_df = top_score_dataframe(df=exp_df, column_name='OAO', ascending=False, n=5)
+    print(f'\nTop_scores of {experiment}')
+    print(exp_df[['idx', 'filename', 'agent_id']+scores_occl])
 
-    if checkpoint_name == 'best_val':
-        checkpoint_name = cfg.get_best_val_checkpoint_name()
-        print(f"Best validation checkpoint name is: {checkpoint_name}")
-    if checkpoint_name == 'untrained':
-        saved_preds_dir = os.path.join(cfg.result_dir, sdd_test_set.dataset_name, 'untrained', split)
-    else:
-        saved_preds_dir = os.path.join(cfg.result_dir, sdd_test_set.dataset_name, checkpoint_name, split)
-    assert os.path.exists(saved_preds_dir)
-
-    score_csv_file = os.path.join(saved_preds_dir, 'prediction_scores.csv')
-    assert os.path.exists(score_csv_file)
-
-    scores_df = pd.read_csv(score_csv_file)
-
-    # WE CAN PERFORM EXTRA SORTING / ANALYSIS ON <scores_df>
-    print(f"{scores_df.columns=}")
-    print(f"{scores_df.index=}")
-    print(scores_df[['idx', 'agent_id', 'min_ADE', 'mean_ADE', 'min_FDE', 'mean_FDE']]
-          .head(10))
-    print(scores_df[['idx', 'agent_id', 'min_ADE', 'mean_ADE', 'min_FDE', 'mean_FDE']]
-          .mean())
-
-    print(f"{scores_df['idx'].value_counts()=}")
-    # print(scores_df[['idx', 'agent_id', 'min_ADE', 'mean_ADE', 'min_FDE', 'mean_FDE']]
-    #       .sort_values('min_ADE', ascending=True).head(5))
-    #
-    # instances_df = instance_collapse(scores_df)
-    # print(f"{instances_df.columns=}")
-    # print(f"{instances_df.index=}")
-    # print(instances_df[['idx', 'agent_id', 'min_ADE', 'mean_ADE', 'min_FDE', 'mean_FDE']]
-    #       .sort_values('min_ADE', ascending=True).head(5))
-
-    instances_df = scores_df.set_index(['idx', 'agent_id'])
-    instances_df = instances_df.groupby(level=0)
-    instances_df = instances_df.agg('mean')
-    print(instances_df[['min_ADE', 'mean_ADE', 'min_FDE', 'mean_FDE']]
-          .head(5))
-    print(instances_df[['min_ADE', 'mean_ADE', 'min_FDE', 'mean_FDE']]
-          .mean())
+    print(f"\nGoodbye!")
