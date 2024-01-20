@@ -63,7 +63,6 @@ def compare_performance_tables():
     pass
 
 
-
 if __name__ == '__main__':
     pd.set_option('display.max_rows', 500)
     pd.set_option('display.max_columns', 500)
@@ -113,10 +112,12 @@ if __name__ == '__main__':
     print(occluded_perf_df.sort_values('min_ADE'))
 
     experiment = 'occlusionformer_no_map'
+    score = 'OAO'
     exp_df = get_perf_scores_df(experiment_name=experiment)
     exp_df = remove_sample_columns(exp_df)
-    exp_df = top_score_dataframe(df=exp_df, column_name='OAO', ascending=False, n=5)
-    print(f'\nTop_scores of {experiment}')
+    exp_df = top_score_dataframe(df=exp_df, column_name=score, ascending=False, n=5)
+    print(f'\nTop_scores of {experiment} ({score}):')
+    # print(exp_df)
     print(exp_df[['idx', 'filename', 'agent_id']+scores_occl])
 
     print(f"\nGoodbye!")
