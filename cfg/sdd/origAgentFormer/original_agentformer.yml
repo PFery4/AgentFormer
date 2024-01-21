@@ -27,7 +27,7 @@ impute                        : false
 
 # ------------------- Model -------------------------
 
-model_id: dlow
+model_id: orig_dlow
 pred_cfg: original_agentformer_pre
 pred_checkpoint_name: epoch_4_batch_9999
 qnet_mlp: [512, 256]
