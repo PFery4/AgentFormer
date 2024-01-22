@@ -2,10 +2,12 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 from OriginalAgentFormer.utils.torch import *
-from OriginalAgentFormer.utils.config import Config
 from OriginalAgentFormer.model.common.mlp import MLP
 from OriginalAgentFormer.model.common.dist import *
 from OriginalAgentFormer.model import model_lib
+# importing from main repository. Behaviour is similar to Config class implemented in original AgentFormer repo,
+# but this Config file will look in the correct directory.
+from utils.config import Config
 
 
 def compute_z_kld(data, cfg):
