@@ -1,40 +1,21 @@
 import argparse
 import os.path
+
+import matplotlib.axes
+import matplotlib.pyplot as plt
+import numpy as np
 import yaml
 import pandas as pd
 import torch
 
-from typing import List
+from typing import Dict, List, Optional, Tuple
 
 from data.sdd_dataloader import PresavedDatasetSDD
 from utils.utils import prepare_seed
 from utils.config import Config, REPO_ROOT
 
 
-def generate_performance_summary_df(runs_of_interest: List, scores_of_interest: List) -> pd.DataFrame:
-    results_path = os.path.join(REPO_ROOT, 'results')
-    df_columns = ['experiment', 'dataset_used', 'model_name'] + scores_of_interest
-    performance_df = pd.DataFrame(columns=df_columns)
-
-    for run in runs_of_interest:
-        run_results_path = os.path.join(results_path, run, 'results')
-        dataset_used = os.listdir(run_results_path)[0]
-
-        for model_name in os.listdir(os.path.join(run_results_path, dataset_used)):
-            target_path = os.path.join(run_results_path, dataset_used, model_name, 'test', 'prediction_scores.yml')
-            score_values = [None] * len(scores_of_interest)
-
-            if os.path.exists(target_path):
-                with open(target_path, 'r') as f:
-                    scores_dict = yaml.safe_load(f)
-                    score_values = [scores_dict.get(key, 'N/A') for key in scores_of_interest]
-
-            performance_df.loc[len(performance_df)] = [run, dataset_used, model_name] + score_values
-
-    return performance_df
-
-
-def get_perf_scores_df(experiment_name: str) -> pd.DataFrame:
+def get_perf_scores_df(experiment_name: str, model_name: Optional[str] = None) -> pd.DataFrame:
 
     target_path = os.path.join(REPO_ROOT, 'results', experiment_name, 'results')
 
@@ -42,8 +23,9 @@ def get_perf_scores_df(experiment_name: str) -> pd.DataFrame:
     target_path = os.path.join(target_path, dataset_used)
     assert os.path.exists(target_path)
 
-    default_model_name = os.listdir(target_path)[0]
-    target_path = os.path.join(target_path, default_model_name, 'test', 'prediction_scores.csv')
+    if model_name is None:
+        model_name = os.listdir(target_path)[0]
+    target_path = os.path.join(target_path, model_name, 'test', 'prediction_scores.csv')
     assert os.path.exists(target_path)
 
     df = pd.read_csv(target_path)
@@ -52,6 +34,44 @@ def get_perf_scores_df(experiment_name: str) -> pd.DataFrame:
     df.set_index(keys=df_indices, inplace=True)
 
     return df
+
+
+def get_perf_scores_dict(experiment_name: str, model_name: Optional[str] = None) -> Dict:
+
+    target_path = os.path.join(REPO_ROOT, 'results', experiment_name, 'results')
+
+    dataset_used = os.listdir(target_path)[0]
+    target_path = os.path.join(target_path, dataset_used)
+    assert os.path.exists(target_path)
+
+    if model_name is None:
+        model_name = os.listdir(target_path)[0]
+    target_path = os.path.join(target_path, model_name, 'test', 'prediction_scores.yml')
+    assert os.path.exists(target_path)
+
+    with open(target_path, 'r') as f:
+        scores_dict = yaml.safe_load(f)
+
+    return scores_dict
+
+
+def generate_performance_summary_df(runs_of_interest: List, scores_of_interest: List) -> pd.DataFrame:
+    df_columns = ['experiment', 'dataset_used', 'model_name'] + scores_of_interest
+    performance_df = pd.DataFrame(columns=df_columns)
+
+    for run in runs_of_interest:
+        run_results_path = os.path.join(REPO_ROOT, 'results', run, 'results')
+        dataset_used = os.listdir(run_results_path)[0]
+        model_name = os.listdir(os.path.join(run_results_path, dataset_used))[0]
+
+        scores_dict = get_perf_scores_dict(experiment_name=run)
+        scores_dict['experiment'] = run
+        scores_dict['dataset_used'] = dataset_used
+        scores_dict['model_name'] = model_name
+
+        performance_df.loc[len(performance_df)] = scores_dict
+
+    return performance_df
 
 
 def top_score_dataframe(df: pd.DataFrame, column_name: str, ascending: bool = True, n: int = 5) -> pd.DataFrame:
@@ -89,68 +109,100 @@ def summarize_per_occlusion_length(df: pd.DataFrame, operation: str = 'mean') ->
     return summary_df
 
 
+def per_occlusion_length_boxplot(df: pd.DataFrame, column_name: str) -> Tuple[matplotlib.figure.Figure, matplotlib.axes.Axes]:
+    assert 'past_pred_length' in df.columns
+    assert 'pred_length' in df.columns
+
+    assert column_name in df.columns
+
+    fig, ax = plt.subplots()
+
+    scores_dict = dict()
+    past_pred_lengths = sorted(df['past_pred_length'].unique())
+
+    for past_pred_length in past_pred_lengths:
+
+        mini_df = df[(df['past_pred_length'] == past_pred_length) & (pd.notna(df[column_name]))]
+
+        scores = mini_df[column_name].to_numpy()
+        scores_dict[past_pred_length] = scores
+
+    ax.boxplot(scores_dict.values())
+    ax.set_xticklabels(scores_dict.keys())
+
+    return fig, ax
+
+
 if __name__ == '__main__':
     pd.set_option('display.max_rows', 500)
     pd.set_option('display.max_columns', 500)
     pd.set_option('display.width', 1000)
 
-    scores_full_obs = [
-        'min_ADE',
-        'mean_ADE',
-        'min_FDE',
-        'mean_FDE',
-        'rF'
-    ]
-    runs_full_obs = [
+    MEASURE = 'm'       # 'm' | 'px'
+    SORT_BY_SCORE = 'min_ADE'
+
+    FULL_OBS_RUNS = [
         'sdd_baseline_occlusionformer',
         'baseline_no_pos_concat'
     ]
-    full_obs_perf_df = generate_performance_summary_df(
-        runs_of_interest=runs_full_obs,
-        scores_of_interest=scores_full_obs
-    )
-    print(f"\nExperiments on fully observed dataset:")
-    print(full_obs_perf_df.sort_values('min_ADE'))
-
-    runs_occl = [
+    FULL_OBS_SCORES = ['min_ADE', 'min_FDE', 'mean_ADE', 'mean_FDE']
+    OCCL_SIM_RUNS = [
         'occlusionformer_no_map',
         'occlusionformer_causal_attention',
         'occlusionformer_with_occl_map'
     ]
-    scores_occl = [
+    OCCL_SIM_SCORES = [
         'min_ADE',
         'mean_ADE',
         'min_FDE',
         'mean_FDE',
         'mean_past_ADE',
         'mean_past_FDE',
+        'rF'
+    ]
+    if MEASURE == 'px':
+        SORT_BY_SCORE += '_px'
+        FULL_OBS_SCORES = [f'{key}_px' for key in FULL_OBS_SCORES]
+        OCCL_SIM_SCORES = [f'{key}_px' for key in OCCL_SIM_SCORES]
+    EXTRA_OCCL_SIM_SCORES = [
         'past_pred_length',
         'pred_length',
-        'rF',
         'OAC',
         'OAO'
     ]
+
+    full_obs_perf_df = generate_performance_summary_df(
+        runs_of_interest=FULL_OBS_RUNS,
+        scores_of_interest=FULL_OBS_SCORES
+    )
+    print(f"\nExperiments on fully observed dataset:")
+    print(full_obs_perf_df.sort_values('min_ADE'))
+
     occluded_perf_df = generate_performance_summary_df(
-        runs_of_interest=runs_occl,
-        scores_of_interest=scores_occl
+        runs_of_interest=OCCL_SIM_RUNS,
+        scores_of_interest=OCCL_SIM_SCORES+EXTRA_OCCL_SIM_SCORES
     )
     print(f"\nExperiments on occluded dataset:")
     print(occluded_perf_df.sort_values('min_ADE'))
 
-    experiment = 'occlusionformer_no_map'
-    score = 'OAO'
-    exp_df = get_perf_scores_df(experiment_name=experiment)
-    exp_df = remove_sample_columns(exp_df)
-    exp_df = top_score_dataframe(df=exp_df, column_name=score, ascending=False, n=5)
-    print(f'\nTop_scores of {experiment} ({score}):')
-    # print(exp_df)
-    print(exp_df[scores_occl])
+    for experiment in OCCL_SIM_RUNS:
+        for operation in ['mean', 'std']:
+            exp_df = get_perf_scores_df(experiment_name=experiment)
+            exp_df = remove_sample_columns(exp_df)
+            exp_df = summarize_per_occlusion_length(df=exp_df, operation=operation)
+            print(f'\nScores summary separated by occlusion lengths for {experiment} ({operation}):')
+            print(exp_df[OCCL_SIM_SCORES+EXTRA_OCCL_SIM_SCORES])
 
-    operation = 'mean'
-    exp_df = get_perf_scores_df(experiment_name=experiment)
-    exp_df = remove_sample_columns(exp_df)
-    exp_df = summarize_per_occlusion_length(exp_df, operation=operation)
-    print(f'\nScores summary separated by occlusion lengths for {experiment} ({operation}):')
-    print(exp_df[scores_occl])
+    box_plot_scores = OCCL_SIM_SCORES + EXTRA_OCCL_SIM_SCORES
+    [box_plot_scores.remove(score) for score in ['rF', 'past_pred_length', 'pred_length']]
+    for experiment in OCCL_SIM_RUNS:
+        for score in box_plot_scores:
+            exp_df = get_perf_scores_df(experiment_name=experiment)
+            exp_df = remove_sample_columns(exp_df)
+            fig, ax = per_occlusion_length_boxplot(df=exp_df, column_name=score)
+            ax.set_title(f"{experiment}: {score} / occlusion duration")
+            plt.show()
+
+    # TODO: do run comparisons (fully observed versus occluded)
 
     print(f"\nGoodbye!")
