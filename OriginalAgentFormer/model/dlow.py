@@ -4,9 +4,9 @@ from torch.nn import functional as F
 from OriginalAgentFormer.utils.torch import *
 from OriginalAgentFormer.model.common.mlp import MLP
 from OriginalAgentFormer.model.common.dist import *
-from OriginalAgentFormer.model import model_lib
 # importing from main repository. Behaviour is similar to Config class implemented in original AgentFormer repo,
 # but this Config file will look in the correct directory.
+from model import model_lib
 from utils.config import Config
 
 
@@ -141,3 +141,36 @@ class DLow(nn.Module):
 
     def step_annealer(self):
         pass
+
+
+# a modified version of DLow that will load checkpoints according to the naming system used in OcclusionFormer
+class ModifiedDLow(DLow):
+    def __init__(self, cfg):
+        nn.Module.__init__(self)
+
+        self.device = torch.device('cpu')
+        self.cfg = cfg
+        self.nk = nk = cfg.sample_k
+        self.nz = nz = cfg.nz
+        self.share_eps = cfg.get('share_eps', True)
+        self.train_w_mean = cfg.get('train_w_mean', False)
+        self.loss_cfg = self.cfg.loss_cfg
+        self.loss_names = list(self.loss_cfg.keys())
+
+        pred_cfg = Config(cfg.pred_cfg, tmp=False, create_dirs=False)
+        pred_model = model_lib.model_dict[pred_cfg.model_id](pred_cfg)
+        self.pred_model_dim = pred_cfg.tf_model_dim
+
+        assert cfg.pred_checkpoint_name is not None
+        cp_path = pred_cfg.model_path % cfg.pred_checkpoint_name
+        print('loading model from checkpoint: %s' % cp_path)
+        model_cp = torch.load(cp_path, map_location='cpu')
+        pred_model.load_state_dict(model_cp['model_dict'])
+        pred_model.eval()
+        self.pred_model = [pred_model]
+
+        # Dlow's Q net
+        self.qnet_mlp = cfg.get('qnet_mlp', [512, 256])
+        self.q_mlp = MLP(self.pred_model_dim, self.qnet_mlp)
+        self.q_A = nn.Linear(self.q_mlp.out_dim, nk * nz)
+        self.q_b = nn.Linear(self.q_mlp.out_dim, nk * nz)
