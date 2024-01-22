@@ -47,6 +47,10 @@ def get_perf_scores_df(experiment_name: str) -> pd.DataFrame:
     assert os.path.exists(target_path)
 
     df = pd.read_csv(target_path)
+
+    df_indices = ['idx', 'filename', 'agent_id']
+    df.set_index(keys=df_indices, inplace=True)
+
     return df
 
 
@@ -59,8 +63,30 @@ def remove_sample_columns(df: pd.DataFrame) -> pd.DataFrame:
     return df[keep_columns]
 
 
-def compare_performance_tables():
-    pass
+def summarize_per_occlusion_length(df: pd.DataFrame, operation: str = 'mean') -> pd.DataFrame:
+    assert 'past_pred_length' in df.columns
+    assert 'pred_length' in df.columns
+
+    assert operation in ['mean', 'std']
+
+    scores = df.columns.tolist()
+    summary_df = pd.DataFrame(columns=scores)
+    scores.remove('past_pred_length')
+    scores.remove('pred_length')
+
+    operation = eval(f"pd.DataFrame.{operation}")
+
+    for past_pred_length in sorted(df['past_pred_length'].unique()):
+
+        mini_df = df[df['past_pred_length'] == past_pred_length]
+        pred_length = mini_df['pred_length'].iloc[0]
+
+        row_dict = operation(mini_df[scores]).to_dict()
+        row_dict['past_pred_length'] = past_pred_length
+        row_dict['pred_length'] = pred_length
+
+        summary_df.loc[len(summary_df)] = row_dict
+    return summary_df
 
 
 if __name__ == '__main__':
@@ -118,6 +144,13 @@ if __name__ == '__main__':
     exp_df = top_score_dataframe(df=exp_df, column_name=score, ascending=False, n=5)
     print(f'\nTop_scores of {experiment} ({score}):')
     # print(exp_df)
-    print(exp_df[['idx', 'filename', 'agent_id']+scores_occl])
+    print(exp_df[scores_occl])
+
+    operation = 'mean'
+    exp_df = get_perf_scores_df(experiment_name=experiment)
+    exp_df = remove_sample_columns(exp_df)
+    exp_df = summarize_per_occlusion_length(exp_df, operation=operation)
+    print(f'\nScores summary separated by occlusion lengths for {experiment} ({operation}):')
+    print(exp_df[scores_occl])
 
     print(f"\nGoodbye!")
