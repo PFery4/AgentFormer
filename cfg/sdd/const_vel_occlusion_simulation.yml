@@ -1,6 +1,6 @@
 # ------------------- General Options -------------------------
 
-description                  : Constant Velocity Model (operating on the imputed occlusion simulation dataset)
+description                  : Constant Velocity Model (operating on the occlusion simulation dataset)
 results_root_dir             : results
 seed                         : 42
 dataset                      : sdd
@@ -23,7 +23,7 @@ global_map_resolution         : 800      # [px]
 rand_rot_scene                : true
 max_train_agent               : 32
 occlusion_process             : 'occlusion_simulation'      # can be either 'fully_observed' or 'occlusion_simulation'
-impute                        : true
+impute                        : false
 momentary                     : false
 
 # ------------------- Model -------------------------
