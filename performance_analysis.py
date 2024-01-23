@@ -74,7 +74,7 @@ def generate_performance_summary_df(runs_of_interest: List, scores_of_interest: 
     return performance_df
 
 
-def relative_improvement_df(summary_df: pd.DataFrame, base_experiment: str, pretty_print: bool = True) -> pd.DataFrame:
+def relative_improvement_df(summary_df: pd.DataFrame, base_experiment: str) -> pd.DataFrame:
     # each row contains summary score information for one experiment
     assert base_experiment in summary_df['experiment'].to_list()
     assert (summary_df['experiment'] == base_experiment).sum() == 1
@@ -86,8 +86,13 @@ def relative_improvement_df(summary_df: pd.DataFrame, base_experiment: str, pret
     rel_df.loc[:, compare_columns] = rel_df.loc[:, compare_columns].div(rel_df.loc[rel_df['experiment'] == base_experiment, compare_columns].iloc[0])
     rel_df.loc[:, compare_columns] = rel_df.loc[:, compare_columns] - 1.0
 
-    if not pretty_print:
-        return rel_df
+    return rel_df
+
+
+def pretty_print_relative_improvement_df(summary_df: pd.DataFrame, base_experiment: str) -> pd.DataFrame:
+    compare_columns = summary_df.columns[summary_df.dtypes == float]
+
+    rel_df = relative_improvement_df(summary_df=summary_df, base_experiment=base_experiment)
 
     rel_df.loc[:, compare_columns] = rel_df.loc[:, compare_columns] * 100
     rel_df.loc[:, compare_columns] = rel_df.loc[:, compare_columns].applymap(
@@ -173,7 +178,6 @@ def performance_dataframe_comparison(base_df: pd.DataFrame, comp_df: pd.DataFram
 
     if relative:
         out_df = out_df.div(base_df)
-        out_df *= 100
 
     return out_df
 
@@ -222,7 +226,7 @@ if __name__ == '__main__':
     )
     print(f"\n\n\n\nExperiments on fully observed dataset:")
     # print(full_obs_perf_df.sort_values('min_ADE'))
-    print(relative_improvement_df(full_obs_perf_df, 'sdd_baseline_occlusionformer'))
+    print(pretty_print_relative_improvement_df(full_obs_perf_df, 'sdd_baseline_occlusionformer'))
 
     occluded_perf_df = generate_performance_summary_df(
         runs_of_interest=OCCL_SIM_RUNS,
@@ -230,7 +234,7 @@ if __name__ == '__main__':
     )
     print(f"\n\n\n\nExperiments on occluded dataset:")
     # print(occluded_perf_df.sort_values('min_ADE'))
-    print(relative_improvement_df(occluded_perf_df, 'occlusionformer_no_map'))
+    print(pretty_print_relative_improvement_df(occluded_perf_df, 'occlusionformer_no_map'))
 
     # for experiment in OCCL_SIM_RUNS:
     #     for operation in ['mean', 'std']:
