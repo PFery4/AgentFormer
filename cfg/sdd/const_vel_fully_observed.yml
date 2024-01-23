@@ -1,0 +1,37 @@
+# ------------------- General Options -------------------------
+
+description                  : Constant Velocity Model (operating on the fully observed dataset)
+results_root_dir             : results
+seed                         : 42
+dataset                      : sdd
+sdd_config_file_name         : config
+# data_root_ethucy             : datasets/eth_ucy
+# data_root_nuscenes_pred      : datasets/nuscenes_pred
+
+# ------------------- Feature Extractor -------------------------
+
+past_frames                   : 8
+future_frames                 : 12
+min_past_frames               : 8
+min_future_frames             : 12
+
+traj_scale                    : 1
+motion_dim                    : 2
+forecast_dim                  : 2
+scene_side_length             : 80.0     # [m]
+global_map_resolution         : 800      # [px]
+rand_rot_scene                : true
+max_train_agent               : 32
+occlusion_process             : 'fully_observed'      # can be either 'fully_observed' or 'occlusion_simulation'
+impute                        : false
+
+# ------------------- Model -------------------------
+
+model_id: const_velocity
+
+# ------------------- VAE-------------------------
+
+sample_k                     : 1
+
+# ------------------- Training Parameters -------------------------
+
