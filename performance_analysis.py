@@ -167,12 +167,13 @@ def per_occlusion_length_boxplot(df: pd.DataFrame, column_name: str) -> Tuple[ma
 
 def performance_dataframe_comparison(base_df: pd.DataFrame, comp_df: pd.DataFrame, relative: bool = True) -> pd.DataFrame:
     # checking that the two dataframes have the same indices / cover the same cases
-    assert base_df.index.equals(comp_df.index)
-    assert base_df.index.equal_levels(comp_df.index)
+    # if len(base_df.index.difference(comp_df.index)):
+    #     print(f"Comparing only rows that are shared between the two tables:\n"
+    #           f"{len(base_df.index.difference(comp_df.index))} rows will be ignored")
 
-    if len(base_df.columns.difference(comp_df.columns)):
-        print(f"Comparing only columns that are shared between the two tables:\n"
-              f"{base_df.columns.difference(comp_df.columns).to_list()} will be ignored")
+    # if len(base_df.columns.difference(comp_df.columns)):
+    #     print(f"Comparing only columns that are shared between the two tables:\n"
+    #           f"{len(base_df.columns.difference(comp_df.columns))} columns will be ignored")
 
     out_df = comp_df.sub(base_df)
 
@@ -192,7 +193,9 @@ if __name__ == '__main__':
 
     FULL_OBS_RUNS = [
         'sdd_baseline_occlusionformer',
-        'baseline_no_pos_concat'
+        'baseline_no_pos_concat',
+        'const_vel_fully_observed',
+        'const_vel_fully_observed_momentary_2'
     ]
     FULL_OBS_SCORES = ['min_ADE', 'min_FDE', 'mean_ADE', 'mean_FDE']
     OCCL_SIM_RUNS = [
@@ -220,6 +223,13 @@ if __name__ == '__main__':
         'OAO'
     ]
 
+    all_perf_df = generate_performance_summary_df(
+        runs_of_interest=FULL_OBS_RUNS+OCCL_SIM_RUNS,
+        scores_of_interest=OCCL_SIM_SCORES+EXTRA_OCCL_SIM_SCORES
+    )
+    print(f"\n\n\n\nAll experiments:")
+    print(all_perf_df)
+
     full_obs_perf_df = generate_performance_summary_df(
         runs_of_interest=FULL_OBS_RUNS,
         scores_of_interest=FULL_OBS_SCORES
@@ -236,7 +246,7 @@ if __name__ == '__main__':
     # print(occluded_perf_df.sort_values('min_ADE'))
     print(pretty_print_relative_improvement_df(occluded_perf_df, 'occlusionformer_no_map'))
 
-    # for experiment in OCCL_SIM_RUNS:
+    # for experiment in ['occlusionformer_no_map']:
     #     for operation in ['mean', 'std']:
     #         exp_df = get_perf_scores_df(experiment_name=experiment)
     #         exp_df = remove_sample_columns(exp_df)
@@ -246,7 +256,7 @@ if __name__ == '__main__':
     #
     # box_plot_scores = OCCL_SIM_SCORES + EXTRA_OCCL_SIM_SCORES
     # [box_plot_scores.remove(score) for score in ['rF', 'past_pred_length', 'pred_length']]
-    # for experiment in OCCL_SIM_RUNS:
+    # for experiment in ['occlusionformer_no_map']:
     #     for score in box_plot_scores:
     #         exp_df = get_perf_scores_df(experiment_name=experiment)
     #         exp_df = remove_sample_columns(exp_df)
@@ -254,8 +264,8 @@ if __name__ == '__main__':
     #         ax.set_title(f"{experiment}: {score} / occlusion duration")
     #         plt.show()
 
-    base_run = 'sdd_baseline_occlusionformer'
-    compare_run = 'baseline_no_pos_concat'
+    base_run = 'baseline_no_pos_concat'
+    compare_run = 'occlusionformer_no_map'
     n_top = 5
     base_df = get_perf_scores_df(experiment_name=base_run)
     base_df = base_df[FULL_OBS_SCORES]
