@@ -74,6 +74,33 @@ def generate_performance_summary_df(runs_of_interest: List, scores_of_interest: 
     return performance_df
 
 
+def relative_improvement_df(summary_df: pd.DataFrame, base_experiment: str, pretty_print: bool = True) -> pd.DataFrame:
+    # each row contains summary score information for one experiment
+    assert base_experiment in summary_df['experiment'].to_list()
+    assert (summary_df['experiment'] == base_experiment).sum() == 1
+
+    rel_df = summary_df.copy()
+
+    compare_columns = summary_df.columns[summary_df.dtypes == float]
+
+    rel_df.loc[:, compare_columns] = rel_df.loc[:, compare_columns].div(rel_df.loc[rel_df['experiment'] == base_experiment, compare_columns].iloc[0])
+    rel_df.loc[:, compare_columns] = rel_df.loc[:, compare_columns] - 1.0
+
+    if not pretty_print:
+        return rel_df
+
+    rel_df.loc[:, compare_columns] = rel_df.loc[:, compare_columns] * 100
+    rel_df.loc[:, compare_columns] = rel_df.loc[:, compare_columns].applymap(
+        lambda x: f" (+{x:.3f}%)" if x>=0. else f" ({x:.3f}%)"
+    )
+
+    out_df = summary_df.copy()
+    out_df.loc[:, compare_columns] = out_df.loc[:, compare_columns].round(5).astype(str)
+    out_df.loc[:, compare_columns] = out_df.loc[:, compare_columns] + rel_df.loc[:, compare_columns]
+
+    return out_df
+
+
 def top_score_dataframe(df: pd.DataFrame, column_name: str, ascending: bool = True, n: int = 5) -> pd.DataFrame:
     return df.sort_values(column_name, ascending=ascending).head(n)
 
@@ -133,10 +160,28 @@ def per_occlusion_length_boxplot(df: pd.DataFrame, column_name: str) -> Tuple[ma
     return fig, ax
 
 
+def performance_dataframe_comparison(base_df: pd.DataFrame, comp_df: pd.DataFrame, relative: bool = True) -> pd.DataFrame:
+    # checking that the two dataframes have the same indices / cover the same cases
+    assert base_df.index.equals(comp_df.index)
+    assert base_df.index.equal_levels(comp_df.index)
+
+    if len(base_df.columns.difference(comp_df.columns)):
+        print(f"Comparing only columns that are shared between the two tables:\n"
+              f"{base_df.columns.difference(comp_df.columns).to_list()} will be ignored")
+
+    out_df = comp_df.sub(base_df)
+
+    if relative:
+        out_df = out_df.div(base_df)
+        out_df *= 100
+
+    return out_df
+
+
 if __name__ == '__main__':
     pd.set_option('display.max_rows', 500)
     pd.set_option('display.max_columns', 500)
-    pd.set_option('display.width', 1000)
+    pd.set_option('display.width', 120)
 
     MEASURE = 'm'       # 'm' | 'px'
     SORT_BY_SCORE = 'min_ADE'
@@ -176,33 +221,44 @@ if __name__ == '__main__':
         scores_of_interest=FULL_OBS_SCORES
     )
     print(f"\nExperiments on fully observed dataset:")
-    print(full_obs_perf_df.sort_values('min_ADE'))
+    # print(full_obs_perf_df.sort_values('min_ADE'))
+    print(relative_improvement_df(full_obs_perf_df, 'sdd_baseline_occlusionformer'))
 
     occluded_perf_df = generate_performance_summary_df(
         runs_of_interest=OCCL_SIM_RUNS,
         scores_of_interest=OCCL_SIM_SCORES+EXTRA_OCCL_SIM_SCORES
     )
     print(f"\nExperiments on occluded dataset:")
-    print(occluded_perf_df.sort_values('min_ADE'))
+    # print(occluded_perf_df.sort_values('min_ADE'))
+    print(relative_improvement_df(occluded_perf_df, 'occlusionformer_no_map'))
 
-    for experiment in OCCL_SIM_RUNS:
-        for operation in ['mean', 'std']:
-            exp_df = get_perf_scores_df(experiment_name=experiment)
-            exp_df = remove_sample_columns(exp_df)
-            exp_df = summarize_per_occlusion_length(df=exp_df, operation=operation)
-            print(f'\nScores summary separated by occlusion lengths for {experiment} ({operation}):')
-            print(exp_df[OCCL_SIM_SCORES+EXTRA_OCCL_SIM_SCORES])
+    # for experiment in OCCL_SIM_RUNS:
+    #     for operation in ['mean', 'std']:
+    #         exp_df = get_perf_scores_df(experiment_name=experiment)
+    #         exp_df = remove_sample_columns(exp_df)
+    #         exp_df = summarize_per_occlusion_length(df=exp_df, operation=operation)
+    #         print(f'\nScores summary separated by occlusion lengths for {experiment} ({operation}):')
+    #         print(exp_df[OCCL_SIM_SCORES+EXTRA_OCCL_SIM_SCORES])
+    #
+    # box_plot_scores = OCCL_SIM_SCORES + EXTRA_OCCL_SIM_SCORES
+    # [box_plot_scores.remove(score) for score in ['rF', 'past_pred_length', 'pred_length']]
+    # for experiment in OCCL_SIM_RUNS:
+    #     for score in box_plot_scores:
+    #         exp_df = get_perf_scores_df(experiment_name=experiment)
+    #         exp_df = remove_sample_columns(exp_df)
+    #         fig, ax = per_occlusion_length_boxplot(df=exp_df, column_name=score)
+    #         ax.set_title(f"{experiment}: {score} / occlusion duration")
+    #         plt.show()
 
-    box_plot_scores = OCCL_SIM_SCORES + EXTRA_OCCL_SIM_SCORES
-    [box_plot_scores.remove(score) for score in ['rF', 'past_pred_length', 'pred_length']]
-    for experiment in OCCL_SIM_RUNS:
-        for score in box_plot_scores:
-            exp_df = get_perf_scores_df(experiment_name=experiment)
-            exp_df = remove_sample_columns(exp_df)
-            fig, ax = per_occlusion_length_boxplot(df=exp_df, column_name=score)
-            ax.set_title(f"{experiment}: {score} / occlusion duration")
-            plt.show()
-
-    # TODO: do run comparisons (fully observed versus occluded)
+    base_run = 'sdd_baseline_occlusionformer'
+    compare_run = 'baseline_no_pos_concat'
+    n_top = 5
+    base_df = get_perf_scores_df(experiment_name=base_run)
+    base_df = base_df[FULL_OBS_SCORES]
+    comp_df = get_perf_scores_df(experiment_name=compare_run)
+    comp_df = comp_df[FULL_OBS_SCORES]
+    out_df = performance_dataframe_comparison(base_df, comp_df, relative=False)
+    print(f"\nPer agent performance comparison: {compare_run} vs. {base_run} (top {n_top} agents):")
+    print(out_df.sort_values('min_ADE', ascending=True).head(5))
 
     print(f"\nGoodbye!")
