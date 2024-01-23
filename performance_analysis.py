@@ -181,7 +181,7 @@ def performance_dataframe_comparison(base_df: pd.DataFrame, comp_df: pd.DataFram
 if __name__ == '__main__':
     pd.set_option('display.max_rows', 500)
     pd.set_option('display.max_columns', 500)
-    pd.set_option('display.width', 120)
+    pd.set_option('display.width', 250)
 
     MEASURE = 'm'       # 'm' | 'px'
     SORT_BY_SCORE = 'min_ADE'
@@ -220,7 +220,7 @@ if __name__ == '__main__':
         runs_of_interest=FULL_OBS_RUNS,
         scores_of_interest=FULL_OBS_SCORES
     )
-    print(f"\nExperiments on fully observed dataset:")
+    print(f"\n\n\n\nExperiments on fully observed dataset:")
     # print(full_obs_perf_df.sort_values('min_ADE'))
     print(relative_improvement_df(full_obs_perf_df, 'sdd_baseline_occlusionformer'))
 
@@ -228,7 +228,7 @@ if __name__ == '__main__':
         runs_of_interest=OCCL_SIM_RUNS,
         scores_of_interest=OCCL_SIM_SCORES+EXTRA_OCCL_SIM_SCORES
     )
-    print(f"\nExperiments on occluded dataset:")
+    print(f"\n\n\n\nExperiments on occluded dataset:")
     # print(occluded_perf_df.sort_values('min_ADE'))
     print(relative_improvement_df(occluded_perf_df, 'occlusionformer_no_map'))
 
@@ -237,7 +237,7 @@ if __name__ == '__main__':
     #         exp_df = get_perf_scores_df(experiment_name=experiment)
     #         exp_df = remove_sample_columns(exp_df)
     #         exp_df = summarize_per_occlusion_length(df=exp_df, operation=operation)
-    #         print(f'\nScores summary separated by occlusion lengths for {experiment} ({operation}):')
+    #         print(f'\n\n\n\nScores summary separated by occlusion lengths for {experiment} ({operation}):')
     #         print(exp_df[OCCL_SIM_SCORES+EXTRA_OCCL_SIM_SCORES])
     #
     # box_plot_scores = OCCL_SIM_SCORES + EXTRA_OCCL_SIM_SCORES
@@ -258,7 +258,7 @@ if __name__ == '__main__':
     comp_df = get_perf_scores_df(experiment_name=compare_run)
     comp_df = comp_df[FULL_OBS_SCORES]
     out_df = performance_dataframe_comparison(base_df, comp_df, relative=False)
-    print(f"\nPer agent performance comparison: {compare_run} vs. {base_run} (top {n_top} agents):")
+    print(f"\n\n\n\nPer agent performance comparison: {compare_run} vs. {base_run} (top {n_top} agents):")
     print(out_df.sort_values('min_ADE', ascending=True).head(5))
 
-    print(f"\nGoodbye!")
+    print(f"\n\n\n\nGoodbye!")
