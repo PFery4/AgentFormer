@@ -165,7 +165,9 @@ def per_occlusion_length_boxplot(df: pd.DataFrame, column_name: str) -> Tuple[ma
     return fig, ax
 
 
-def performance_dataframe_comparison(base_df: pd.DataFrame, comp_df: pd.DataFrame, relative: bool = True) -> pd.DataFrame:
+def performance_dataframe_comparison(
+        base_df: pd.DataFrame, comp_df: pd.DataFrame, relative: bool = True
+) -> pd.DataFrame:
     # checking that the two dataframes have the same indices / cover the same cases
     # if len(base_df.index.difference(comp_df.index)):
     #     print(f"Comparing only rows that are shared between the two tables:\n"
@@ -181,6 +183,18 @@ def performance_dataframe_comparison(base_df: pd.DataFrame, comp_df: pd.DataFram
         out_df = out_df.div(base_df)
 
     return out_df
+
+
+def scatter_perf_gain_vs_perf_base(
+        base_df: pd.DataFrame, comp_df: pd.DataFrame, col_name: str, relative: bool = True
+) -> pd.DataFrame:
+    assert col_name in base_df.columns
+    assert col_name in comp_df.columns
+
+    fig, ax = plt.subplots()
+    # TODO: COMPLETE FUNCTION HERE
+
+    pass
 
 
 if __name__ == '__main__':
