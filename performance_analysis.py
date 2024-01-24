@@ -187,7 +187,7 @@ def performance_dataframe_comparison(
 
 def scatter_perf_gain_vs_perf_base(
         base_df: pd.DataFrame, comp_df: pd.DataFrame, col_name: str, relative: bool = True
-) -> pd.DataFrame:
+) -> Tuple[matplotlib.figure.Figure, matplotlib.axes.Axes]:
     assert col_name in base_df.columns
     assert col_name in comp_df.columns
 
