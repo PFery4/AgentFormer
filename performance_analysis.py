@@ -191,10 +191,17 @@ def scatter_perf_gain_vs_perf_base(
     assert col_name in base_df.columns
     assert col_name in comp_df.columns
 
-    fig, ax = plt.subplots()
-    # TODO: COMPLETE FUNCTION HERE
+    keep_indices = base_df.index.intersection(comp_df.index)
 
-    pass
+    fig, ax = plt.subplots()
+    diff = comp_df.loc[keep_indices, col_name].sub(base_df.loc[keep_indices, col_name])
+
+    if relative:
+        diff = diff.div(base_df.loc[keep_indices, col_name])
+
+    ax.scatter(base_df.loc[keep_indices, col_name], diff, marker='x', alpha=0.5)
+
+    return fig, ax
 
 
 if __name__ == '__main__':
@@ -290,3 +297,11 @@ if __name__ == '__main__':
     print(out_df.sort_values('min_ADE', ascending=True).head(5))
 
     print(f"\n\n\n\nGoodbye!")
+
+    base_df = get_perf_scores_df(experiment_name=base_run)
+    base_df = base_df[FULL_OBS_SCORES]
+    comp_df = get_perf_scores_df(experiment_name=compare_run)
+    comp_df = comp_df[FULL_OBS_SCORES]
+    fig, ax = scatter_perf_gain_vs_perf_base(base_df=base_df, comp_df=comp_df, col_name='min_ADE', relative=True)
+    plt.show()
+
