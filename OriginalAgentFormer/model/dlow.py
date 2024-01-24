@@ -4,9 +4,9 @@ from torch.nn import functional as F
 from OriginalAgentFormer.utils.torch import *
 from OriginalAgentFormer.model.common.mlp import MLP
 from OriginalAgentFormer.model.common.dist import *
+from OriginalAgentFormer.model import model_lib
 # importing from main repository. Behaviour is similar to Config class implemented in original AgentFormer repo,
 # but this Config file will look in the correct directory.
-from model import model_lib
 from utils.config import Config
 
 
@@ -158,7 +158,7 @@ class ModifiedDLow(DLow):
         self.loss_names = list(self.loss_cfg.keys())
 
         pred_cfg = Config(cfg.pred_cfg, tmp=False, create_dirs=False)
-        pred_model = model_lib.model_dict[pred_cfg.model_id](pred_cfg)
+        pred_model = model_lib.model_dict['agentformer'](pred_cfg)
         self.pred_model_dim = pred_cfg.tf_model_dim
 
         assert cfg.pred_checkpoint_name is not None
