@@ -373,9 +373,10 @@ if __name__ == '__main__':
         'OAC': ['OAC'],
     }
     oao_factor = 100_000.
-    # TODO: fix path name here (become independent from occlusion_simulation repo)
     coord_conv_table = pd.read_csv(
-        os.path.join(REPO_ROOT, '..', 'occlusion-prediction', 'config', 'coordinates_conversion.txt'),
+        # os.path.join(REPO_ROOT, '..', 'occlusion-prediction', 'config', 'coordinates_conversion.txt'),
+        # ^ location of the coordinates_conversion.txt file in the occlusion simulation repo. copied into datasets/SDD
+        os.path.join(REPO_ROOT, 'datasets', 'SDD', 'coordinates_conversion.txt'),
         sep=';', index_col=('scene', 'video')
     )
 
