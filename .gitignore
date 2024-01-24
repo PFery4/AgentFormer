@@ -13,6 +13,7 @@ datasets/nuscenes_pred
 
 # ignoring SDD dataset folder (which contains preprocessed data for SDD)
 datasets/SDD/*
+!datasets/SDD/coordinates_conversion.txt
 
 # ignoring the compressed zip file of agentformer_models
 agentformer_models.zip
