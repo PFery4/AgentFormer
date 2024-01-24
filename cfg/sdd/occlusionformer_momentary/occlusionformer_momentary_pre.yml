@@ -10,10 +10,8 @@ sdd_config_file_name         : config
 
 # ------------------- Feature Extractor -------------------------
 
-past_frames                   : 8
+past_frames                   : 2
 future_frames                 : 12
-min_past_frames               : 8
-min_future_frames             : 12
 
 traj_scale                    : 1
 motion_dim                    : 2
