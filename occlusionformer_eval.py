@@ -348,13 +348,15 @@ if __name__ == '__main__':
                 'past_FDE',
                 'past_ADE_px',
                 'past_FDE_px',
+                'all_ADE',
+                'all_ADE_px',
                 'OAC',
                 'OAO'
             ]
         )
-    if cfg.get('impute', False):
-        assert all([metric in metrics_to_compute for metric in ['past_ADE', 'past_FDE']])
-        metrics_to_compute.extend(['future_ADE', 'future_ADE_px'])
+    # if cfg.get('impute', False):
+    #     assert all([metric in metrics_to_compute for metric in ['past_ADE', 'past_FDE']])
+    #     metrics_to_compute.extend(['future_ADE', 'future_ADE_px'])
 
     metric_columns = {
         'ADE': [f'K{i}_ADE' for i in range(cfg.sample_k)],
@@ -367,8 +369,8 @@ if __name__ == '__main__':
         'past_FDE': [f'K{i}_past_FDE' for i in range(cfg.sample_k)],
         'past_ADE_px': [f'K{i}_past_ADE_px' for i in range(cfg.sample_k)],
         'past_FDE_px': [f'K{i}_past_FDE_px' for i in range(cfg.sample_k)],
-        'future_ADE': [f'K{i}_future_ADE' for i in range(cfg.sample_k)],
-        'future_ADE_px': [f'K{i}_future_ADE_px' for i in range(cfg.sample_k)],
+        'all_ADE': [f'K{i}_all_ADE' for i in range(cfg.sample_k)],
+        'all_ADE_px': [f'K{i}_all_ADE_px' for i in range(cfg.sample_k)],
         'OAO': ['OAO'],
         'OAC': ['OAC'],
     }
@@ -458,13 +460,12 @@ if __name__ == '__main__':
 
         identity_mask = valid_ids.unsqueeze(1) == infer_pred_identities.unsqueeze(0)        # [N, P]
 
+        future_mask = infer_pred_timesteps > 0                                              # [P]
+        identity_and_future_mask = torch.logical_and(identity_mask, future_mask)            # [N, P]
+
         if {'past_pred_length', 'past_ADE', 'past_FDE', 'OAO', 'OAC'}.intersection(metrics_to_compute):
             past_mask = infer_pred_timesteps <= 0                                               # [P]
             identity_and_past_mask = torch.logical_and(identity_mask, past_mask)                # [N, P]
-
-        if 'future_ADE' in metrics_to_compute:
-            future_mask = infer_pred_timesteps > 0                                              # [P]
-            identity_and_future_mask = torch.logical_and(identity_mask, future_mask)            # [N, P]
 
         if {'OAO', 'OAC'}.intersection(metrics_to_compute):
             occlusion_map = in_data['dist_transformed_occlusion_map'][0].to(model.device)
@@ -501,7 +502,7 @@ if __name__ == '__main__':
                 computed_metrics['ADE'] = compute_samples_ADE(
                     pred_positions=infer_pred_positions,
                     gt_positions=gt_positions,
-                    identity_mask=identity_mask
+                    identity_mask=identity_and_future_mask
                 )       # [N, K]
                 if 'ADE_px' in metrics_to_compute:
                     scene, video = in_data['seq'][0].split('_')
@@ -512,7 +513,7 @@ if __name__ == '__main__':
                 computed_metrics['FDE'] = compute_samples_FDE(
                     pred_positions=infer_pred_positions,
                     gt_positions=gt_positions,
-                    identity_mask=identity_mask
+                    identity_mask=identity_and_future_mask
                 )       # [N, K]
                 if 'FDE_px' in metrics_to_compute:
                     scene, video = in_data['seq'][0].split('_')
@@ -565,17 +566,30 @@ if __name__ == '__main__':
                     identity_mask=identity_and_past_mask
                 )        # [N, 1]
 
-            if metric_name == 'future_ADE':
-                computed_metrics['future_ADE'] = compute_samples_ADE(
+            if metric_name == 'all_ADE':
+                computed_metrics['all_ADE'] = compute_samples_ADE(
                     pred_positions=infer_pred_positions,
                     gt_positions=gt_positions,
-                    identity_mask=identity_and_future_mask
+                    identity_mask=identity_mask
                 )       # [N, K]
-                if 'future_ADE_px' in metrics_to_compute:
+                if 'all_ADE_px' in metrics_to_compute:
                     scene, video = in_data['seq'][0].split('_')
                     px_by_m = coord_conv_table.loc[scene, video]['px/m']
-                    computed_metrics['future_ADE_px'] = computed_metrics['future_ADE'] * px_by_m
+                    computed_metrics['all_ADE_px'] = computed_metrics['all_ADE'] * px_by_m
 
+        print(f"{identity_mask=}")
+        print(f"{infer_pred_timesteps=}")
+        print(f"{identity_and_future_mask=}")
+        print(f"{identity_and_past_mask=}")
+        print(f"{infer_pred_positions=}")
+        print(f"{gt_positions=}")
+
+        print(f"{computed_metrics['ADE']=}")
+        print(f"{computed_metrics['past_ADE']=}")
+        print(f"{computed_metrics['all_ADE']=}")
+
+        # remove once tests have been completed
+        raise NotImplementedError
         assert all([val is not None for val in computed_metrics.values()])
 
         # APPEND SCORE VALUES TO TABLE
