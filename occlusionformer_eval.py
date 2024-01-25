@@ -577,19 +577,6 @@ if __name__ == '__main__':
                     px_by_m = coord_conv_table.loc[scene, video]['px/m']
                     computed_metrics['all_ADE_px'] = computed_metrics['all_ADE'] * px_by_m
 
-        print(f"{identity_mask=}")
-        print(f"{infer_pred_timesteps=}")
-        print(f"{identity_and_future_mask=}")
-        print(f"{identity_and_past_mask=}")
-        print(f"{infer_pred_positions=}")
-        print(f"{gt_positions=}")
-
-        print(f"{computed_metrics['ADE']=}")
-        print(f"{computed_metrics['past_ADE']=}")
-        print(f"{computed_metrics['all_ADE']=}")
-
-        # remove once tests have been completed
-        raise NotImplementedError
         assert all([val is not None for val in computed_metrics.values()])
 
         # APPEND SCORE VALUES TO TABLE
@@ -607,50 +594,15 @@ if __name__ == '__main__':
     score_df[['idx', 'agent_id']] = score_df[['idx', 'agent_id']].astype(int)
     score_df.set_index(keys=df_indices, inplace=True)
 
-    if 'ADE' in metrics_to_compute:
-        mode_ades = metric_columns['ADE']
-        score_df['min_ADE'] = score_df[mode_ades].min(axis=1)
-        score_df['mean_ADE'] = score_df[mode_ades].mean(axis=1)
-    if 'ADE_px' in metrics_to_compute:
-        mode_ades = metric_columns['ADE_px']
-        score_df['min_ADE_px'] = score_df[mode_ades].min(axis=1)
-        score_df['mean_ADE_px'] = score_df[mode_ades].mean(axis=1)
-    if 'FDE' in metrics_to_compute:
-        mode_fdes = metric_columns['FDE']
-        score_df['min_FDE'] = score_df[mode_fdes].min(axis=1)
-        score_df['mean_FDE'] = score_df[mode_fdes].mean(axis=1)
-        score_df['rF'] = score_df['mean_FDE'] / score_df['min_FDE']
-        # score_df['rF'] = score_df['rF'].fillna(value=1.0)
-    if 'FDE_px' in metrics_to_compute:
-        mode_fdes = metric_columns['FDE_px']
-        score_df['min_FDE_px'] = score_df[mode_fdes].min(axis=1)
-        score_df['mean_FDE_px'] = score_df[mode_fdes].mean(axis=1)
-        score_df['rF_px'] = score_df['mean_FDE_px'] / score_df['min_FDE_px']
-        # score_df['rF_px'] = score_df['rF_px'].fillna(value=1.0)
-    if 'past_ADE' in metrics_to_compute:
-        mode_min_ades = metric_columns['past_ADE']
-        score_df['min_past_ADE'] = score_df[mode_min_ades].min(axis=1)
-        score_df['mean_past_ADE'] = score_df[mode_min_ades].mean(axis=1)
-    if 'past_ADE_px' in metrics_to_compute:
-        mode_min_ades = metric_columns['past_ADE_px']
-        score_df['min_past_ADE_px'] = score_df[mode_min_ades].min(axis=1)
-        score_df['mean_past_ADE_px'] = score_df[mode_min_ades].mean(axis=1)
-    if 'past_FDE' in metrics_to_compute:
-        mode_min_fdes = metric_columns['past_FDE']
-        score_df['min_past_FDE'] = score_df[mode_min_fdes].min(axis=1)
-        score_df['mean_past_FDE'] = score_df[mode_min_fdes].mean(axis=1)
-    if 'past_FDE_px' in metrics_to_compute:
-        mode_min_fdes = metric_columns['past_FDE_px']
-        score_df['min_past_FDE_px'] = score_df[mode_min_fdes].min(axis=1)
-        score_df['mean_past_FDE_px'] = score_df[mode_min_fdes].mean(axis=1)
-    if 'future_ADE' in metrics_to_compute:
-        mode_min_ades = metric_columns['future_ADE']
-        score_df['min_future_ADE'] = score_df[mode_min_ades].min(axis=1)
-        score_df['mean_future_ADE'] = score_df[mode_min_ades].mean(axis=1)
-    if 'future_ADE_px' in metrics_to_compute:
-        mode_min_ades = metric_columns['future_ADE_px']
-        score_df['min_future_ADE_px'] = score_df[mode_min_ades].min(axis=1)
-        score_df['mean_future_ADE_px'] = score_df[mode_min_ades].mean(axis=1)
+    for metric_name in [x for x in [
+        'ADE', 'ADE_px', 'FDE', 'FDE_px',
+        'past_ADE', 'past_ADE_px', 'past_FDE', 'past_FDE_px',
+        'all_ADE', 'all_ADE_px'] if x in metrics_to_compute
+    ]:
+        print(metric_name)
+        mode_ades = metric_columns[metric_name]
+        score_df[f'min_{metric_name}'] = score_df[mode_ades].min(axis=1)
+        score_df[f'mean_{metric_name}'] = score_df[mode_ades].mean(axis=1)
 
     # saving the table, and the score summary
     df_save_name = os.path.join(saved_preds_dir, 'prediction_scores.csv')
