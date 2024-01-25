@@ -599,7 +599,6 @@ if __name__ == '__main__':
         'past_ADE', 'past_ADE_px', 'past_FDE', 'past_FDE_px',
         'all_ADE', 'all_ADE_px'] if x in metrics_to_compute
     ]:
-        print(metric_name)
         mode_ades = metric_columns[metric_name]
         score_df[f'min_{metric_name}'] = score_df[mode_ades].min(axis=1)
         score_df[f'mean_{metric_name}'] = score_df[mode_ades].mean(axis=1)
