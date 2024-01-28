@@ -12,7 +12,7 @@ import torch
 from torch import nn
 from collections import defaultdict
 
-from OriginalAgentFormer.model.model_lib import model_dict
+from OriginalAgentFormer.model.agentformer import AgentFormer
 # from utils.utils import memory_report
 
 
@@ -21,9 +21,9 @@ class OrigModelWrapper(nn.Module):
     def __init__(self, cfg):
         super().__init__()
 
-        assert '_' in cfg.model_id
+        assert cfg.model_id == 'orig_agentformer'
         self.model_id = cfg.model_id
-        self.orig_model = model_dict[self.model_id.split('_')[-1]](cfg=cfg)
+        self.orig_model = AgentFormer(cfg=cfg)
         self.device = torch.device('cpu')
 
         self.traj_scale = cfg.traj_scale
@@ -38,17 +38,6 @@ class OrigModelWrapper(nn.Module):
         self.device = self.orig_model.device
 
     def set_data(self, data):
-        self.data = defaultdict(lambda: None)
-
-        self.data['valid_id'] = data['identities'].detach().clone().to(self.device)     # [B, N]
-
-        self.data['last_obs_positions'] = data['last_obs_positions'].detach().clone().to(self.device)   # [B, N, 2]
-        self.data['last_obs_timesteps'] = data['last_obs_timesteps'].detach().clone().to(self.device)   # [B, N]
-
-        self.data['pred_position_sequence'] = data['pred_position_sequence'].detach().clone().to(self.device)   # [B, P, 2]
-        self.data['pred_velocity_sequence'] = data['pred_velocity_sequence'].detach().clone().to(self.device)   # [B, P, 2]
-        self.data['pred_timestep_sequence'] = data['pred_timestep_sequence'].detach().clone().to(self.device)   # [B, P]
-        self.data['pred_identity_sequence'] = data['pred_identity_sequence'].detach().clone().to(self.device)   # [B, P]
 
         trajs = data['trajectories'].squeeze(0)     # [N, T_total, 2]
 
@@ -63,6 +52,18 @@ class OrigModelWrapper(nn.Module):
         }
 
         self.orig_model.set_data(in_data_dict)
+
+        self.data = self.orig_model.data
+
+        self.data['valid_id'] = data['identities'].detach().clone().to(self.device)     # [B, N]
+
+        self.data['last_obs_positions'] = data['last_obs_positions'].detach().clone().to(self.device)   # [B, N, 2]
+        self.data['last_obs_timesteps'] = data['last_obs_timesteps'].detach().clone().to(self.device)   # [B, N]
+
+        self.data['pred_position_sequence'] = data['pred_position_sequence'].detach().clone().to(self.device)   # [B, P, 2]
+        self.data['pred_velocity_sequence'] = data['pred_velocity_sequence'].detach().clone().to(self.device)   # [B, P, 2]
+        self.data['pred_timestep_sequence'] = data['pred_timestep_sequence'].detach().clone().to(self.device)   # [B, P]
+        self.data['pred_identity_sequence'] = data['pred_identity_sequence'].detach().clone().to(self.device)   # [B, P]
 
     def step_annealer(self):
         self.orig_model.step_annealer()
