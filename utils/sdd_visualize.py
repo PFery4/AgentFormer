@@ -120,12 +120,25 @@ def visualize_trajectories(data_dict: Dict, draw_ax: matplotlib.axes.Axes) -> No
 
 
 def visualize_predictions(
-        pred_dict: Dict, draw_ax: matplotlib.axes.Axes
+        pred_dict: Dict, draw_ax: matplotlib.axes.Axes,
+        display_modes_mask: Optional[torch.Tensor] = None,
+        alpha_displayed_modes: float = 0.5,
+        alpha_non_displayed_modes: float = 0.0,
+        display_mode_ids: bool = False
 ) -> None:
     assert 'valid_id' in pred_dict.keys()
     assert 'infer_dec_agents' in pred_dict.keys()
     # assert 'infer_dec_timesteps' in pred_dict.keys()
     assert 'infer_dec_motion' in pred_dict.keys()
+    if display_modes_mask is not None:
+        assert display_modes_mask.shape[0] == pred_dict['valid_id'].shape[-1]
+        assert display_modes_mask.shape[1] == pred_dict['infer_dec_agents'].shape[0]
+        # [N, K]
+    else:
+        display_modes_mask = torch.full(
+            [pred_dict['valid_id'].shape[-1],
+             pred_dict['infer_dec_agents'].shape[0]], True
+        )
 
     valid_ids = pred_dict['valid_id'][0]                    # [N]
     pred_ids = pred_dict['infer_dec_agents']                # [K, P]
@@ -147,17 +160,23 @@ def visualize_predictions(
     valid_ids = valid_ids.cpu()
     pred_ids = pred_ids.cpu()
 
+    assert torch.eq(pred_ids, pred_ids[0].repeat(pred_ids.shape[0], 1)).all()
+
     for i, ag_id in enumerate(valid_ids):
 
         c = color[i].reshape(1, -1)
+        agent_mask = (pred_ids[0] == ag_id)
 
         for k, (pred_traj, agent_sequence) in enumerate(zip(plot_pred_trajs, pred_ids)):
-            agent_mask = (agent_sequence == ag_id)
+            # agent_mask = (agent_sequence == ag_id)
             agent_traj = pred_traj[agent_mask]
 
-            draw_ax.plot(agent_traj[..., 0], agent_traj[..., 1], color=c, alpha=0.4)
-            draw_ax.scatter(agent_traj[..., 0], agent_traj[..., 1], marker='*', s=10, color=c, alpha=0.4)
-            draw_ax.annotate(f"{k}", (agent_traj[-1, 0], agent_traj[-1, 1]))
+            alpha = alpha_displayed_modes if display_modes_mask[i, k] else alpha_non_displayed_modes
+
+            draw_ax.plot(agent_traj[..., 0], agent_traj[..., 1], color=c, alpha=alpha)
+            draw_ax.scatter(agent_traj[..., 0], agent_traj[..., 1], marker='*', s=10, color=c, alpha=alpha)
+            if display_mode_ids:
+                draw_ax.annotate(f"{k}", (agent_traj[-1, 0], agent_traj[-1, 1]), alpha)
 
 
 def visualize_scene_map(data_dict: Dict, draw_ax: matplotlib.axes.Axes) -> None:
