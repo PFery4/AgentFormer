@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import mpl_toolkits.axes_grid1
 import matplotlib.colors as colors
 
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 Tensor = torch.Tensor
 
 
@@ -119,7 +119,9 @@ def visualize_trajectories(data_dict: Dict, draw_ax: matplotlib.axes.Axes) -> No
         draw_ax.scatter(traj[:, 0][~mask][-1], traj[:, 1][~mask][-1], marker='*', s=40, color=c)
 
 
-def visualize_predictions(pred_dict: Dict, draw_ax: matplotlib.axes.Axes) -> None:
+def visualize_predictions(
+        pred_dict: Dict, draw_ax: matplotlib.axes.Axes
+) -> None:
     assert 'valid_id' in pred_dict.keys()
     assert 'infer_dec_agents' in pred_dict.keys()
     # assert 'infer_dec_timesteps' in pred_dict.keys()
@@ -158,17 +160,17 @@ def visualize_predictions(pred_dict: Dict, draw_ax: matplotlib.axes.Axes) -> Non
             draw_ax.annotate(f"{k}", (agent_traj[-1, 0], agent_traj[-1, 1]))
 
 
-def visualize_scene_map_and_occlusion_map(data_dict: Dict, draw_ax: matplotlib.axes.Axes) -> None:
+def visualize_scene_map(data_dict: Dict, draw_ax: matplotlib.axes.Axes) -> None:
     assert 'scene_map' in data_dict.keys()
-    assert 'occlusion_map' in data_dict.keys()
 
     scene_map_img = data_dict['scene_map']  # [C, H, W]
-    occlusion_map_img = data_dict['occlusion_map']  # [H, W]
-
-    draw_ax.set_xlim(0., scene_map_img.shape[2])
-    draw_ax.set_ylim(scene_map_img.shape[1], 0.)
     draw_ax.imshow(scene_map_img.permute(1, 2, 0))
 
+
+def visualize_occlusion_map(data_dict: Dict, draw_ax: matplotlib.axes.Axes) -> None:
+    assert 'occlusion_map' in data_dict.keys()
+
+    occlusion_map_img = data_dict['occlusion_map']  # [H, W]
     occlusion_map_render = np.full(
         (*occlusion_map_img.shape, 4), (1., 0, 0, 0.3)
     ) * (~occlusion_map_img)[..., None].numpy()
@@ -216,24 +218,46 @@ def visualize_nlog_probability_map(data_dict: Dict, draw_ax: matplotlib.axes.Axe
     visualize_map(tensor_map=nlog_probability_map, draw_ax=draw_ax)
 
 
+def define_axes_boundaries(data_dict: Dict, draw_ax: matplotlib.axes.Axes) -> None:
+    default_height, default_width = (800., 800.)
+
+    if 'occlusion_map' in data_dict.keys():
+        # [H, W]
+        draw_ax.set_xlim(0., data_dict['occlusion_map'].shape[1])
+        draw_ax.set_ylim(data_dict['occlusion_map'].shape[0], 0.)
+    elif 'scene_map' in data_dict.keys():
+        # [C, H, W]
+        draw_ax.set_xlim(0., data_dict['scene_map'].shape[2])
+        draw_ax.set_ylim(data_dict['scene_map'].shape[1], 0.)
+    else:
+        draw_ax.set_xlim(0., default_width)
+        draw_ax.set_ylim(default_height, 0.)
+        draw_ax.set_aspect('equal')
+
+
 def visualize(
         data_dict: Dict,
         draw_ax: matplotlib.axes.Axes,
         draw_ax_sequences: Optional[matplotlib.axes.Axes] = None,
         draw_ax_dist_transformed_map: Optional[matplotlib.axes.Axes] = None,
         draw_ax_probability_map: Optional[matplotlib.axes.Axes] = None,
-        draw_ax_nlog_probability_map: Optional[matplotlib.axes.Axes] = None
+        draw_ax_nlog_probability_map: Optional[matplotlib.axes.Axes] = None,
 ) -> None:
+    define_axes_boundaries(data_dict=data_dict, draw_ax=draw_ax)
     has_scene_map = 'scene_map' in data_dict.keys()
+    has_occl_map = 'occlusion_map' in data_dict.keys()
     if has_scene_map:
-        visualize_scene_map_and_occlusion_map(data_dict=data_dict, draw_ax=draw_ax)
-    else:
-        draw_ax.set_aspect('equal')
+        visualize_scene_map(data_dict=data_dict, draw_ax=draw_ax)
+    if has_occl_map:
+        visualize_occlusion_map(data_dict=data_dict, draw_ax=draw_ax)
     visualize_trajectories(data_dict=data_dict, draw_ax=draw_ax)
 
     if draw_ax_sequences is not None:
+        define_axes_boundaries(data_dict=data_dict, draw_ax=draw_ax_sequences)
         if has_scene_map:
-            visualize_scene_map_and_occlusion_map(data_dict=data_dict, draw_ax=draw_ax_sequences)
+            visualize_scene_map(data_dict=data_dict, draw_ax=draw_ax_sequences)
+        if has_occl_map:
+            visualize_occlusion_map(data_dict=data_dict, draw_ax=draw_ax_sequences)
         visualize_sequences(data_dict=data_dict, draw_ax=draw_ax_sequences)
 
     if draw_ax_dist_transformed_map is not None:
