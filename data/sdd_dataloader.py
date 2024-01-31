@@ -495,7 +495,7 @@ class TorchDataGeneratorSDD(Dataset):
         m_by_px = self.coord_conv.loc[scene, video]['m/px']
 
         # prepare for random rotation by choosing a rotation angle and rotating the map
-        theta_rot = np.random.rand() * 360
+        theta_rot = np.random.rand() * 360 * self.rand_rot_scene
         scene_map.rotate_around_center(theta=theta_rot)
 
         # mapping the trajectories to scene map coordinate system
@@ -832,40 +832,35 @@ dataset_dict = {
 
 if __name__ == '__main__':
 
-    ###################################################################################################################
-    # cfg = Config('sdd_baseline_copy_for_test_pre')
-    # presaved_dataset = PresavedDatasetSDD(parser=cfg, log=None, split='train')
-    # print(f"{presaved_dataset.pickle_files=}")
-    ###################################################################################################################
+    # config_str = 'dataset_fully_observed_momentary_2_no_rand_rot'
+    # config_str = 'dataset_fully_observed_no_rand_rot'
+    config_str = 'dataset_occlusion_simulation_no_rand_rot'
+    # dataset_class = 'hdf5'
+    dataset_class = 'torch_preprocess'
+    split = 'test'
 
-    ###################################################################################################################
     import utils.sdd_visualize
     from utils.utils import prepare_seed
-    cfg = Config('sdd_baseline_copy_for_test_pre')
+    cfg = Config(config_str)
     prepare_seed(cfg.seed)
-    torch_dataset = TorchDataGeneratorSDD(parser=cfg, log=None, split='train')
+    torch_dataset = dataset_dict[dataset_class](parser=cfg, log=None, split='test')
 
-    # torch_dataset = PresavedDatasetSDD(parser=cfg, log=None, split='train')
-    # print(f"{torch_dataset.occlusion_process=}")
-    # print(f"{torch_dataset.impute=}")
-    # print(f"{torch_dataset.dataset_name=}")
-
-    # for i in range(len(torch_dataset)):
-    #     out_dict = torch_dataset.__getitem__(i)
-    #     print(f"{i, out_dict.keys()=}\n\n")
-
-    out_dict = torch_dataset.__getitem__(50)      # occluded
-    # out_dict = torch_dataset.__getitem__(72)        # fully observed
+    out_dict = torch_dataset.__getitem__(50)
+    if 'map_homography' not in out_dict.keys():
+        out_dict['map_homography'] = torch_dataset.map_homography
 
     # print(f"{out_dict=}")
-    fig, ax = plt.subplots(1, 5)
+    fig, ax = plt.subplots(1, 2)
     utils.sdd_visualize.visualize(
         data_dict=out_dict,
         draw_ax=ax[0],
         draw_ax_sequences=ax[1],
-        draw_ax_dist_transformed_map=ax[2],
-        draw_ax_probability_map=ax[3],
-        draw_ax_nlog_probability_map=ax[4]
+        # draw_ax_dist_transformed_map=ax[2],
+        draw_ax_dist_transformed_map=None,
+        # draw_ax_probability_map=ax[3],
+        draw_ax_probability_map=None,
+        # draw_ax_nlog_probability_map=ax[4],
+        draw_ax_nlog_probability_map=None
     )
     plt.show()
     ###################################################################################################################
