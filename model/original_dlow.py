@@ -95,7 +95,7 @@ class OrigDLowWrapper(nn.Module):
     def inference(self, mode, sample_num, need_weights=False):
         self.main(mean=True, need_weights=need_weights)
 
-        dec_timesteps = torch.vstack([self.future_timesteps] * self.data['valid_id'].shape[-1])  # [N, T_pred]
+        dec_timesteps = torch.vstack([self.future_timesteps] * self.data['valid_id'].shape[-1]).to(self.device)  # [N, T_pred]
         dec_agents = torch.hstack([self.data['valid_id'][0, ...].unsqueeze(1)] * self.T_pred)  # [N, T_pred]
 
         dec_motion = self.data[f'infer_dec_motion']
