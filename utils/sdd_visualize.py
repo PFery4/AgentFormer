@@ -341,7 +341,7 @@ def visualize_input_and_predictions(
     pred_id_sequence = pred_dict['infer_dec_agents'].cpu()          # [K, P]
     pred_pos_sequence = pred_dict['infer_dec_motion'].cpu()         # [K, P, 2]
     # pred_time_sequence = pred_dict['infer_dec_timesteps'].cpu()     # [P]
-    pred_past_mask = pred_dict['infer_dec_past_mask'].cpu()         # [P]
+    # pred_past_mask = pred_dict['infer_dec_past_mask'].cpu()         # [P]       # TODO: maybe differentiation of prediction in the past?
 
     # converting position data to pixel coordinates
     obs_pos_sequence = apply_homography(obs_pos_sequence, homography)
