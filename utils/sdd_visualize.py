@@ -9,6 +9,27 @@ from typing import Dict, Optional, List
 Tensor = torch.Tensor
 
 
+def apply_homography(points: Tensor, homography: Tensor) -> Tensor:
+    # TODO: this function probably shouldn't live in this file...
+    assert points.shape[-1] == 2
+    assert homography.shape == torch.Size([3, 3])
+    homogeneous_points = torch.cat((points, torch.ones([*points.shape[:-1], 1])), dim=-1).transpose(-1, -2)
+    return (homography @ homogeneous_points).transpose(-1, -2)[..., :-1]
+
+
+def verify_data_dicts_consistency(input_dict: Dict, pred_dict: Dict) -> None:
+    # TODO: This function probably shouldn't live in this file...
+    print()
+    print(f"{input_dict.keys()=}")
+    print(f"{pred_dict.keys()=}")
+    print()
+
+    if 'identities' in input_dict.keys() and 'valid_id' in pred_dict.keys():
+        assert torch.all(input_dict['identities'].cpu() == pred_dict['valid_id'].squeeze().cpu())
+    if 'map_homography' in input_dict.keys() and 'map_homography' in pred_dict.keys():
+        assert torch.all(input_dict['map_homography'].cpu() == pred_dict['map_homography'].cpu())
+
+
 def visualize_sequences(data_dict: Dict, draw_ax: matplotlib.axes.Axes) -> None:
     assert 'identities' in data_dict.keys()
 
@@ -289,6 +310,103 @@ def visualize(
 
     if draw_ax_nlog_probability_map is not None:
         visualize_nlog_probability_map(data_dict=data_dict, draw_ax=draw_ax_nlog_probability_map)
+
+
+def visualize_input_and_predictions(
+        draw_ax: matplotlib.axes.Axes,
+        data_dict: Dict,
+        pred_dict: Dict,
+        show_rgb_map: bool = False,
+        show_obs_agent_ids: Optional[List[int]] = None,     # default: show for everyone
+        show_gt_agent_ids: Optional[List[int]] = None,      # default: show for everyone
+        show_pred_agent_ids: Optional[List[int]] = None     # default: show for everyone
+):
+    verify_data_dicts_consistency(input_dict=data_dict, pred_dict=pred_dict)
+
+    homography = (data_dict.get('map_homography', torch.eye(3))).cpu()
+    identities = data_dict.get('identities').cpu()
+
+    # extracting the observed trajectory data
+    obs_id_sequence = data_dict['obs_identity_sequence'].cpu()      # [O]
+    obs_pos_sequence = data_dict['obs_position_sequence'].cpu()     # [O, 2]
+    # obs_time_sequence = data_dict['obs_timestep_sequence'].cpu()    # [O]
+    last_obs_pos = data_dict['last_obs_positions'].cpu()            # [N, 2]
+
+    # extracting the ground truth future trajectory data
+    gt_id_sequence = data_dict['pred_identity_sequence'].cpu()      # [P]
+    gt_pos_sequence = data_dict['pred_position_sequence'].cpu()     # [P, 2]
+    # gt_time_sequence = data_dict['pred_timestep_sequence'].cpu()    # [P]
+
+    # extracting the prediction trajectory data
+    pred_id_sequence = pred_dict['infer_dec_agents'].cpu()          # [K, P]
+    pred_pos_sequence = pred_dict['infer_dec_motion'].cpu()         # [K, P, 2]
+    # pred_time_sequence = pred_dict['infer_dec_timesteps'].cpu()     # [P]
+    pred_past_mask = pred_dict['infer_dec_past_mask'].cpu()         # [P]
+
+    # converting position data to pixel coordinates
+    obs_pos_sequence = apply_homography(obs_pos_sequence, homography)
+    last_obs_pos = apply_homography(last_obs_pos, homography)
+    gt_pos_sequence = apply_homography(gt_pos_sequence, homography)
+    pred_pos_sequence = apply_homography(pred_pos_sequence, homography)
+
+    # for each part of the trajectory data to display, determine which agents to show
+    show_obs_agent_ids = identities.tolist() if show_obs_agent_ids is None else show_obs_agent_ids
+    show_gt_agent_ids = identities.tolist() if show_gt_agent_ids is None else show_gt_agent_ids
+    show_pred_agent_ids = identities.tolist() if show_pred_agent_ids is None else show_pred_agent_ids
+    show_obs_agent_ids = [x for x in show_obs_agent_ids if x in identities]
+    show_gt_agent_ids = [x for x in show_gt_agent_ids if x in identities]
+    show_pred_agent_ids = [x for x in show_pred_agent_ids if x in identities]
+
+    # define colors for every agent
+    colors = plt.cm.rainbow(np.linspace(0, 1, identities.shape[0]))
+
+    # plotting the map
+    define_axes_boundaries(data_dict=data_dict, draw_ax=draw_ax)
+    if show_rgb_map and 'scene_map' in data_dict.keys(): visualize_scene_map(data_dict=data_dict, draw_ax=draw_ax)
+    if 'occlusion_map' in data_dict.keys(): visualize_occlusion_map(data_dict=data_dict, draw_ax=draw_ax)
+
+    # plotting past trajectories
+    for agent_id in show_obs_agent_ids:
+        # extracting the index of agent within the identity sequence and determining the color
+        identities_index = np.argwhere(identities == agent_id).item()
+        color = colors[identities_index].reshape(1, -1)
+
+        # plotting last observed position
+        draw_ax.scatter(last_obs_pos[identities_index, 0], last_obs_pos[identities_index, 1], s=40, facecolors='none', edgecolors=color, alpha=0.4)
+
+        # plotting the past trajectory
+        agent_sequence = (obs_id_sequence == agent_id)
+        agent_pos_sequence = obs_pos_sequence[agent_sequence, :]
+
+        draw_ax.plot(agent_pos_sequence[:, 0], agent_pos_sequence[:, 1], c=color, marker='x', linestyle='-', alpha=0.4, label=agent_id)
+
+    # plotting ground truth future trajectories
+    for agent_id in show_gt_agent_ids:
+        # extracting the index of agent within the identity sequence and determining the color
+        identities_index = np.argwhere(identities == agent_id).item()
+        color = colors[identities_index].reshape(1, -1)
+
+        # plotting the ground truth future trajectory
+        agent_sequence = (gt_id_sequence == agent_id)
+        agent_pos_sequence = gt_pos_sequence[agent_sequence, :]     # [p, 2]
+        agent_pos_sequence = np.concatenate((last_obs_pos[identities_index, :].unsqueeze(0), agent_pos_sequence), axis=0)
+
+        draw_ax.plot(agent_pos_sequence[:, 0], agent_pos_sequence[:, 1], c='black', linestyle='-', alpha=0.5)
+        draw_ax.scatter(agent_pos_sequence[1:-1, 0], agent_pos_sequence[1:-1, 1], facecolors='none', edgecolors='black', marker='X', alpha=0.5)
+        draw_ax.scatter(agent_pos_sequence[-1, 0], agent_pos_sequence[-1, 1], facecolors='none', edgecolors=color, marker='X', alpha=0.5)
+
+    # plotting predictions
+    for agent_id in show_pred_agent_ids:
+        # extracting the index of agent within the identity sequence and determining the color
+        identities_index = np.argwhere(identities == agent_id).item()
+        color = colors[identities_index].reshape(1, -1)
+
+        # plotting the predictions
+        for i, agent_sequence in enumerate(pred_id_sequence == agent_id):
+            prediction = pred_pos_sequence[i, agent_sequence, :]
+            prediction = np.concatenate((last_obs_pos[identities_index, :].unsqueeze(0), prediction), axis=0)
+            draw_ax.plot(prediction[:, 0], prediction[:, 1], c=color, linestyle='-', alpha=0.5)
+            draw_ax.scatter(prediction[1:, 0], prediction[1:, 1], marker='*', c=color, alpha=0.5)
 
 
 def show_example_instances_dataloader():
