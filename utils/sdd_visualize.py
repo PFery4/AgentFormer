@@ -5,6 +5,9 @@ import matplotlib.pyplot as plt
 import mpl_toolkits.axes_grid1
 import matplotlib.colors as colors
 
+from model.agentformer_loss import index_mapping_gt_seq_pred_seq
+from utils.performance_metrics import compute_samples_ADE, compute_samples_FDE
+
 from typing import Dict, Optional, List
 Tensor = torch.Tensor
 
@@ -407,6 +410,64 @@ def visualize_input_and_predictions(
             prediction = np.concatenate((last_obs_pos[identities_index, :].unsqueeze(0), prediction), axis=0)
             draw_ax.plot(prediction[:, 0], prediction[:, 1], c=color, linestyle='-', alpha=0.5)
             draw_ax.scatter(prediction[1:, 0], prediction[1:, 1], marker='*', c=color, alpha=0.5)
+
+
+def write_scores_per_mode(
+        draw_ax: matplotlib.axes.Axes,
+        pred_dict: Dict,
+        show_agent_ids: Optional[List[int]] = None,     # default, show for everyone
+        write_mode_number: bool = False,
+        write_ade_score: bool = False,
+        write_fde_score: bool = False
+):
+    identities = pred_dict['valid_id'].squeeze()  # [N]
+    homography = pred_dict['map_homography']    # [3, 3]
+    gt_timesteps = pred_dict['pred_timestep_sequence'][0]  # [P]
+    gt_identities = pred_dict['pred_identity_sequence'][0]  # [P]
+    gt_positions = pred_dict['pred_position_sequence'][0]  # [P, 2]
+    pred_timesteps = pred_dict['infer_dec_timesteps']  # [P]
+    pred_identities = pred_dict['infer_dec_agents'][0]  # [P]
+    pred_positions = pred_dict['infer_dec_motion']  # [K, P, 2]
+
+    idx_map = index_mapping_gt_seq_pred_seq(
+        ag_gt=gt_identities, tsteps_gt=gt_timesteps,
+        ag_pred=pred_identities, tsteps_pred=pred_timesteps
+    )
+
+    # gt_identities = gt_identities[idx_map]
+    # gt_timesteps = gt_timesteps[idx_map]
+    gt_positions = gt_positions[idx_map, :]
+
+    identity_mask = identities.unsqueeze(1) == pred_identities.unsqueeze(0)  # [N, P]
+
+    if write_ade_score:
+        ades = compute_samples_ADE(
+            pred_positions=pred_positions, gt_positions=gt_positions, identity_mask=identity_mask
+        )       # [N, K]
+    if write_fde_score:
+        fdes = compute_samples_FDE(
+            pred_positions=pred_positions, gt_positions=gt_positions, identity_mask=identity_mask
+        )       # [N, K]
+
+    timestep_mask = pred_timesteps == torch.max(pred_timesteps)
+    pred_identities = pred_identities[timestep_mask]
+    pred_positions = pred_positions[:, timestep_mask, :]
+
+    pred_positions = apply_homography(pred_positions.cpu(), homography)
+
+    for ag_i, identity in enumerate(pred_identities):
+        if identity not in show_agent_ids:
+            continue
+        for k, pred_mode in enumerate(pred_positions[:, ag_i, :]):  # [2]
+            score_index = identities == identity
+            scores = []
+            if write_mode_number:
+                scores.append(f"{k}")
+            if write_ade_score:
+                scores.append(f"{ades[score_index, k].item():.2f}")
+            if write_fde_score:
+                scores.append(f"{fdes[score_index, k].item():.2f}")
+            draw_ax.text(pred_mode[0], pred_mode[1], " | ".join(scores))
 
 
 def show_example_instances_dataloader():
