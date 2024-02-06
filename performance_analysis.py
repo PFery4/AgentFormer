@@ -26,7 +26,7 @@ def get_perf_scores_df(experiment_name: str, model_name: Optional[str] = None) -
 
     if model_name is None:
         model_name = os.listdir(target_path)[0]
-    target_path = os.path.join(target_path, model_name, 'test_rand_rot', 'prediction_scores.csv')       # TODO:NORANDROT
+    target_path = os.path.join(target_path, model_name, 'test', 'prediction_scores.csv')
     assert os.path.exists(target_path)
 
     df = pd.read_csv(target_path)
@@ -47,7 +47,7 @@ def get_perf_scores_dict(experiment_name: str, model_name: Optional[str] = None)
 
     if model_name is None:
         model_name = os.listdir(target_path)[0]
-    target_path = os.path.join(target_path, model_name, 'test_rand_rot', 'prediction_scores.yml')       # TODO:NORANDROT
+    target_path = os.path.join(target_path, model_name, 'test', 'prediction_scores.yml')
     assert os.path.exists(target_path)
 
     with open(target_path, 'r') as f:
@@ -295,21 +295,34 @@ if __name__ == '__main__':
     # print(performance_dataframes_comparison(base_df, compare_df))
 
     if True:
+        from data.sdd_dataloader import HDF5DatasetSDD
+        from utils.sdd_visualize import visualize_input_and_predictions, write_scores_per_mode
+        from utils.performance_metrics import compute_samples_ADE, compute_samples_FDE
+        from model.agentformer_loss import index_mapping_gt_seq_pred_seq
+
         # plotting instances against one another:
         base_experiment = 'baseline_no_pos_concat'
         compare_experiment = 'occlusionformer_no_map'
-        n = 5
+        column_to_sort_by = 'min_FDE'
+        n = 10
+
         base_df = get_perf_scores_df(base_experiment)
-        base_df = remove_k_sample_columns(base_df)
         compare_df = get_perf_scores_df(compare_experiment)
-        compare_df = remove_k_sample_columns(compare_df)
+        # filtering the comparison dataframe to only keep agents whose trajectories have been occluded
+        compare_df = compare_df[compare_df['past_pred_length'] != 0]
+
         diff_df = performance_dataframes_comparison(base_df, compare_df)
 
-        sort_indices = diff_df.sort_values('min_FDE', ascending=True).index
-        print(diff_df.loc[sort_indices].head(n))
-
-        from data.sdd_dataloader import HDF5DatasetSDD
-        from utils.sdd_visualize import visualize, visualize_predictions
+        sort_indices = diff_df.sort_values(column_to_sort_by, ascending=True).index
+        summary_df = pd.DataFrame(columns=[base_experiment, compare_experiment, 'difference'])
+        summary_df[base_experiment] = base_df[[column_to_sort_by]]
+        summary_df[compare_experiment] = compare_df[[column_to_sort_by]]
+        summary_df['difference'] = diff_df[[column_to_sort_by]]
+        # print(base_df.loc[sort_indices][[column_to_sort_by]].head(n))
+        # print(compare_df.loc[sort_indices][[column_to_sort_by]].head(n))
+        # print(diff_df.loc[sort_indices][[column_to_sort_by]].head(n))
+        print(f"Greatest {column_to_sort_by} difference: {compare_experiment} vs. {base_experiment}")
+        print(summary_df.loc[sort_indices].head(n))
 
         # defining dataloader objects to retrieve input data
         config_base = Config(base_experiment)
@@ -317,21 +330,28 @@ if __name__ == '__main__':
         config_compare = Config(compare_experiment)
         dataloader_compare = HDF5DatasetSDD(config_compare, log=None, split='test')
 
-        for filename in sort_indices.get_level_values('filename').tolist()[:n]:
+        # for filename in sort_indices.get_level_values('filename').tolist()[:n]:
+        for multi_index in sort_indices[:n]:
+
+            idx, filename, agent_id = multi_index
 
             # retrieve the corresponding entry name
-            instance_name = filename.split('.')[0]
+            # instance_name = filename.split('.')[0]
+            instance_name = f"{filename}".rjust(8, '0')
 
             # preparing the figure
             fig, ax = plt.subplots(1, 2)
-            fig.canvas.manager.set_window_title(f"{base_experiment} vs. {compare_experiment}: ({instance_name})")
+            fig.canvas.manager.set_window_title(
+                f"{compare_experiment} vs. {base_experiment}: (instance nr {instance_name})"
+            )
 
-            for i, experiment in enumerate([
-                (base_experiment, config_base, dataloader_base),
-                (compare_experiment, config_compare, dataloader_compare)
+            # retrieving agent identities who are occluded, for which we are interested in displaying their predictions
+            show_prediction_agents = compare_df.loc[idx].index.get_level_values('agent_id').tolist()
+
+            for i, (experiment_name, config, dataloader, perf_df) in enumerate([
+                (base_experiment, config_base, dataloader_base, base_df),
+                (compare_experiment, config_compare, dataloader_compare, compare_df)
             ]):
-
-                experiment_name, config, dataloader = experiment
 
                 # defining path to saved predictions to retrieve prediction data
                 checkpoint_name = config.get_best_val_checkpoint_name()
@@ -340,16 +360,31 @@ if __name__ == '__main__':
                 )
 
                 # retrieve the input data dict
-                input_dict = dataloader_base.__getitem__(int(instance_name))
+                input_dict = dataloader.__getitem__(idx)
+                if 'map_homography' not in input_dict.keys():
+                    input_dict['map_homography'] = dataloader.map_homography
 
                 # retrieve the prediction data dict
                 pred_file = os.path.join(saved_preds_dir, instance_name)
+                assert os.path.exists(pred_file)
                 with open(pred_file, 'rb') as f:
                     pred_dict = pickle.load(f)
+                pred_dict['map_homography'] = input_dict['map_homography']
 
-                # display the information
-                visualize(data_dict=input_dict, draw_ax=ax[i])
-                visualize_predictions(pred_dict=pred_dict, draw_ax=ax[i])
+                visualize_input_and_predictions(
+                    draw_ax=ax[i],
+                    data_dict=input_dict,
+                    pred_dict=pred_dict,
+                    show_rgb_map=True,
+                    show_pred_agent_ids=show_prediction_agents
+                )
+                write_scores_per_mode(
+                    draw_ax=ax[i],
+                    pred_dict=pred_dict,
+                    show_agent_ids=show_prediction_agents,
+                    write_mode_number=True, write_ade_score=True, write_fde_score=True
+                )
+                ax[i].legend()
 
             # show figure
             plt.show()
