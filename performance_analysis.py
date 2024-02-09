@@ -14,6 +14,10 @@ from typing import Dict, List, Optional, Tuple
 from data.sdd_dataloader import PresavedDatasetSDD
 from utils.utils import prepare_seed
 from utils.config import Config, REPO_ROOT
+from data.sdd_dataloader import HDF5DatasetSDD
+from utils.sdd_visualize import visualize_input_and_predictions, write_scores_per_mode
+from utils.performance_metrics import compute_samples_ADE, compute_samples_FDE
+from model.agentformer_loss import index_mapping_gt_seq_pred_seq
 
 
 def get_perf_scores_df(experiment_name: str, model_name: Optional[str] = None) -> pd.DataFrame:
@@ -151,31 +155,24 @@ def reduce_by_unique_column_values(
     return summary_df
 
 
-def per_occlusion_length_boxplot(df: pd.DataFrame, column_name: str) -> Tuple[matplotlib.figure.Figure, matplotlib.axes.Axes]:
-    # TODO: REWORK THIS FUNCTION:
-    #       - being able to plot multiple experiments in one single plot (each one with separate color)
-    #       - don't hard-specify 'past_pred_length', let the user choose
-    assert 'past_pred_length' in df.columns
-    assert 'pred_length' in df.columns
+def draw_boxplots(
+        draw_ax: matplotlib.axes.Axes, df: pd.DataFrame, column_data: str, column_boxes: str
+) -> None:
+    assert column_data in df.columns
+    assert column_boxes in df.columns
 
-    assert column_name in df.columns
+    box_names = sorted(df[column_boxes].unique())
+    box_data = []
 
-    fig, ax = plt.subplots()
+    for box_category in box_names:
 
-    scores_dict = dict()
-    past_pred_lengths = sorted(df['past_pred_length'].unique())
+        mini_df = df[(df[column_boxes] == box_category) & (pd.notna(df[column_boxes]))]
 
-    for past_pred_length in past_pred_lengths:
+        scores = mini_df[column_data].to_numpy()
+        box_data.append(scores)
 
-        mini_df = df[(df['past_pred_length'] == past_pred_length) & (pd.notna(df[column_name]))]
-
-        scores = mini_df[column_name].to_numpy()
-        scores_dict[past_pred_length] = scores
-
-    ax.boxplot(scores_dict.values())
-    ax.set_xticklabels(scores_dict.keys())
-
-    return fig, ax
+    draw_ax.boxplot(box_data)
+    draw_ax.set_xticklabels(box_names)
 
 
 def performance_dataframes_comparison(
@@ -208,6 +205,93 @@ def scatter_perf_gain_vs_perf_base(
     return fig, ax
 
 
+def get_occluded_identities(df: pd.DataFrame, idx: int):
+    print(df.loc[idx].index.get_level_values('agent_id').to_list())
+    print(df.loc[idx])
+    instance_df = df.loc[idx]
+    if (instance_df['past_pred_length'] != 0).sum() != 0:   # if there are agents who we do have to predict over the past
+        return instance_df[instance_df['past_pred_length'] != 0].index.get_level_values('agent_id').to_list()
+        # return df[df['past_pred_length'] != 0].loc[idx].index.get_level_values('agent_id').to_list()
+    else:
+        return []
+
+
+def make_experiment_summary_table() -> pd.DataFrame:
+    all_perf_df = generate_performance_summary_df(
+        experiment_names=EXPERIMENTS,
+        metric_names=DISTANCE_METRICS+PRED_LENGTHS+OCCLUSION_MAP_SCORES
+    )
+    all_perf_df.sort_values(by='min_FDE', inplace=True)
+    print(f"Table I: All experiments")
+    # print(all_perf_df)
+    print(pretty_print_difference_summary_df(
+        summary_df=all_perf_df,
+        base_experiment_name=BASELINE_NO_POS_CONCAT,
+        mode='relative'
+    ))
+    print(EXPERIMENT_SEPARATOR)
+    return all_perf_df
+
+
+def make_box_plot_occlusion_lengths(
+        draw_ax: matplotlib.axes.Axes,
+        experiments: List[str],
+        plot_score: str,
+        categorization: Tuple[str, List[int]] = ('past_pred_length', range(1, 7)),
+) -> None:
+    category_name, category_values = categorization
+    colors = [plt.cm.Pastel1(i) for i in range(len(experiments))]
+
+    box_plot_dict = {experiment_name: None for experiment_name in experiments}
+    for i, experiment in enumerate(experiments):
+
+        experiment_df = get_perf_scores_df(experiment_name=experiment)
+        experiment_df = remove_k_sample_columns(df=experiment_df)
+
+        assert plot_score in experiment_df.columns
+        assert category_name in experiment_df.columns
+
+        pred_lengths = sorted(experiment_df[category_name].unique())
+
+        experiment_data_dict = {int(pred_length): None for pred_length in pred_lengths}
+        for pred_length in pred_lengths:
+            mini_df = experiment_df[
+                (experiment_df[category_name] == pred_length) & (pd.notna(experiment_df[category_name]))
+            ]
+
+            scores = mini_df[plot_score].to_numpy()
+            experiment_data_dict[int(pred_length)] = scores
+
+        box_plot_dict[experiment] = experiment_data_dict
+
+    box_plot_xs = []
+    box_plot_ys = []
+    box_plot_colors = []
+    for length in category_values:
+        for i, experiment in enumerate(experiments):
+            box_plot_xs.append(f"{length} - {experiment}")
+            box_plot_ys.append(box_plot_dict[experiment][length])
+            box_plot_colors.append(colors[i])
+
+    bplot = draw_ax.boxplot(box_plot_ys, positions=range(len(box_plot_ys)), patch_artist=True)
+    for box_patch, median_line, color in zip(bplot['boxes'], bplot['medians'], box_plot_colors):
+        box_patch.set_facecolor(color)
+        median_line.set_color('red')
+
+    x_tick_gap = len(experiments)
+    x_tick_start = (len(experiments) - 1) / 2
+    x_tick_end = x_tick_start + x_tick_gap * len(category_values)
+    draw_ax.set_xticks(np.arange(x_tick_start, x_tick_end, x_tick_gap), labels=-np.array(category_values))
+    draw_ax.set_xticks(np.arange(x_tick_start, x_tick_end, x_tick_gap / 2), minor=True)
+    draw_ax.grid(which='minor', axis='x')
+
+    draw_ax.legend([bplot["boxes"][i] for i in range(len(experiments))], experiments, loc='upper left')
+    draw_ax.set_ylabel(f'{plot_score}', loc='bottom')
+    draw_ax.set_xlabel('last observation timestep', loc='left')
+
+    draw_ax.set_title(f"{plot_score} vs. last observed timestep")
+
+
 if __name__ == '__main__':
     pd.set_option('display.max_rows', 500)
     pd.set_option('display.max_columns', 500)
@@ -216,52 +300,95 @@ if __name__ == '__main__':
     MEASURE = 'm'       # 'm' | 'px'
     EXPERIMENT_SEPARATOR = "\n\n\n\n" + "#" * 200 + "\n\n\n\n"
 
-    EXPERIMENT_DICT = {
-        1: 'sdd_baseline_occlusionformer',
-        2: 'baseline_no_pos_concat',
-        3: 'occlusionformer_no_map',
-        4: 'occlusionformer_causal_attention',
-        5: 'occlusionformer_imputed',
-        6: 'occlusionformer_with_occl_map',
-        7: 'occlusionformer_with_occl_map_imputed',
-        8: 'original_agentformer',
-        9: 'occlusionformer_momentary',
-        10: 'occlusionformer_with_both_maps',
-        11: 'const_vel_fully_observed',
-        12: 'const_vel_fully_observed_momentary_2',
-        13: 'const_vel_occlusion_simulation',
-        14: 'const_vel_occlusion_simulation_imputed'
-    }
+    SDD_BASELINE_OCCLUSIONFORMER = 'sdd_baseline_occlusionformer'
+    BASELINE_NO_POS_CONCAT = 'baseline_no_pos_concat'
+    OCCLUSIONFORMER_NO_MAP = 'occlusionformer_no_map'
+    OCCLUSIONFORMER_CAUSAL_ATTENTION = 'occlusionformer_causal_attention'
+    OCCLUSIONFORMER_IMPUTED = 'occlusionformer_imputed'
+    OCCLUSIONFORMER_WITH_OCCL_MAP = 'occlusionformer_with_occl_map'
+    OCCLUSIONFORMER_WITH_OCCL_MAP_IMPUTED = 'occlusionformer_with_occl_map_imputed'
+    ORIGINAL_AGENTFORMER = 'original_agentformer'
+    OCCLUSIONFORMER_MOMENTARY = 'occlusionformer_momentary'
+    OCCLUSIONFORMER_WITH_BOTH_MAPS = 'occlusionformer_with_both_maps'
+    CONST_VEL_FULLY_OBSERVED = 'const_vel_fully_observed'
+    CONST_VEL_FULLY_OBSERVED_MOMENTARY_2 = 'const_vel_fully_observed_momentary_2'
+    CONST_VEL_OCCLUSION_SIMULATION = 'const_vel_occlusion_simulation'
+    CONST_VEL_OCCLUSION_SIMULATION_IMPUTED = 'const_vel_occlusion_simulation_imputed'
 
-    DISTANCE_METRICS = [
-        'min_ADE', 'min_FDE',
-        'mean_ADE', 'mean_FDE',
-        'min_past_ADE', 'min_past_FDE',
-        'mean_past_ADE', 'mean_past_FDE',
-        # 'min_all_ADE', 'mean_all_ADE',
+    EXPERIMENTS = [
+        SDD_BASELINE_OCCLUSIONFORMER,
+        BASELINE_NO_POS_CONCAT,
+        OCCLUSIONFORMER_NO_MAP,
+        OCCLUSIONFORMER_CAUSAL_ATTENTION,
+        OCCLUSIONFORMER_IMPUTED,
+        OCCLUSIONFORMER_WITH_OCCL_MAP,
+        OCCLUSIONFORMER_WITH_OCCL_MAP_IMPUTED,
+        ORIGINAL_AGENTFORMER,
+        OCCLUSIONFORMER_MOMENTARY,
+        # OCCLUSIONFORMER_WITH_BOTH_MAPS,
+        CONST_VEL_FULLY_OBSERVED,
+        CONST_VEL_FULLY_OBSERVED_MOMENTARY_2,
+        CONST_VEL_OCCLUSION_SIMULATION,
+        CONST_VEL_OCCLUSION_SIMULATION_IMPUTED
     ]
+
+    ADE_SCORES = ['min_ADE', 'mean_ADE']
+    PAST_ADE_SCORES = ['min_past_ADE', 'mean_past_ADE']
+    ALL_ADE_SCORES = ['min_all_ADE', 'mean_all_ADE']
+    FDE_SCORES = ['min_FDE', 'mean_FDE']
+    PAST_FDE_SCORES = ['min_past_FDE', 'mean_past_FDE']
+    PRED_LENGTHS = ['past_pred_length', 'pred_length']
+    OCCLUSION_MAP_SCORES = ['OAO', 'OAC']
     if MEASURE == 'px':
-        DISTANCE_METRICS = [f'{key}_px' for key in DISTANCE_METRICS]
-    OTHER_METRICS = [
-        'past_pred_length', 'pred_length',
-        'OAC', 'OAO'
-    ]
+        for score_var in [ADE_SCORES, PAST_ADE_SCORES, ALL_ADE_SCORES, FDE_SCORES, PAST_FDE_SCORES]:
+            score_var = [f'{key}_px' for key in score_var]
+    DISTANCE_METRICS = ADE_SCORES + FDE_SCORES + PAST_ADE_SCORES + PAST_FDE_SCORES + ALL_ADE_SCORES
+
+    print(EXPERIMENT_SEPARATOR)
 
     ###################################################################################################################
+    make_experiment_summary_table()
 
-    if False:
-        all_perf_df = generate_performance_summary_df(
-            experiment_names=[EXPERIMENT_DICT[i] for i in [1, 2]],
-            metric_names=DISTANCE_METRICS+OTHER_METRICS
-        )
-        print(f"All experiments:")
-        # print(all_perf_df)
-        print(pretty_print_difference_summary_df(
-            summary_df=all_perf_df,
-            base_experiment_name='baseline_no_pos_concat',
-            mode='relative'
-        ))
-        print(EXPERIMENT_SEPARATOR)
+    ###################################################################################################################
+    # experiment_name = OCCLUSIONFORMER_NO_MAP
+    # perf_df = get_perf_scores_df(experiment_name)
+    # cfg = Config(experiment_name)
+    # dataloader = HDF5DatasetSDD(cfg, log=None, split='test')
+    # idx = np.random.randint(len(dataloader))
+    # # idx = 3098        # single person with short occlusion zone
+    # # idx = 11582       # group of occluded people, walking alongside one another
+    # # idx = 10115       # 3 idle people (non-occluded instance), we can see the "diagonal"
+    # # idx = 4103        # occlusion case where no agent must be predicted over the past, yet some agents are still occluded before t0
+    #
+    # fig, ax = plt.subplots()
+    # fig.canvas.manager.set_window_title(f"{experiment_name}: instance nr {idx}")
+    #
+    # saved_preds_dir = os.path.join(cfg.result_dir, dataloader.dataset_name, cfg.get_best_val_checkpoint_name(), 'test')
+    #
+    # input_dict = dataloader.__getitem__(idx)
+    # if 'map_homography' not in input_dict.keys():
+    #     input_dict['map_homography'] = dataloader.map_homography
+    #
+    # pred_file = os.path.join(saved_preds_dir, str(idx).rjust(8, '0'))
+    # assert os.path.exists(pred_file)
+    # with open(pred_file, 'rb') as f:
+    #     pred_dict = pickle.load(f)
+    # pred_dict['map_homography'] = input_dict['map_homography']
+    #
+    # occluded_identities = get_occluded_identities(df=perf_df, idx=idx)
+    #
+    # visualize_input_and_predictions(
+    #     draw_ax=ax,
+    #     data_dict=input_dict,
+    #     pred_dict=pred_dict,
+    #     show_rgb_map=True,
+    #     show_pred_agent_ids=get_occluded_identities(df=perf_df, idx=idx)
+    # )
+    # ax.legend()
+    # plt.show()
+    #
+    # print(EXPERIMENT_SEPARATOR)
+    ###################################################################################################################
 
     if False:
         for experiment_name in ['occlusionformer_no_map', 'occlusionformer_with_occl_map']:
@@ -275,16 +402,31 @@ if __name__ == '__main__':
             print(f'\n\n\n\nScores summary separated by occlusion lengths for {experiment_name} ({operation}):')
             print(experiment_df[['count'] + DISTANCE_METRICS + OTHER_METRICS])
 
-    # box_plot_scores = OCCL_SIM_SCORES + EXTRA_OCCL_SIM_SCORES
-    # [box_plot_scores.remove(score) for score in ['rF', 'past_pred_length', 'pred_length']]
+    # box_plot_scores = ['min_past_FDE']
     # for experiment in ['occlusionformer_no_map']:
     #     for score in box_plot_scores:
     #         exp_df = get_perf_scores_df(experiment_name=experiment)
-    #         exp_df = remove_sample_columns(exp_df)
-    #         fig, ax = per_occlusion_length_boxplot(df=exp_df, column_name=score)
+    #         exp_df = remove_k_sample_columns(exp_df)
+    #         fig, ax = plt.subplots()
+    #         # per_occlusion_length_boxplot(df=exp_df, column_name=score)
+    #         draw_boxplots(draw_ax=ax, df=exp_df, column_data=score, column_boxes='past_pred_length')
     #         ax.set_title(f"{experiment}: {score} / occlusion duration")
     #         plt.show()
     # print(EXPERIMENT_SEPARATOR)
+
+    fig, ax = plt.subplots()
+    make_box_plot_occlusion_lengths(
+        draw_ax=ax,
+        experiments=[
+            OCCLUSIONFORMER_NO_MAP,
+            OCCLUSIONFORMER_WITH_OCCL_MAP,
+            OCCLUSIONFORMER_CAUSAL_ATTENTION,
+            OCCLUSIONFORMER_IMPUTED,
+            OCCLUSIONFORMER_WITH_OCCL_MAP_IMPUTED
+        ],
+        plot_score='min_past_FDE'
+    )
+    plt.show()
 
     # base_experiment = 'baseline_no_pos_concat'
     # compare_experiment = 'occlusionformer_no_map'
@@ -294,17 +436,13 @@ if __name__ == '__main__':
     # compare_df = remove_k_sample_columns(compare_df)
     # print(performance_dataframes_comparison(base_df, compare_df))
 
-    if True:
-        from data.sdd_dataloader import HDF5DatasetSDD
-        from utils.sdd_visualize import visualize_input_and_predictions, write_scores_per_mode
-        from utils.performance_metrics import compute_samples_ADE, compute_samples_FDE
-        from model.agentformer_loss import index_mapping_gt_seq_pred_seq
+    if False:
 
         # plotting instances against one another:
         base_experiment = 'baseline_no_pos_concat'
         compare_experiment = 'occlusionformer_no_map'
         column_to_sort_by = 'min_FDE'
-        n = 10
+        n = 5
 
         base_df = get_perf_scores_df(base_experiment)
         compare_df = get_perf_scores_df(compare_experiment)
@@ -346,7 +484,8 @@ if __name__ == '__main__':
             )
 
             # retrieving agent identities who are occluded, for which we are interested in displaying their predictions
-            show_prediction_agents = compare_df.loc[idx].index.get_level_values('agent_id').tolist()
+            # show_prediction_agents = compare_df.loc[idx].index.get_level_values('agent_id').tolist()
+            show_prediction_agents = [agent_id]
 
             for i, (experiment_name, config, dataloader, perf_df) in enumerate([
                 (base_experiment, config_base, dataloader_base, base_df),
@@ -378,12 +517,12 @@ if __name__ == '__main__':
                     show_rgb_map=True,
                     show_pred_agent_ids=show_prediction_agents
                 )
-                write_scores_per_mode(
-                    draw_ax=ax[i],
-                    pred_dict=pred_dict,
-                    show_agent_ids=show_prediction_agents,
-                    write_mode_number=True, write_ade_score=True, write_fde_score=True
-                )
+                # write_scores_per_mode(
+                #     draw_ax=ax[i],
+                #     pred_dict=pred_dict,
+                #     show_agent_ids=show_prediction_agents,
+                #     write_mode_number=True, write_ade_score=True, write_fde_score=True
+                # )
                 ax[i].legend()
 
             # show figure
