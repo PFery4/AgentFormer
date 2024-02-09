@@ -22,10 +22,10 @@ def apply_homography(points: Tensor, homography: Tensor) -> Tensor:
 
 def verify_data_dicts_consistency(input_dict: Dict, pred_dict: Dict) -> None:
     # TODO: This function probably shouldn't live in this file...
-    print()
-    print(f"{input_dict.keys()=}")
-    print(f"{pred_dict.keys()=}")
-    print()
+    # print()
+    # print(f"{input_dict.keys()=}")
+    # print(f"{pred_dict.keys()=}")
+    # print()
 
     if 'identities' in input_dict.keys() and 'valid_id' in pred_dict.keys():
         assert torch.all(input_dict['identities'].cpu() == pred_dict['valid_id'].squeeze().cpu())
