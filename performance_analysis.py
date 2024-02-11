@@ -205,6 +205,29 @@ def scatter_perf_gain_vs_perf_base(
     return fig, ax
 
 
+def scatter_performance_scores(
+        draw_ax: matplotlib.axes.Axes,
+        x_df: pd.DataFrame, x_score_name: str,
+        y_df: pd.DataFrame, y_score_name: str,
+        xlabel_prefix: Optional[str] = None,
+        ylabel_prefix: Optional[str] = None
+) -> None:
+    assert x_score_name in x_df.columns
+    assert y_score_name in y_df.columns
+
+    keep_indices = x_df.index.intersection(y_df.index)
+    xs = x_df.loc[keep_indices, x_score_name].to_numpy()
+    ys = y_df.loc[keep_indices, y_score_name].to_numpy()
+
+    draw_ax.scatter(xs, ys, marker='x', color='black', alpha=0.7)
+
+    x_label = f"{xlabel_prefix} | {x_score_name}" if xlabel_prefix is not None else x_score_name
+    y_label = f"{ylabel_prefix} | {y_score_name}" if ylabel_prefix is not None else y_score_name
+
+    draw_ax.set_xlabel(x_label, loc='left')
+    draw_ax.set_ylabel(y_label, loc='bottom')
+
+
 def get_occluded_identities(df: pd.DataFrame, idx: int):
     print(df.loc[idx].index.get_level_values('agent_id').to_list())
     print(df.loc[idx])
@@ -216,21 +239,17 @@ def get_occluded_identities(df: pd.DataFrame, idx: int):
         return []
 
 
-def make_experiment_summary_table() -> pd.DataFrame:
-    all_perf_df = generate_performance_summary_df(
-        experiment_names=EXPERIMENTS,
-        metric_names=DISTANCE_METRICS+PRED_LENGTHS+OCCLUSION_MAP_SCORES
-    )
-    all_perf_df.sort_values(by='min_FDE', inplace=True)
-    print(f"Table I: All experiments")
-    # print(all_perf_df)
-    print(pretty_print_difference_summary_df(
-        summary_df=all_perf_df,
-        base_experiment_name=BASELINE_NO_POS_CONCAT,
-        mode='relative'
-    ))
-    print(EXPERIMENT_SEPARATOR)
-    return all_perf_df
+def get_comparable_rows(base_df: pd.DataFrame, compare_df: pd.DataFrame, n_max_agents: Optional[int] = None):
+    # identifying the rows the two dataframes have in common
+    common_rows = base_df.index.intersection(compare_df.index)
+    compare_rows = common_rows.copy()
+    if n_max_agents is not None:
+        # defining a filter to remove instances with agent count larger than <n_max_agents>
+        row_indices_leq_n_max_agents = (common_rows.get_level_values('idx').value_counts() <= n_max_agents)
+        row_indices_leq_n_max_agents = row_indices_leq_n_max_agents[row_indices_leq_n_max_agents].index
+        # the multiindex of rows to use for comparison
+        compare_rows = common_rows[common_rows.get_level_values('idx').isin(row_indices_leq_n_max_agents)]
+    return compare_rows
 
 
 def make_box_plot_occlusion_lengths(
@@ -293,9 +312,27 @@ def make_box_plot_occlusion_lengths(
 
 
 if __name__ == '__main__':
+    # Script Controls #################################################################################################
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--perf_summary', action='store_true', default=False)
+    parser.add_argument('--boxplots', action='store_true', default=False)
+    parser.add_argument('--qual_compare', action='store_true', default=False)
+    parser.add_argument('--save', action='store_true', default=False)
+    parser.add_argument('--show', action='store_true', default=False)
+    args = parser.parse_args()
+
+    SHOW = args.show
+    SAVE = args.save
+
+    assert SAVE or SHOW
+
+    # Global Variables set up #########################################################################################
     pd.set_option('display.max_rows', 500)
     pd.set_option('display.max_columns', 500)
     pd.set_option('display.width', 200)
+
+    PERFORMANCE_ANALYSIS_DIRECTORY = os.path.join(REPO_ROOT, 'results', 'performance_analysis')
+    os.makedirs(PERFORMANCE_ANALYSIS_DIRECTORY, exist_ok=True)
 
     MEASURE = 'm'       # 'm' | 'px'
     EXPERIMENT_SEPARATOR = "\n\n\n\n" + "#" * 200 + "\n\n\n\n"
@@ -331,6 +368,8 @@ if __name__ == '__main__':
         CONST_VEL_OCCLUSION_SIMULATION,
         CONST_VEL_OCCLUSION_SIMULATION_IMPUTED
     ]
+    OCCLUSION_EXPERIMENTS = [OCCLUSIONFORMER_NO_MAP, OCCLUSIONFORMER_WITH_OCCL_MAP, OCCLUSIONFORMER_CAUSAL_ATTENTION]
+    IMPUTED_EXPERIMENTS = [OCCLUSIONFORMER_IMPUTED, OCCLUSIONFORMER_WITH_OCCL_MAP_IMPUTED]
 
     ADE_SCORES = ['min_ADE', 'mean_ADE']
     PAST_ADE_SCORES = ['min_past_ADE', 'mean_past_ADE']
@@ -344,237 +383,335 @@ if __name__ == '__main__':
             score_var = [f'{key}_px' for key in score_var]
     DISTANCE_METRICS = ADE_SCORES + FDE_SCORES + PAST_ADE_SCORES + PAST_FDE_SCORES + ALL_ADE_SCORES
 
-    print(EXPERIMENT_SEPARATOR)
+    # Performance Summary #############################################################################################
+    if args.perf_summary:
+        print("\n\nPERFORMANCE SUMMARY:\n\n")
+        base_experiment_names = [BASELINE_NO_POS_CONCAT]
 
-    ###################################################################################################################
-    make_experiment_summary_table()
+        all_perf_df = generate_performance_summary_df(
+            experiment_names=EXPERIMENTS, metric_names=DISTANCE_METRICS+PRED_LENGTHS+OCCLUSION_MAP_SCORES
+        )
+        all_perf_df.sort_values(by='min_FDE', inplace=True)
 
-    ###################################################################################################################
-    # experiment_name = OCCLUSIONFORMER_NO_MAP
-    # perf_df = get_perf_scores_df(experiment_name)
-    # cfg = Config(experiment_name)
-    # dataloader = HDF5DatasetSDD(cfg, log=None, split='test')
-    # idx = np.random.randint(len(dataloader))
-    # # idx = 3098        # single person with short occlusion zone
-    # # idx = 11582       # group of occluded people, walking alongside one another
-    # # idx = 10115       # 3 idle people (non-occluded instance), we can see the "diagonal"
-    # # idx = 4103        # occlusion case where no agent must be predicted over the past, yet some agents are still occluded before t0
-    #
-    # fig, ax = plt.subplots()
-    # fig.canvas.manager.set_window_title(f"{experiment_name}: instance nr {idx}")
-    #
-    # saved_preds_dir = os.path.join(cfg.result_dir, dataloader.dataset_name, cfg.get_best_val_checkpoint_name(), 'test')
-    #
-    # input_dict = dataloader.__getitem__(idx)
-    # if 'map_homography' not in input_dict.keys():
-    #     input_dict['map_homography'] = dataloader.map_homography
-    #
-    # pred_file = os.path.join(saved_preds_dir, str(idx).rjust(8, '0'))
-    # assert os.path.exists(pred_file)
-    # with open(pred_file, 'rb') as f:
-    #     pred_dict = pickle.load(f)
-    # pred_dict['map_homography'] = input_dict['map_homography']
-    #
-    # occluded_identities = get_occluded_identities(df=perf_df, idx=idx)
-    #
-    # visualize_input_and_predictions(
-    #     draw_ax=ax,
-    #     data_dict=input_dict,
-    #     pred_dict=pred_dict,
-    #     show_rgb_map=True,
-    #     show_pred_agent_ids=get_occluded_identities(df=perf_df, idx=idx)
-    # )
-    # ax.legend()
-    # plt.show()
-    #
-    # print(EXPERIMENT_SEPARATOR)
-    ###################################################################################################################
+        if SHOW:
+            print("Experiments Performance Summary:")
+            print(all_perf_df)
 
-    if False:
-        for experiment_name in ['occlusionformer_no_map', 'occlusionformer_with_occl_map']:
-            experiment_df = get_perf_scores_df(experiment_name=experiment_name)
-            experiment_df = remove_k_sample_columns(df=experiment_df)
-            operation = 'mean'
-            experiment_df = reduce_by_unique_column_values(
-                df=experiment_df,
-                column_name='past_pred_length',
-                operation=operation)
-            print(f'\n\n\n\nScores summary separated by occlusion lengths for {experiment_name} ({operation}):')
-            print(experiment_df[['count'] + DISTANCE_METRICS + OTHER_METRICS])
+        if SAVE:
+            filename = "experiments_performance_summary.csv"
+            filepath = os.path.join(PERFORMANCE_ANALYSIS_DIRECTORY, filename)
+            print(f"saving dataframe to:\n{filepath}\n")
+            all_perf_df.to_csv(filepath)
 
-    # box_plot_scores = ['min_past_FDE']
-    # for experiment in ['occlusionformer_no_map']:
-    #     for score in box_plot_scores:
-    #         exp_df = get_perf_scores_df(experiment_name=experiment)
-    #         exp_df = remove_k_sample_columns(exp_df)
-    #         fig, ax = plt.subplots()
-    #         # per_occlusion_length_boxplot(df=exp_df, column_name=score)
-    #         draw_boxplots(draw_ax=ax, df=exp_df, column_data=score, column_boxes='past_pred_length')
-    #         ax.set_title(f"{experiment}: {score} / occlusion duration")
-    #         plt.show()
-    # print(EXPERIMENT_SEPARATOR)
-
-    fig, ax = plt.subplots()
-    make_box_plot_occlusion_lengths(
-        draw_ax=ax,
-        experiments=[
-            OCCLUSIONFORMER_NO_MAP,
-            OCCLUSIONFORMER_WITH_OCCL_MAP,
-            OCCLUSIONFORMER_CAUSAL_ATTENTION,
-            OCCLUSIONFORMER_IMPUTED,
-            OCCLUSIONFORMER_WITH_OCCL_MAP_IMPUTED
-        ],
-        plot_score='min_past_FDE'
-    )
-    plt.show()
-
-    # base_experiment = 'baseline_no_pos_concat'
-    # compare_experiment = 'occlusionformer_no_map'
-    # base_df = get_perf_scores_df(base_experiment)
-    # base_df = remove_k_sample_columns(base_df)
-    # compare_df = get_perf_scores_df(compare_experiment)
-    # compare_df = remove_k_sample_columns(compare_df)
-    # print(performance_dataframes_comparison(base_df, compare_df))
-
-    if False:
-
-        # plotting instances against one another:
-        base_experiment = 'baseline_no_pos_concat'
-        compare_experiment = 'occlusionformer_no_map'
-        column_to_sort_by = 'min_FDE'
-        n = 5
-
-        base_df = get_perf_scores_df(base_experiment)
-        compare_df = get_perf_scores_df(compare_experiment)
-        # filtering the comparison dataframe to only keep agents whose trajectories have been occluded
-        compare_df = compare_df[compare_df['past_pred_length'] != 0]
-
-        diff_df = performance_dataframes_comparison(base_df, compare_df)
-
-        sort_indices = diff_df.sort_values(column_to_sort_by, ascending=True).index
-        summary_df = pd.DataFrame(columns=[base_experiment, compare_experiment, 'difference'])
-        summary_df[base_experiment] = base_df[[column_to_sort_by]]
-        summary_df[compare_experiment] = compare_df[[column_to_sort_by]]
-        summary_df['difference'] = diff_df[[column_to_sort_by]]
-        # print(base_df.loc[sort_indices][[column_to_sort_by]].head(n))
-        # print(compare_df.loc[sort_indices][[column_to_sort_by]].head(n))
-        # print(diff_df.loc[sort_indices][[column_to_sort_by]].head(n))
-        print(f"Greatest {column_to_sort_by} difference: {compare_experiment} vs. {base_experiment}")
-        print(summary_df.loc[sort_indices].head(n))
-
-        # defining dataloader objects to retrieve input data
-        config_base = Config(base_experiment)
-        dataloader_base = HDF5DatasetSDD(config_base, log=None, split='test')
-        config_compare = Config(compare_experiment)
-        dataloader_compare = HDF5DatasetSDD(config_compare, log=None, split='test')
-
-        # for filename in sort_indices.get_level_values('filename').tolist()[:n]:
-        for multi_index in sort_indices[:n]:
-
-            idx, filename, agent_id = multi_index
-
-            # retrieve the corresponding entry name
-            # instance_name = filename.split('.')[0]
-            instance_name = f"{filename}".rjust(8, '0')
-
-            # preparing the figure
-            fig, ax = plt.subplots(1, 2)
-            fig.canvas.manager.set_window_title(
-                f"{compare_experiment} vs. {base_experiment}: (instance nr {instance_name})"
-            )
-
-            # retrieving agent identities who are occluded, for which we are interested in displaying their predictions
-            # show_prediction_agents = compare_df.loc[idx].index.get_level_values('agent_id').tolist()
-            show_prediction_agents = [agent_id]
-
-            for i, (experiment_name, config, dataloader, perf_df) in enumerate([
-                (base_experiment, config_base, dataloader_base, base_df),
-                (compare_experiment, config_compare, dataloader_compare, compare_df)
-            ]):
-
-                # defining path to saved predictions to retrieve prediction data
-                checkpoint_name = config.get_best_val_checkpoint_name()
-                saved_preds_dir = os.path.join(
-                    config.result_dir, dataloader.dataset_name, checkpoint_name, 'test'
+            for name in base_experiment_names:
+                pretty_df = pretty_print_difference_summary_df(
+                    summary_df=all_perf_df, base_experiment_name=name, mode='relative'
                 )
+                filename = f"experiments_performance_summary_relative_to_{name}.csv"
+                filepath = os.path.join(PERFORMANCE_ANALYSIS_DIRECTORY, filename)
+                print(f"saving dataframe to:\n{filepath}\n")
+                pretty_df.to_csv(filepath)
 
-                # retrieve the input data dict
-                input_dict = dataloader.__getitem__(idx)
-                if 'map_homography' not in input_dict.keys():
-                    input_dict['map_homography'] = dataloader.map_homography
-
-                # retrieve the prediction data dict
-                pred_file = os.path.join(saved_preds_dir, instance_name)
-                assert os.path.exists(pred_file)
-                with open(pred_file, 'rb') as f:
-                    pred_dict = pickle.load(f)
-                pred_dict['map_homography'] = input_dict['map_homography']
-
-                visualize_input_and_predictions(
-                    draw_ax=ax[i],
-                    data_dict=input_dict,
-                    pred_dict=pred_dict,
-                    show_rgb_map=True,
-                    show_pred_agent_ids=show_prediction_agents
-                )
-                # write_scores_per_mode(
-                #     draw_ax=ax[i],
-                #     pred_dict=pred_dict,
-                #     show_agent_ids=show_prediction_agents,
-                #     write_mode_number=True, write_ade_score=True, write_fde_score=True
-                # )
-                ax[i].legend()
-
-            # show figure
-            plt.show()
-
-    # base_run = 'baseline_no_pos_concat'
-    # compare_run = 'occlusionformer_no_map'
-    # compare_score = 'min_ADE'
-    # n_top = 5
-    # base_df = get_perf_scores_df(experiment_name=base_run)
-    # base_df = base_df[FULL_OBS_SCORES]
-    # comp_df = get_perf_scores_df(experiment_name=compare_run)
-    # comp_df = comp_df[FULL_OBS_SCORES]
-    # # out_df = performance_dataframe_comparison(base_df, comp_df, relative=True)
-    # out_df = retrieve_interesting_performance_diff_cases(base_df, comp_df, column_name=compare_score, n=n_top)
-    # print(f"Per agent performance comparison: {compare_run} vs. {base_run} (Best/Worst {n_top} agents in {compare_score}):")
-    # print(out_df)
-    # # print(out_df.sort_values(compare_score, ascending=True).head(5))
-    # print(EXPERIMENT_SEPARATOR)
-
-    # # qualitative display of predictions
-    # comparison_runs = [
-    #     ['baseline_no_pos_concat', 'occlusionformer_no_map', 'min_ADE'],
-    #     # ['baseline_no_pos_concat', 'occlusionformer_no_map', 'min_FDE'],
-    #     ['occlusionformer_no_map', 'occlusionformer_with_occl_map', 'min_ADE'],
-    #     # ['occlusionformer_no_map', 'occlusionformer_with_occl_map', 'min_FDE'],
-    #     # ['occlusionformer_no_map', 'occlusionformer_with_occl_map', 'OAO'],
-    #     # ['occlusionformer_no_map', 'occlusionformer_with_occl_map', 'OAC'],
-    #     # ['baseline_no_pos_concat', 'occlusionformer_causal_attention', 'min_ADE'],
-    #     # ['baseline_no_pos_concat', 'occlusionformer_causal_attention', 'min_FDE'],
-    # ]
-
-    if False:
-        for comp_run in comparison_runs:
-            base_df = get_perf_scores_df(experiment_name=comp_run[0])
-            comp_df = get_perf_scores_df(experiment_name=comp_run[1])
-            compare_score = comp_run[2]
-            out_df = retrieve_interesting_performance_diff_cases(
-                base_df=base_df, comp_df=comp_df, column_name=compare_score, n=5
-            )
-            print(f"Pickle files to retrieve for: {comp_run}")
-            # print(" ".join(out_df.index.get_level_values('filename').tolist()))
-            print()
         print(EXPERIMENT_SEPARATOR)
 
+    # score boxplots vs last observed timesteps #######################################################################
+    if args.boxplots:
+        print("\n\nBOXPLOTS:\n\n")
+        experiment_sets = {
+            'occlusion': OCCLUSION_EXPERIMENTS,
+            'imputation': IMPUTED_EXPERIMENTS,
+            'experiments': OCCLUSION_EXPERIMENTS+IMPUTED_EXPERIMENTS
+        }
+        boxplot_scores = ADE_SCORES+PAST_ADE_SCORES+FDE_SCORES+PAST_FDE_SCORES+ALL_ADE_SCORES+['OAO']
+        figsize = (14, 10)
 
-    # base_df = get_perf_scores_df(experiment_name=base_run)
-    # base_df = base_df[FULL_OBS_SCORES]
-    # comp_df = get_perf_scores_df(experiment_name=compare_run)
-    # comp_df = comp_df[FULL_OBS_SCORES]
-    # fig, ax = scatter_perf_gain_vs_perf_base(base_df=base_df, comp_df=comp_df, col_name='min_ADE', relative=True)
-    # plt.show()
+        if SHOW:
+            fig, ax = plt.subplots(figsize=figsize)
+            make_box_plot_occlusion_lengths(
+                draw_ax=ax,
+                experiments=OCCLUSION_EXPERIMENTS,
+                plot_score='min_FDE'
+            )
+            plt.show()
+
+        if SAVE:
+            boxplot_directory = os.path.join(PERFORMANCE_ANALYSIS_DIRECTORY, 'boxplots')
+            os.makedirs(boxplot_directory, exist_ok=True)
+
+            for key, value in experiment_sets.items():
+                for score_name in boxplot_scores:
+                    fig, ax = plt.subplots(figsize=figsize)
+                    make_box_plot_occlusion_lengths(
+                        draw_ax=ax,
+                        experiments=value,
+                        plot_score=score_name
+                    )
+
+                    filename = f"{key}_{score_name}.png"
+                    filepath = os.path.join(boxplot_directory, filename)
+                    print(f"saving boxplot to:\n{filepath}\n")
+                    plt.savefig(filepath, dpi=300, bbox_inches='tight')
+                    plt.close()
+
+            for experiment in OCCLUSION_EXPERIMENTS+IMPUTED_EXPERIMENTS:
+                for score_name in boxplot_scores:
+                    fig, ax = plt.subplots(figsize=figsize)
+                    make_box_plot_occlusion_lengths(draw_ax=ax, experiments=[experiment], plot_score=score_name)
+
+                    filename = f"{experiment}_{score_name}.png"
+                    filepath = os.path.join(boxplot_directory, filename)
+                    print(f"saving boxplot to:\n{filepath}\n")
+                    plt.savefig(filepath, dpi=300, bbox_inches='tight')
+                    plt.close()
+
+        print(EXPERIMENT_SEPARATOR)
+
+    # qualitative display of predictions: comparison of experiments ###################################################
+    if args.qual_compare:
+        print("\n\nQUALITATIVE COMPARISON:\n\n")
+
+        if SHOW:
+            print("\n\n!!!!! SHOW IMPLEMENTATION OF QUALITATIVE COMPARISON NOT IMPLEMENTED !!!!!\n\n")
+
+        if SAVE:
+            comparisons_to_make = [
+                {
+                    'base': SDD_BASELINE_OCCLUSIONFORMER,
+                    'comparisons': [BASELINE_NO_POS_CONCAT],
+                    'scores': ['min_FDE', 'min_ADE']
+                },
+                {
+                    'base': BASELINE_NO_POS_CONCAT,
+                    'comparisons': [ORIGINAL_AGENTFORMER],
+                    'scores': ['min_FDE', 'min_ADE']
+                },
+                {
+                    'base': OCCLUSIONFORMER_NO_MAP,
+                    'comparisons': [BASELINE_NO_POS_CONCAT],
+                    'scores': ['min_FDE', 'min_ADE']
+                },
+                {
+                    'base': OCCLUSIONFORMER_NO_MAP,
+                    'comparisons': [OCCLUSIONFORMER_WITH_OCCL_MAP, OCCLUSIONFORMER_CAUSAL_ATTENTION],
+                    'scores': ['min_FDE', 'min_ADE', 'min_past_FDE', 'OAO']
+                },
+                {
+                    'base': OCCLUSIONFORMER_IMPUTED,
+                    'comparisons': [BASELINE_NO_POS_CONCAT],
+                    'scores': ['min_FDE', 'min_ADE']
+                },
+                {
+                    'base': OCCLUSIONFORMER_IMPUTED,
+                    'comparisons': [OCCLUSIONFORMER_WITH_OCCL_MAP_IMPUTED],
+                    'scores': ['min_FDE', 'min_ADE', 'min_past_FDE', 'OAO']
+                },
+                {
+                    'base': OCCLUSIONFORMER_MOMENTARY,
+                    'comparisons': [BASELINE_NO_POS_CONCAT],
+                    'scores': ['min_FDE', 'min_ADE']
+                }
+            ]
+            n_max_agents = 16
+            n_displays = 10
+            figsize = (14, 10)
+            qualitative_directory = os.path.join(PERFORMANCE_ANALYSIS_DIRECTORY, 'qualitative')
+            os.makedirs(qualitative_directory, exist_ok=True)
+
+            # for base_experiment, compare_list in experiments_to_compare.items():
+            for comparison_dict in comparisons_to_make:
+                base_experiment = comparison_dict['base']       # str
+                compare_list = comparison_dict['comparisons']   # list
+                compare_scores = comparison_dict['scores']      # list
+
+                # performance dataframe, configuration, and dataloader of the base experiment
+                base_df = get_perf_scores_df(base_experiment)
+                config_base = Config(base_experiment)
+                dataloader_base = HDF5DatasetSDD(config_base, log=None, split='test')
+
+                # defining the directory of the base experiment
+                base_directory = os.path.join(qualitative_directory, base_experiment)
+                os.makedirs(base_directory, exist_ok=True)
+
+                for experiment in compare_list:
+
+                    # performance dataframe, configuration, and dataloader of the comparison experiment
+                    compare_df = get_perf_scores_df(experiment)
+                    config_compare = Config(experiment)
+                    dataloader_compare = HDF5DatasetSDD(config_compare, log=None, split='test')
+
+                    # the multiindex of rows to use for comparison
+                    compare_rows = get_comparable_rows(base_df=base_df, compare_df=compare_df, n_max_agents=n_max_agents)
+
+                    # defining the directory of the comparison experiment
+                    compare_directory = os.path.join(base_directory, experiment)
+                    os.makedirs(compare_directory, exist_ok=True)
+
+                    # comparing the performance tables
+                    diff_df = compare_df.loc[compare_rows].sub(base_df.loc[compare_rows])
+
+                    for compare_score in compare_scores:
+                        assert compare_score in base_df.columns
+                        assert compare_score in compare_df.columns
+                        assert compare_score in diff_df.columns
+
+                        sort_rows = diff_df.sort_values(compare_score, ascending=True).index
+                        # summary_df = pd.DataFrame(columns=[base_experiment, experiment, 'difference'])
+                        # summary_df[base_experiment] = base_df.loc[compare_rows, compare_score]
+                        # summary_df[experiment] = compare_df.loc[compare_rows, compare_score]
+                        # summary_df['difference'] = diff_df.loc[compare_rows, compare_score]
+                        # print(f"Greatest {compare_score} difference: {experiment} vs. {base_experiment}")
+                        # print(f"{summary_df.loc[sort_rows].head(n_displays)=}")
+
+                        # defining the directory of the comparison experiment
+                        score_directory = os.path.join(compare_directory, compare_score)
+                        os.makedirs(score_directory, exist_ok=True)
+
+                        for multi_index in sort_rows[:n_displays]:
+
+                            idx, filename, agent_id = multi_index
+
+                            # retrieve the corresponding entry name
+                            instance_name = f"{filename}".rjust(8, '0')
+
+                            # preparing the figure
+                            fig, ax = plt.subplots(1, 2, figsize=figsize)
+                            fig.canvas.manager.set_window_title(
+                                f"{experiment} vs. {base_experiment}: (instance nr {instance_name})"
+                            )
+
+                            show_prediction_identities = [agent_id]
+
+                            for i, (experiment_name, config, dataloader, perf_df) in enumerate([
+                                (base_experiment, config_base, dataloader_base, base_df),
+                                (experiment, config_compare, dataloader_compare, compare_df)
+                            ]):
+                                # defining path of the saved predictions
+                                checkpoint_name = config.get_best_val_checkpoint_name()
+                                saved_preds_dir = os.path.join(
+                                    config.result_dir, dataloader.dataset_name, checkpoint_name, 'test'
+                                )
+
+                                # retrieve the input data dict
+                                input_dict = dataloader.__getitem__(idx)
+                                if 'map_homography' not in input_dict.keys():
+                                    input_dict['map_homography'] = dataloader.map_homography
+
+                                # retrieve the prediction data dict
+                                pred_file = os.path.join(saved_preds_dir, instance_name)
+                                assert os.path.exists(pred_file)
+                                with open(pred_file, 'rb') as f:
+                                    pred_dict = pickle.load(f)
+                                pred_dict['map_homography'] = input_dict['map_homography']
+
+                                visualize_input_and_predictions(
+                                    draw_ax=ax[i],
+                                    data_dict=input_dict,
+                                    pred_dict=pred_dict,
+                                    show_rgb_map=True,
+                                    show_pred_agent_ids=show_prediction_identities
+                                )
+
+                            fig.subplots_adjust(wspace=0.10, hspace=0.0)
+
+                            filename = f'{instance_name}.png'
+                            filepath = os.path.join(score_directory, filename)
+                            print(f"saving comparison figure to:\n{filepath}\n")
+                            plt.savefig(filepath, dpi=300, bbox_inches='tight')
+                            plt.close()
+
+        print(EXPERIMENT_SEPARATOR)
+
+    # if False:
+    #
+    #     # plotting instances against one another:
+    #     base_experiment = 'baseline_no_pos_concat'
+    #     compare_experiment = 'occlusionformer_no_map'
+    #     column_to_sort_by = 'min_FDE'
+    #     n = 5
+    #
+    #     base_df = get_perf_scores_df(base_experiment)
+    #     compare_df = get_perf_scores_df(compare_experiment)
+    #     # filtering the comparison dataframe to only keep agents whose trajectories have been occluded
+    #     compare_df = compare_df[compare_df['past_pred_length'] != 0]
+    #
+    #     diff_df = performance_dataframes_comparison(base_df, compare_df)
+    #
+    #     sort_indices = diff_df.sort_values(column_to_sort_by, ascending=True).index
+    #     summary_df = pd.DataFrame(columns=[base_experiment, compare_experiment, 'difference'])
+    #     summary_df[base_experiment] = base_df[[column_to_sort_by]]
+    #     summary_df[compare_experiment] = compare_df[[column_to_sort_by]]
+    #     summary_df['difference'] = diff_df[[column_to_sort_by]]
+    #     # print(base_df.loc[sort_indices][[column_to_sort_by]].head(n))
+    #     # print(compare_df.loc[sort_indices][[column_to_sort_by]].head(n))
+    #     # print(diff_df.loc[sort_indices][[column_to_sort_by]].head(n))
+    #     print(f"Greatest {column_to_sort_by} difference: {compare_experiment} vs. {base_experiment}")
+    #     print(summary_df.loc[sort_indices].head(n))
+    #
+    #     # defining dataloader objects to retrieve input data
+    #     config_base = Config(base_experiment)
+    #     dataloader_base = HDF5DatasetSDD(config_base, log=None, split='test')
+    #     config_compare = Config(compare_experiment)
+    #     dataloader_compare = HDF5DatasetSDD(config_compare, log=None, split='test')
+    #
+    #     # for filename in sort_indices.get_level_values('filename').tolist()[:n]:
+    #     for multi_index in sort_indices[:n]:
+    #
+    #         idx, filename, agent_id = multi_index
+    #
+    #         # retrieve the corresponding entry name
+    #         # instance_name = filename.split('.')[0]
+    #         instance_name = f"{filename}".rjust(8, '0')
+    #
+    #         # preparing the figure
+    #         fig, ax = plt.subplots(1, 2)
+    #         fig.canvas.manager.set_window_title(
+    #             f"{compare_experiment} vs. {base_experiment}: (instance nr {instance_name})"
+    #         )
+    #
+    #         # retrieving agent identities who are occluded, for which we are interested in displaying their predictions
+    #         # show_prediction_agents = compare_df.loc[idx].index.get_level_values('agent_id').tolist()
+    #         show_prediction_agents = [agent_id]
+    #
+    #         for i, (experiment_name, config, dataloader, perf_df) in enumerate([
+    #             (base_experiment, config_base, dataloader_base, base_df),
+    #             (compare_experiment, config_compare, dataloader_compare, compare_df)
+    #         ]):
+    #
+    #             # defining path to saved predictions to retrieve prediction data
+    #             checkpoint_name = config.get_best_val_checkpoint_name()
+    #             saved_preds_dir = os.path.join(
+    #                 config.result_dir, dataloader.dataset_name, checkpoint_name, 'test'
+    #             )
+    #
+    #             # retrieve the input data dict
+    #             input_dict = dataloader.__getitem__(idx)
+    #             if 'map_homography' not in input_dict.keys():
+    #                 input_dict['map_homography'] = dataloader.map_homography
+    #
+    #             # retrieve the prediction data dict
+    #             pred_file = os.path.join(saved_preds_dir, instance_name)
+    #             assert os.path.exists(pred_file)
+    #             with open(pred_file, 'rb') as f:
+    #                 pred_dict = pickle.load(f)
+    #             pred_dict['map_homography'] = input_dict['map_homography']
+    #
+    #             visualize_input_and_predictions(
+    #                 draw_ax=ax[i],
+    #                 data_dict=input_dict,
+    #                 pred_dict=pred_dict,
+    #                 show_rgb_map=True,
+    #                 show_pred_agent_ids=show_prediction_agents
+    #             )
+    #             # write_scores_per_mode(
+    #             #     draw_ax=ax[i],
+    #             #     pred_dict=pred_dict,
+    #             #     show_agent_ids=show_prediction_agents,
+    #             #     write_mode_number=True, write_ade_score=True, write_fde_score=True
+    #             # )
+    #             ax[i].legend()
+    #
+    #         # show figure
+    #         plt.show()
 
     print(f"\n\nGoodbye!")
 
