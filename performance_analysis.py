@@ -611,6 +611,8 @@ if __name__ == '__main__':
                                     show_pred_agent_ids=show_prediction_identities
                                 )
 
+                                ax[i].set_title(experiment_name)
+
                             fig.subplots_adjust(wspace=0.10, hspace=0.0)
 
                             filename = f'{instance_name}.png'
