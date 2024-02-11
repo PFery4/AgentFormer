@@ -179,9 +179,9 @@ if __name__ == '__main__':
             true_last_obs_indices = in_data['true_observation_mask'][0].shape[1] - torch.argmax(torch.flip(
                 in_data['true_observation_mask'][0], dims=[1]
             ).to(torch.float32), dim=1) - 1     # [N]
-            for i, true_last_obs_index in enumerate(true_last_obs_indices):
-                impute_mask[i, :true_last_obs_index+1] = False
-                true_gt_pred_mask[i, :true_last_obs_index+1] = False
+            for i_last_obs, true_last_obs_index in enumerate(true_last_obs_indices):
+                impute_mask[i_last_obs, :true_last_obs_index+1] = False
+                true_gt_pred_mask[i_last_obs, :true_last_obs_index+1] = False
 
             # retrieving ground truth
             true_gt_positions = in_data['true_trajectories'][0][true_gt_pred_mask].to(gt_positions.device)      # [P, 2]
