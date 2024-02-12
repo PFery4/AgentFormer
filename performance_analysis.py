@@ -60,6 +60,15 @@ def get_perf_scores_dict(experiment_name: str, model_name: Optional[str] = None)
     return scores_dict
 
 
+def print_occlusion_length_counts():
+    dataframe = get_perf_scores_df('occlusionformer_no_map')
+    print("last observed timestep\t| case count")
+    for i in range(0, 7):
+        mini_df = dataframe[dataframe['past_pred_length'] == i]
+        print(f"{-i}\t\t\t| {len(mini_df)}")
+    print(f"total\t\t\t| {len(dataframe)}")
+
+
 def generate_performance_summary_df(experiment_names: List, metric_names: List) -> pd.DataFrame:
     df_columns = ['experiment', 'dataset_used', 'model_name'] + metric_names
     performance_df = pd.DataFrame(columns=df_columns)
@@ -239,7 +248,11 @@ def get_occluded_identities(df: pd.DataFrame, idx: int):
         return []
 
 
-def get_comparable_rows(base_df: pd.DataFrame, compare_df: pd.DataFrame, n_max_agents: Optional[int] = None):
+def get_comparable_rows(
+        base_df: pd.DataFrame,
+        compare_df: pd.DataFrame,
+        n_max_agents: Optional[int] = None
+):
     # identifying the rows the two dataframes have in common
     common_rows = base_df.index.intersection(compare_df.index)
     compare_rows = common_rows.copy()
@@ -478,37 +491,44 @@ if __name__ == '__main__':
                 {
                     'base': SDD_BASELINE_OCCLUSIONFORMER,
                     'comparisons': [BASELINE_NO_POS_CONCAT],
-                    'scores': ['min_FDE', 'min_ADE']
+                    'scores': ['min_FDE', 'min_ADE'],
+                    'only_occluded': False
                 },
                 {
                     'base': BASELINE_NO_POS_CONCAT,
                     'comparisons': [ORIGINAL_AGENTFORMER],
-                    'scores': ['min_FDE', 'min_ADE']
+                    'scores': ['min_FDE', 'min_ADE'],
+                    'only_occluded': False
                 },
                 {
                     'base': OCCLUSIONFORMER_NO_MAP,
                     'comparisons': [BASELINE_NO_POS_CONCAT],
-                    'scores': ['min_FDE', 'min_ADE']
+                    'scores': ['min_FDE', 'min_ADE'],
+                    'only_occluded': True
                 },
                 {
                     'base': OCCLUSIONFORMER_NO_MAP,
                     'comparisons': [OCCLUSIONFORMER_WITH_OCCL_MAP, OCCLUSIONFORMER_CAUSAL_ATTENTION],
-                    'scores': ['min_FDE', 'min_ADE', 'min_past_FDE', 'OAO']
+                    'scores': ['min_FDE', 'min_ADE', 'min_past_FDE', 'OAO'],
+                    'only_occluded': True
                 },
-                {
-                    'base': OCCLUSIONFORMER_IMPUTED,
-                    'comparisons': [BASELINE_NO_POS_CONCAT],
-                    'scores': ['min_FDE', 'min_ADE']
-                },
-                {
-                    'base': OCCLUSIONFORMER_IMPUTED,
-                    'comparisons': [OCCLUSIONFORMER_WITH_OCCL_MAP_IMPUTED],
-                    'scores': ['min_FDE', 'min_ADE', 'min_past_FDE', 'OAO']
-                },
+                # {
+                #     'base': OCCLUSIONFORMER_IMPUTED,
+                #     'comparisons': [BASELINE_NO_POS_CONCAT],
+                #     'scores': ['min_FDE', 'min_ADE'],
+                #     'only_occluded': True
+                # },
+                # {
+                #     'base': OCCLUSIONFORMER_IMPUTED,
+                #     'comparisons': [OCCLUSIONFORMER_WITH_OCCL_MAP_IMPUTED],
+                #     'scores': ['min_FDE', 'min_ADE', 'min_past_FDE', 'OAO'],
+                #     'only_occluded': True
+                # },
                 {
                     'base': OCCLUSIONFORMER_MOMENTARY,
                     'comparisons': [BASELINE_NO_POS_CONCAT],
-                    'scores': ['min_FDE', 'min_ADE']
+                    'scores': ['min_FDE', 'min_ADE'],
+                    'only_occluded': False
                 }
             ]
             n_max_agents = 16
@@ -519,9 +539,10 @@ if __name__ == '__main__':
 
             # for base_experiment, compare_list in experiments_to_compare.items():
             for comparison_dict in comparisons_to_make:
-                base_experiment = comparison_dict['base']       # str
-                compare_list = comparison_dict['comparisons']   # list
-                compare_scores = comparison_dict['scores']      # list
+                base_experiment = comparison_dict['base']                   # str
+                compare_list = comparison_dict['comparisons']               # list
+                compare_scores = comparison_dict['scores']                  # list
+                filter_only_occluded = comparison_dict['only_occluded']     # bool
 
                 # performance dataframe, configuration, and dataloader of the base experiment
                 base_df = get_perf_scores_df(base_experiment)
@@ -540,7 +561,11 @@ if __name__ == '__main__':
                     dataloader_compare = HDF5DatasetSDD(config_compare, log=None, split='test')
 
                     # the multiindex of rows to use for comparison
-                    compare_rows = get_comparable_rows(base_df=base_df, compare_df=compare_df, n_max_agents=n_max_agents)
+                    compare_rows = get_comparable_rows(
+                        base_df=base_df,
+                        compare_df=compare_df,
+                        n_max_agents=n_max_agents
+                    )
 
                     # defining the directory of the comparison experiment
                     compare_directory = os.path.join(base_directory, experiment)
@@ -548,6 +573,16 @@ if __name__ == '__main__':
 
                     # comparing the performance tables
                     diff_df = compare_df.loc[compare_rows].sub(base_df.loc[compare_rows])
+
+                    # filtering to keep only occluded agents if desired
+                    occluded_indices = None
+                    if filter_only_occluded:
+                        if 'past_pred_length' in base_df.columns:
+                            occluded_indices = (base_df.loc[compare_rows]['past_pred_length'] != 0)
+                        elif 'past_pred_length' in compare_df.columns:
+                            occluded_indices = (compare_df.loc[compare_rows]['past_pred_length'] != 0)
+                    if occluded_indices is not None:
+                        diff_df = diff_df.loc[occluded_indices]
 
                     for compare_score in compare_scores:
                         assert compare_score in base_df.columns
