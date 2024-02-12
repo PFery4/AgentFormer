@@ -275,7 +275,7 @@ def make_box_plot_occlusion_lengths(
         experiment_data_dict = {int(pred_length): None for pred_length in pred_lengths}
         for pred_length in pred_lengths:
             mini_df = experiment_df[
-                (experiment_df[category_name] == pred_length) & (pd.notna(experiment_df[category_name]))
+                (experiment_df[category_name] == pred_length) & (pd.notna(experiment_df[plot_score]))
             ]
 
             scores = mini_df[plot_score].to_numpy()
