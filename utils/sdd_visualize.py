@@ -410,12 +410,12 @@ def visualize_input_and_predictions(
         for i, agent_sequence in enumerate(pred_id_sequence == agent_id):
             prediction = pred_pos_sequence[i, agent_sequence, :]
             past_mask = pred_past_mask[agent_sequence]
-            t0_index = np.where(past_mask[:-1] != past_mask[1:])[0].item()
             past_pred = prediction[past_mask, :]
             future_pred = prediction[~past_mask, :]
+
             draw_ax.plot(
-                [last_obs_pos[identities_index, 0], past_pred[0, 0]],
-                [last_obs_pos[identities_index, 1], past_pred[0, 1]],
+                [last_obs_pos[identities_index, 0], prediction[0, 0]],
+                [last_obs_pos[identities_index, 1], prediction[0, 1]],
                 c=color, alpha=past_pred_alpha if past_mask[0] else future_pred_alpha
             )
             draw_ax.plot(
@@ -426,11 +426,13 @@ def visualize_input_and_predictions(
                 future_pred[:, 0], future_pred[:, 1],
                 marker='*', linestyle='-', c=color, alpha=future_pred_alpha
             )
-            draw_ax.plot(
-                prediction[t0_index:t0_index+2, 0],
-                prediction[t0_index:t0_index+2, 1],
-                linestyle='-', c=color, alpha=future_pred_alpha
-            )
+            if past_mask.sum():
+                t0_index = np.where(past_mask[:-1] != past_mask[1:])[0].item()
+                draw_ax.plot(
+                    prediction[t0_index:t0_index+2, 0],
+                    prediction[t0_index:t0_index+2, 1],
+                    linestyle='-', c=color, alpha=future_pred_alpha
+                )
 
 
 def write_scores_per_mode(
