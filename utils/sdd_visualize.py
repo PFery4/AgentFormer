@@ -322,12 +322,14 @@ def visualize_input_and_predictions(
         show_rgb_map: bool = False,
         show_obs_agent_ids: Optional[List[int]] = None,     # default: show for everyone
         show_gt_agent_ids: Optional[List[int]] = None,      # default: show for everyone
-        show_pred_agent_ids: Optional[List[int]] = None     # default: show for everyone
+        show_pred_agent_ids: Optional[List[int]] = None,     # default: show for everyone
+        past_pred_alpha: float = 0.5,
+        future_pred_alpha: float = 0.5
 ):
     verify_data_dicts_consistency(input_dict=data_dict, pred_dict=pred_dict)
 
     homography = (data_dict.get('map_homography', torch.eye(3))).cpu()
-    identities = data_dict.get('identities').cpu()
+    identities = data_dict.get('identities').cpu()      # [N]
 
     # extracting the observed trajectory data
     obs_id_sequence = data_dict['obs_identity_sequence'].cpu()      # [O]
@@ -344,7 +346,7 @@ def visualize_input_and_predictions(
     pred_id_sequence = pred_dict['infer_dec_agents'].cpu()          # [K, P]
     pred_pos_sequence = pred_dict['infer_dec_motion'].cpu()         # [K, P, 2]
     # pred_time_sequence = pred_dict['infer_dec_timesteps'].cpu()     # [P]
-    # pred_past_mask = pred_dict['infer_dec_past_mask'].cpu()         # [P]       # TODO: maybe differentiation of prediction in the past?
+    pred_past_mask = pred_dict['infer_dec_past_mask'].cpu()         # [P]
 
     # converting position data to pixel coordinates
     obs_pos_sequence = apply_homography(obs_pos_sequence, homography)
@@ -407,9 +409,28 @@ def visualize_input_and_predictions(
         # plotting the predictions
         for i, agent_sequence in enumerate(pred_id_sequence == agent_id):
             prediction = pred_pos_sequence[i, agent_sequence, :]
-            prediction = np.concatenate((last_obs_pos[identities_index, :].unsqueeze(0), prediction), axis=0)
-            draw_ax.plot(prediction[:, 0], prediction[:, 1], c=color, linestyle='-', alpha=0.5)
-            draw_ax.scatter(prediction[1:, 0], prediction[1:, 1], marker='*', c=color, alpha=0.5)
+            past_mask = pred_past_mask[agent_sequence]
+            t0_index = np.where(past_mask[:-1] != past_mask[1:])[0].item()
+            past_pred = prediction[past_mask, :]
+            future_pred = prediction[~past_mask, :]
+            draw_ax.plot(
+                [last_obs_pos[identities_index, 0], past_pred[0, 0]],
+                [last_obs_pos[identities_index, 1], past_pred[0, 1]],
+                c=color, alpha=past_pred_alpha if past_mask[0] else future_pred_alpha
+            )
+            draw_ax.plot(
+                past_pred[:, 0], past_pred[:, 1],
+                marker='*', linestyle='-', c=color, alpha=past_pred_alpha
+            )
+            draw_ax.plot(
+                future_pred[:, 0], future_pred[:, 1],
+                marker='*', linestyle='-', c=color, alpha=future_pred_alpha
+            )
+            draw_ax.plot(
+                prediction[t0_index:t0_index+2, 0],
+                prediction[t0_index:t0_index+2, 1],
+                linestyle='-', c=color, alpha=future_pred_alpha
+            )
 
 
 def write_scores_per_mode(
