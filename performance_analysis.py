@@ -9,7 +9,7 @@ import yaml
 import pandas as pd
 import torch
 
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 
 from data.sdd_dataloader import PresavedDatasetSDD
 from utils.utils import prepare_seed
@@ -324,11 +324,82 @@ def make_box_plot_occlusion_lengths(
     draw_ax.set_title(f"{plot_score} vs. last observed timestep")
 
 
+def oac_histogram(
+        draw_ax: matplotlib.axes.Axes,
+        experiment_name: str,
+        plot_score: str,
+        categorization: Tuple[str, Any],
+        as_percentage: Optional[bool] = False,
+        n_bins: int = 20
+):
+    # categorization [0, 1] <--> [column in experiment_df, value by which to filter that column]
+    experiment_df = get_perf_scores_df(experiment_name)
+    mini_df = experiment_df[
+        (experiment_df[categorization[0]] == categorization[1]) & (pd.notna(experiment_df[plot_score]))
+        ]
+
+    scores = mini_df[plot_score].to_numpy()
+    weights = np.ones_like(scores) / (scores.shape[0]) if as_percentage else None
+
+    draw_ax.hist(scores, bins=n_bins, weights=weights)
+
+    # draw_ax.set_xlabel(f"{plot_score}", loc='left')
+    # draw_ax.set_title(f"{plot_score} histogram: {experiment_name} (last observed timestep: {-categorization[1]})")
+
+
+def oac_histograms_versus_lastobs(
+        draw_ax: matplotlib.axes.Axes,
+        experiment_name: str,
+        plot_score: str,
+):
+    experiment_df = get_perf_scores_df(experiment_name)
+
+    mini_df = experiment_df[pd.notna(experiment_df[plot_score])]
+
+    scores1 = mini_df[plot_score].to_numpy()
+    past_pred_lengths = mini_df['past_pred_length'].to_numpy()
+    unique, counts = np.unique(past_pred_lengths, return_counts=True)
+    weights = 1 / counts[past_pred_lengths - 1]
+    # weights = 1 / (counts[occl_lengths-1] * unique.shape[0])
+
+    hist = draw_ax.hist2d(
+        scores1, past_pred_lengths,
+        bins=[np.linspace(0, 1, 21), np.arange(7) + 0.5],
+        weights=weights
+    )
+
+    draw_ax.get_figure().colorbar(hist[3], ax=draw_ax)
+    draw_ax.set_xlabel(plot_score)
+    draw_ax.set_ylabel("last observed timestep")
+    # draw_ax.set_title(f"OAC histogram: {experiment_name}")
+
+
+def make_oac_histograms_figure(
+        fig: matplotlib.figure.Figure,
+        experiment_name: str,
+        plot_score: str
+):
+    gs = fig.add_gridspec(6, 2)
+
+    ax_list = []
+    for i in range(6):
+        ax_list.append(fig.add_subplot(gs[i, 0]))
+    ax_twodee = fig.add_subplot(gs[:, 1])
+
+    for i, ax in enumerate(reversed(ax_list)):
+        oac_histogram(draw_ax=ax, experiment_name=experiment_name, plot_score=plot_score,
+                      categorization=('past_pred_length', i + 1), as_percentage=as_percentage)
+    oac_histograms_versus_lastobs(draw_ax=ax_twodee, experiment_name=experiment_name, plot_score=plot_score)
+    ax_list[-1].set_xlabel('OAC')
+    fig.suptitle(f"OAC histograms: {experiment_name}")
+
+
 if __name__ == '__main__':
     # Script Controls #################################################################################################
     parser = argparse.ArgumentParser()
     parser.add_argument('--perf_summary', action='store_true', default=False)
     parser.add_argument('--boxplots', action='store_true', default=False)
+    parser.add_argument('--oac_histograms', action='store_true', default=False)
     parser.add_argument('--qual_compare', action='store_true', default=False)
     parser.add_argument('--save', action='store_true', default=False)
     parser.add_argument('--show', action='store_true', default=False)
@@ -435,7 +506,7 @@ if __name__ == '__main__':
             'imputation': IMPUTED_EXPERIMENTS,
             'experiments': OCCLUSION_EXPERIMENTS+IMPUTED_EXPERIMENTS
         }
-        boxplot_scores = ADE_SCORES+PAST_ADE_SCORES+FDE_SCORES+PAST_FDE_SCORES+ALL_ADE_SCORES+['OAO']
+        boxplot_scores = ADE_SCORES+PAST_ADE_SCORES+FDE_SCORES+PAST_FDE_SCORES+ALL_ADE_SCORES+OCCLUSION_MAP_SCORES
         figsize = (14, 10)
 
         if SHOW:
@@ -479,6 +550,63 @@ if __name__ == '__main__':
 
         print(EXPERIMENT_SEPARATOR)
 
+    # OAC histograms ###################################################
+    if args.oac_histograms:
+        print("\n\nOAC HISTOGRAMS:\n\n")
+        figsize = (16, 10)
+        plot_score = 'OAC'
+        as_percentage = False
+
+        if SHOW:
+            experiment_name = OCCLUSIONFORMER_NO_MAP
+
+            fig = plt.figure(figsize=figsize)
+            make_oac_histograms_figure(fig=fig, experiment_name=experiment_name, plot_score=plot_score)
+            plt.show()
+
+        if SAVE:
+
+            histograms_dir = os.path.join(PERFORMANCE_ANALYSIS_DIRECTORY, 'OAC_histograms')
+            os.makedirs(histograms_dir, exist_ok=True)
+
+            for experiment_name in [
+                OCCLUSIONFORMER_NO_MAP, OCCLUSIONFORMER_WITH_OCCL_MAP, OCCLUSIONFORMER_CAUSAL_ATTENTION
+            ]:
+                experiment_dir = os.path.join(histograms_dir, experiment_name)
+                os.makedirs(experiment_dir, exist_ok=True)
+
+                for occl_len in range(1, 7):
+                    fig, ax = plt.subplots(figsize=figsize)
+
+                    oac_histogram(
+                        draw_ax=ax, experiment_name=experiment_name, plot_score=plot_score,
+                        categorization=('past_pred_length', occl_len), as_percentage=as_percentage
+                    )
+
+                    filename = f"histogram_{occl_len}.png"
+                    filepath = os.path.join(experiment_dir, filename)
+                    print(f"saving OAC histogram to:\n{filepath}\n")
+                    plt.savefig(filepath, dpi=300, bbox_inches='tight')
+                    plt.close()
+
+                fig, ax = plt.subplots(figsize=figsize)
+                oac_histograms_versus_lastobs(draw_ax=ax, experiment_name=experiment_name, plot_score=plot_score)
+                filename = f"histograms_vs_last_obs.png"
+                filepath = os.path.join(experiment_dir, filename)
+                print(f"saving OAC 2D-histogram to:\n{filepath}\n")
+                plt.savefig(filepath, dpi=300, bbox_inches='tight')
+                plt.close()
+
+                fig = plt.figure(figsize=figsize)
+                make_oac_histograms_figure(fig=fig, experiment_name=experiment_name, plot_score=plot_score)
+                filename = f"histograms_summary.png"
+                filepath = os.path.join(experiment_dir, filename)
+                print(f"saving OAC histograms summary figure to:\n{filepath}\n")
+                plt.savefig(filepath, dpi=300, bbox_inches='tight')
+                plt.close()
+
+        print(EXPERIMENT_SEPARATOR)
+
     # qualitative display of predictions: comparison of experiments ###################################################
     if args.qual_compare:
         print("\n\nQUALITATIVE COMPARISON:\n\n")
@@ -509,21 +637,21 @@ if __name__ == '__main__':
                 {
                     'base': OCCLUSIONFORMER_NO_MAP,
                     'comparisons': [OCCLUSIONFORMER_WITH_OCCL_MAP, OCCLUSIONFORMER_CAUSAL_ATTENTION],
-                    'scores': ['min_FDE', 'min_ADE', 'min_past_FDE', 'OAO'],
+                    'scores': ['min_FDE', 'min_ADE', 'min_past_FDE', 'OAO', 'OAC'],
                     'only_occluded': True
                 },
-                # {
-                #     'base': OCCLUSIONFORMER_IMPUTED,
-                #     'comparisons': [BASELINE_NO_POS_CONCAT],
-                #     'scores': ['min_FDE', 'min_ADE'],
-                #     'only_occluded': True
-                # },
-                # {
-                #     'base': OCCLUSIONFORMER_IMPUTED,
-                #     'comparisons': [OCCLUSIONFORMER_WITH_OCCL_MAP_IMPUTED],
-                #     'scores': ['min_FDE', 'min_ADE', 'min_past_FDE', 'OAO'],
-                #     'only_occluded': True
-                # },
+                {
+                    'base': OCCLUSIONFORMER_IMPUTED,
+                    'comparisons': [BASELINE_NO_POS_CONCAT],
+                    'scores': ['min_FDE', 'min_ADE'],
+                    'only_occluded': True
+                },
+                {
+                    'base': OCCLUSIONFORMER_IMPUTED,
+                    'comparisons': [OCCLUSIONFORMER_WITH_OCCL_MAP_IMPUTED],
+                    'scores': ['min_FDE', 'min_ADE', 'min_past_FDE', 'OAO', 'OAC'],
+                    'only_occluded': True
+                },
                 {
                     'base': OCCLUSIONFORMER_MOMENTARY,
                     'comparisons': [BASELINE_NO_POS_CONCAT],
@@ -643,7 +771,9 @@ if __name__ == '__main__':
                                     data_dict=input_dict,
                                     pred_dict=pred_dict,
                                     show_rgb_map=True,
-                                    show_pred_agent_ids=show_prediction_identities
+                                    show_pred_agent_ids=show_prediction_identities,
+                                    past_pred_alpha=0.5,
+                                    future_pred_alpha=0.1 if compare_score in OCCLUSION_MAP_SCORES else 0.5
                                 )
 
                                 ax[i].set_title(experiment_name)
