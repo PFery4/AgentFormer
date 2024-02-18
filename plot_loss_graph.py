@@ -11,13 +11,13 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--cfg', default=None)
     parser.add_argument('--split', nargs='+', default=None)
-    parser.add_argument('--save', type=bool, default=False)
-    parser.add_argument('--show', type=bool, default=False)
+    parser.add_argument('--save', action='store_true', default=False)
+    parser.add_argument('--show', action='store_true', default=False)
     parser.add_argument('--weighted_losses', type=bool, default=True)
     args = parser.parse_args()
 
     print(args.split)
-    assert [name in ['train', 'val'] for name in args.split]
+    assert all([name in ['train', 'val'] for name in args.split])
     assert args.save or args.show, "You must choose to either *show* or *save* the loss graph..."
     cfg = Config(args.cfg)
 
