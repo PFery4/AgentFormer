@@ -401,6 +401,7 @@ if __name__ == '__main__':
     parser.add_argument('--boxplots', action='store_true', default=False)
     parser.add_argument('--oac_histograms', action='store_true', default=False)
     parser.add_argument('--qual_compare', action='store_true', default=False)
+    parser.add_argument('--qual_example', action='store_true', default=False)
     parser.add_argument('--save', action='store_true', default=False)
     parser.add_argument('--show', action='store_true', default=False)
     args = parser.parse_args()
@@ -717,7 +718,9 @@ if __name__ == '__main__':
                         assert compare_score in compare_df.columns
                         assert compare_score in diff_df.columns
 
-                        sort_rows = diff_df.sort_values(compare_score, ascending=True).index
+                        sort_rows = diff_df.sort_values(
+                            compare_score, ascending=True if compare_score not in OCCLUSION_MAP_SCORES else False
+                        ).index
                         # summary_df = pd.DataFrame(columns=[base_experiment, experiment, 'difference'])
                         # summary_df[base_experiment] = base_df.loc[compare_rows, compare_score]
                         # summary_df[experiment] = compare_df.loc[compare_rows, compare_score]
@@ -785,6 +788,65 @@ if __name__ == '__main__':
                             print(f"saving comparison figure to:\n{filepath}\n")
                             plt.savefig(filepath, dpi=300, bbox_inches='tight')
                             plt.close()
+
+        print(EXPERIMENT_SEPARATOR)
+
+    # qualitative display of predictions: comparison of experiments ###################################################
+    if args.qual_example:
+        print("\n\nQUALITATIVE EXAMPLE:\n\n")
+
+        experiment_name = OCCLUSIONFORMER_WITH_OCCL_MAP
+        instance_number = 7698
+        show_pred_ids = [117]
+        highlight_only_past_pred = True
+        figsize = (14, 10)
+
+        # preparing the dataloader for the experiment
+        exp_df = get_perf_scores_df(experiment_name)
+        config_exp = Config(experiment_name)
+        dataloader_exp = HDF5DatasetSDD(config_exp, log=None, split='test')
+
+        # retrieve the corresponding entry name
+        instance_name = f"{instance_number}".rjust(8, '0')
+
+        mini_df = exp_df.loc[instance_number, instance_number, :]
+        print(f"Instance Dataframe:\n{mini_df}")
+        show_agent_pred = []
+
+        # preparing the figure
+        fig, ax = plt.subplots(figsize=figsize)
+        fig.canvas.manager.set_window_title(f"{experiment_name}: (instance nr {instance_name})")
+
+        checkpoint_name = config_exp.get_best_val_checkpoint_name()
+        saved_preds_dir = os.path.join(
+            config_exp.result_dir, dataloader_exp.dataset_name, checkpoint_name, 'test'
+        )
+
+        # retrieve the input data dict
+        input_dict = dataloader_exp.__getitem__(instance_number)
+        if 'map_homography' not in input_dict.keys():
+            input_dict['map_homography'] = dataloader_exp.map_homography
+
+        # retrieve the prediction data dict
+        pred_file = os.path.join(saved_preds_dir, instance_name)
+        assert os.path.exists(pred_file)
+        with open(pred_file, 'rb') as f:
+            pred_dict = pickle.load(f)
+        pred_dict['map_homography'] = input_dict['map_homography']
+
+        visualize_input_and_predictions(
+            draw_ax=ax,
+            data_dict=input_dict,
+            pred_dict=pred_dict,
+            show_rgb_map=True,
+            show_pred_agent_ids=show_pred_ids,
+            past_pred_alpha=0.5,
+            future_pred_alpha=0.1 if highlight_only_past_pred else 0.5
+        )
+        ax.legend()
+        ax.set_title(experiment_name)
+        fig.subplots_adjust(wspace=0.10, hspace=0.0)
+        plt.show()
 
         print(EXPERIMENT_SEPARATOR)
 
