@@ -29,7 +29,7 @@ momentary                     : false
 # ------------------- Model -------------------------
 
 model_id: dlow
-pred_cfg: occlusionformer_imputed_pre
+pred_cfg: occlusionformer_imputed_with_markers_pre
 pred_checkpoint_name: <TBD>
 qnet_mlp: [512, 256]
 share_eps: true
