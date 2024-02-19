@@ -156,11 +156,12 @@ class ContextEncoder(nn.Module):
         self.dropout = ctx['tf_dropout']
         self.n_layer = ctx['context_encoder'].get('n_layer', 6)
         self.input_type = ctx['input_type']
+        self.input_impute_markers = ctx['input_impute_markers']
         self.pooling = ctx['context_encoder'].get('pooling', 'mean')
         self.global_map_attention = ctx['global_map_attention']
         self.causal_attention = ctx['causal_attention']
 
-        in_dim = self.motion_dim * len(self.input_type)
+        in_dim = self.motion_dim * len(self.input_type) + int(self.input_impute_markers)
         self.input_fc = nn.Linear(in_dim, self.model_dim)
 
         layer_params = {
@@ -210,6 +211,8 @@ class ContextEncoder(nn.Module):
         # NOTE: THIS FUNCTION IS NOT CAPABLE OF OPERATING ON BATCH SIZES != 1
 
         seq_in = [data[f'obs_{key}_sequence'] for key in self.input_type]
+        if self.input_impute_markers:
+            seq_in.append(data['obs_imputation_sequence'])
         seq_in = torch.cat(seq_in, dim=-1)      # [B, O, Features]
         tf_seq_in = self.input_fc(seq_in)       # [B, O, model_dim]
         # print(f"{tf_seq_in.shape=}")
@@ -832,6 +835,7 @@ class AgentFormer(nn.Module):
             'future_decoder': cfg.future_decoder
         }
         self.global_map_attention = cfg.get('global_map_attention', False)
+        self.input_impute_markers = cfg.get('input_impute_markers', False)
         self.map_global_rot = cfg.get('map_global_rot', False)
         self.ar_train = cfg.get('ar_train', True)
         self.loss_cfg = cfg.get('loss_cfg')
@@ -856,6 +860,8 @@ class AgentFormer(nn.Module):
             elif not map_enc_cfg.use_scene_map and map_enc_cfg.use_occlusion_map: self.set_map_data = self.set_map_data_occlusion
             else: raise NotImplementedError
 
+        ctx['input_impute_markers'] = self.input_impute_markers
+
         # models
         self.context_encoder = ContextEncoder(ctx)
         self.future_encoder = FutureEncoder(ctx)
@@ -873,7 +879,6 @@ class AgentFormer(nn.Module):
             (self.data['scene_map'], self.data['occlusion_map']), dim=1
         )  # [B, (C) + (1), H, W]
         self.data['input_global_map'] = self.data['combined_map']
-
 
     def set_map_data_scene(self, data: Dict) -> None:
         self.data['scene_map'] = data['scene_map'].detach().clone().to(self.device)  # [B, C, H, W]
@@ -915,6 +920,10 @@ class AgentFormer(nn.Module):
             self.data['nlog_probability_occlusion_map'] = data['nlog_probability_occlusion_map'] \
                 .detach().clone().to(self.device)  # [B, H, W]
             self.data['map_homography'] = data['map_homography'].detach().clone().to(self.device)  # [B, 3, 3]
+
+        if self.input_impute_markers:
+            self.data['obs_imputation_sequence'] = data['imputation_mask'] \
+                .detach().clone().unsqueeze(-1).to(torch.float32).to(self.device)      # [B, O, 1]
         # memory_report('AFTER PUPOLATING DATA DICT')
 
     def step_annealer(self):
