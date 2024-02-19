@@ -81,12 +81,14 @@ class PositionalEncoding(nn.Module):
     """ Positional Encoding """
     def __init__(
             self, d_model: int,
-            dropout: float = 0.1, timestep_window: Tuple[int, int] = (-20, 30), concat: bool = False
+            dropout: float = 0.1, timestep_window: Tuple[int, int] = (-20, 30),
+            concat: bool = False, time_shift: int = 0
     ):
         super(PositionalEncoding, self).__init__()
         self.dropout = nn.Dropout(p=dropout)
         self.d_model = d_model
         self.concat = concat
+        self.time_shift = time_shift
         timestep_window = torch.arange(*timestep_window, dtype=torch.int).unsqueeze(1)       # [t_range, 1]
         self.register_buffer('timestep_window', timestep_window)
         if concat:
@@ -114,7 +116,7 @@ class PositionalEncoding(nn.Module):
         # x: [B, T, model_dim]
         # time_tensor: [B, T]
         pos_enc = torch.stack(
-            [self.time_encode(time_sequence) for time_sequence in time_tensor], dim=0
+            [self.time_encode(time_sequence + self.time_shift) for time_sequence in time_tensor], dim=0
         )    # [B, T, model_dim]
 
         if self.concat:
@@ -175,7 +177,10 @@ class ContextEncoder(nn.Module):
             self.tf_encoder = AgentFormerEncoder(layer_params=layer_params, num_layers=self.n_layer)
             self.tf_encoder_call = self.agent_encoder_call
 
-        self.pos_encoder = PositionalEncoding(self.model_dim, dropout=self.dropout, concat=ctx['pos_concat'])
+        self.pos_encoder = PositionalEncoding(
+            self.model_dim, dropout=self.dropout,
+            concat=ctx['pos_concat'], time_shift=ctx['pos_time_shift']
+        )
 
         if self.causal_attention:
             self.attention_mask = causal_attention_mask
@@ -275,7 +280,10 @@ class FutureEncoder(nn.Module):
             self.tf_decoder = AgentFormerDecoder(layer_params=layer_params, num_layers=self.n_layer)
             self.tf_decoder_call = self.agent_decoder_call
 
-        self.pos_encoder = PositionalEncoding(self.model_dim, dropout=self.dropout, concat=ctx['pos_concat'])
+        self.pos_encoder = PositionalEncoding(
+            self.model_dim, dropout=self.dropout,
+            concat=ctx['pos_concat'], time_shift=ctx['pos_time_shift']
+        )
 
         num_dist_params = 2 * self.nz if self.z_type == 'gaussian' else self.nz     # either gaussian or discrete
         if self.out_mlp_dim is None:
@@ -436,7 +444,10 @@ class FutureDecoder(nn.Module):
             self.tf_decoder = AgentFormerDecoder(layer_params=layer_params, num_layers=self.n_layer)
             self.tf_decoder_call = self.agent_decoder_call
 
-        self.pos_encoder = PositionalEncoding(self.model_dim, dropout=self.dropout, concat=ctx['pos_concat'])
+        self.pos_encoder = PositionalEncoding(
+            self.model_dim, dropout=self.dropout,
+            concat=ctx['pos_concat'], time_shift=ctx['pos_time_shift']
+        )
 
         out_module_kwargs = {"hidden_dims": self.out_mlp_dim}
         self.out_module = getattr(decoder_out_submodels, f"{self.pred_mode}_out_module")(
@@ -810,6 +821,7 @@ class AgentFormer(nn.Module):
             'tf_ff_dim': cfg.tf_ff_dim,
             'tf_dropout': cfg.tf_dropout,
             'pos_concat': cfg.get('pos_concat', False),
+            'pos_time_shift': int(cfg.get('pos_time_shift', 0)),
             'ar_detach': cfg.get('ar_detach', True),
             'sn_out_type': cfg.get('sn_out_type', 'scene_norm'),
             'learn_prior': cfg.get('learn_prior', False),
