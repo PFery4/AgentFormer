@@ -28,7 +28,7 @@ momentary                     : false
 
 model_id: dlow
 pred_cfg: occlusionformer_causal_attention_occl_map_pre
-pred_checkpoint_name: <TBD>
+pred_checkpoint_name: epoch_5_batch_4999
 qnet_mlp: [512, 256]
 share_eps: true
 train_w_mean: true
