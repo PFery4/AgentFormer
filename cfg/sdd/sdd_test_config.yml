@@ -38,7 +38,7 @@ input_impute_markers: false
 pred_type: 'scene_norm'
 sn_out_type: 'norm'
 pos_concat: false
-pos_time_shift: 0       # for negative time codes, set it to 0, otherwise, set it to (-T_obs + 1)
+pos_time_shift: 0       # for negative time codes, set it to 0, otherwise, set it to (T_obs - 1)
 causal_attention: false
 
 global_map_attention: false
