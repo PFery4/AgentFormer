@@ -734,6 +734,7 @@ class PickleDatasetSDD(PresavedDatasetSDD):
                 data_dict['true_trajectories'] = data_dict['trajectories']
             if data_dict['true_observation_mask'] is None:
                 data_dict['true_observation_mask'] = data_dict['observation_mask']
+            data_dict['imputation_mask'] = data_dict['true_observation_mask'][data_dict['observation_mask']]
 
         return data_dict
 
@@ -819,6 +820,7 @@ class HDF5DatasetSDD(PresavedDatasetSDD):
                 data_dict['true_trajectories'] = data_dict['trajectories']
             if 'true_observation_mask' not in data_dict.keys():
                 data_dict['true_observation_mask'] = data_dict['observation_mask']
+            data_dict['imputation_mask'] = data_dict['true_observation_mask'][data_dict['observation_mask']]
 
         return data_dict
 
