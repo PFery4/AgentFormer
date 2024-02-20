@@ -137,14 +137,13 @@ def compute_occlusion_area_occupancy(
     Park et al.'s Drivable Area Occupancy metric, applied to the occlusion map.
     Note that we dismiss all modes that go outside the map; i.e., for each agent we first look at
     which modes go outside the map. From the remaining "legal" predictions (L), we compute the OAO as:
-                count_traj / (len(past_traj) * count_occlusion_zone * L)
+                count_traj / (len(past_traj) * L)
 
     where:
         - count_traj is the number of points lying within the occlusion zone across all predictions made for
         the agent in question
         - len(past_traj) is equal to the number of timesteps predicted over the past for that prediction
         (we do need to normalize by that number, as we have varying past sequence lengths)
-        - count_occlusion_zone is the number of pixels of the occlusion zone
 
     Note that L might be a smaller number than the originally predicted amount of modes (K), as some of them might
     leave the map, and therefore be considered "illegal".
@@ -166,11 +165,21 @@ def compute_occlusion_area_occupancy(
 
     l_tensor = torch.sum(~samples_out_of_map, dim=-1)       # [N]
     len_past_traj = torch.sum(identity_mask, dim=-1)        # [N]
-    count_occlusion_zone = torch.sum(occlusion_map <= 0.0)  # []
 
-    oao = count_traj.sum(dim=-1) / (l_tensor * len_past_traj * count_occlusion_zone)
+    oao = count_traj.sum(dim=-1) / (l_tensor * len_past_traj)
 
     return oao.unsqueeze(-1)        # [N, 1]
+
+
+def compute_occlusion_map_area(
+        occlusion_map: Tensor,                          # [H, W]
+        homography_matrix: Tensor = torch.eye(3),       # [3, 3]
+) -> float:
+    count_occlusion_zone = torch.sum(occlusion_map <= 0.0).item()
+    pixel_inverse_area = (homography_matrix[0, 0] *
+                          homography_matrix[1, 1]).item()      # [m^-2] ([px^-2] if homography is eye(3))
+    occlusion_area = count_occlusion_zone / pixel_inverse_area
+    return occlusion_area
 
 # dummy_H = 10
 # dummy_W = 10
