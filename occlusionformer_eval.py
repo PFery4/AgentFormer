@@ -15,7 +15,8 @@ from utils.performance_metrics import \
     compute_samples_FDE,\
     compute_pred_lengths,\
     compute_occlusion_area_occupancy,\
-    compute_occlusion_area_count
+    compute_occlusion_area_count,\
+    compute_occlusion_map_area
 from data.sdd_dataloader import dataset_dict
 from model.agentformer_loss import index_mapping_gt_seq_pred_seq
 from model.model_lib import model_dict
@@ -116,7 +117,9 @@ if __name__ == '__main__':
                 'all_ADE',
                 'all_ADE_px',
                 'OAC',
-                'OAO'
+                'OAO',
+                'OAC_t0',
+                'occlusion_area'
             ]
         )
     # if cfg.get('impute', False):
@@ -138,6 +141,8 @@ if __name__ == '__main__':
         'all_ADE_px': [f'K{i}_all_ADE_px' for i in range(cfg.sample_k)],
         'OAO': ['OAO'],
         'OAC': ['OAC'],
+        'OAC_t0': ['OAC_t0'],
+        'occlusion_area': ['occlusion_area']
     }
     oao_factor = 100_000.
     coord_conv_table = pd.read_csv(
@@ -232,7 +237,7 @@ if __name__ == '__main__':
             past_mask = infer_pred_timesteps <= 0                                               # [P]
             identity_and_past_mask = torch.logical_and(identity_mask, past_mask)                # [N, P]
 
-        if {'OAO', 'OAC'}.intersection(metrics_to_compute):
+        if {'OAO', 'OAC', 'OAC_t0', 'occlusion_area'}.intersection(metrics_to_compute):
             occlusion_map = in_data['dist_transformed_occlusion_map'][0].to(model.device)
             map_homography = in_data['map_homography'][0].to(model.device)
 
@@ -331,6 +336,13 @@ if __name__ == '__main__':
                     identity_mask=identity_and_past_mask
                 )        # [N, 1]
 
+            if metric_name == 'OAC_t0':
+                computed_metrics['OAC_t0'] = compute_occlusion_area_count(
+                    pred_positions=map_infer_pred_positions,
+                    occlusion_map=occlusion_map,
+                    identity_mask=torch.logical_and(identity_mask, infer_pred_timesteps == 0)
+                )        # [N, 1]
+
             if metric_name == 'all_ADE':
                 computed_metrics['all_ADE'] = compute_samples_ADE(
                     pred_positions=infer_pred_positions,
@@ -341,6 +353,13 @@ if __name__ == '__main__':
                     scene, video = in_data['seq'][0].split('_')
                     px_by_m = coord_conv_table.loc[scene, video]['px/m']
                     computed_metrics['all_ADE_px'] = computed_metrics['all_ADE'] * px_by_m
+
+            if metric_name == 'occlusion_area':
+                occl_map_area = compute_occlusion_map_area(
+                    occlusion_map=occlusion_map,
+                    homography_matrix=map_homography
+                )   # float
+                computed_metrics['occlusion_area'] = torch.ones([valid_ids.shape[0], 1]) * occl_map_area    # [N, 1]
 
         assert all([val is not None for val in computed_metrics.values()])
 
