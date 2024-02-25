@@ -144,7 +144,6 @@ if __name__ == '__main__':
         'OAC_t0': ['OAC_t0'],
         'occlusion_area': ['occlusion_area']
     }
-    oao_factor = 100_000.
     coord_conv_table = pd.read_csv(
         # os.path.join(REPO_ROOT, '..', 'occlusion-prediction', 'config', 'coordinates_conversion.txt'),
         # ^ location of the coordinates_conversion.txt file in the occlusion simulation repo. copied into datasets/SDD
@@ -323,7 +322,7 @@ if __name__ == '__main__':
                     computed_metrics['past_FDE_px'] = computed_metrics['past_FDE'] * px_by_m
 
             if metric_name == 'OAO':
-                computed_metrics['OAO'] = oao_factor * compute_occlusion_area_occupancy(
+                computed_metrics['OAO'] = compute_occlusion_area_occupancy(
                     pred_positions=map_infer_pred_positions,
                     occlusion_map=occlusion_map,
                     identity_mask=identity_and_past_mask
