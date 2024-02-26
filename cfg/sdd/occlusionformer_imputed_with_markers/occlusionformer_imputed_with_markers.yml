@@ -30,7 +30,7 @@ momentary                     : false
 
 model_id: dlow
 pred_cfg: occlusionformer_imputed_with_markers_pre
-pred_checkpoint_name: <TBD>
+pred_checkpoint_name: epoch_4_batch_85775
 qnet_mlp: [512, 256]
 share_eps: true
 train_w_mean: true
