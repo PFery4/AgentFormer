@@ -390,8 +390,8 @@ def make_oac_histograms_figure(
         oac_histogram(draw_ax=ax, experiment_name=experiment_name, plot_score=plot_score,
                       categorization=('past_pred_length', i + 1), as_percentage=as_percentage)
     oac_histograms_versus_lastobs(draw_ax=ax_twodee, experiment_name=experiment_name, plot_score=plot_score)
-    ax_list[-1].set_xlabel('OAC')
-    fig.suptitle(f"OAC histograms: {experiment_name}")
+    ax_list[-1].set_xlabel(plot_score)
+    fig.suptitle(f"{plot_score} histograms: {experiment_name}")
 
 
 if __name__ == '__main__':
@@ -457,9 +457,9 @@ if __name__ == '__main__':
         CONST_VEL_FULLY_OBSERVED_MOMENTARY_2,
         CONST_VEL_OCCLUSION_SIMULATION,
         CONST_VEL_OCCLUSION_SIMULATION_IMPUTED,
-        # OCCLUSIONFORMER_CAUSAL_ATTENTION_FULLY_OBSERVED,
-        # OCCLUSIONFORMER_CAUSAL_ATTENTION_IMPUTED,
-        # OCCLUSIONFORMER_CAUSAL_ATTENTION_OCCL_MAP,
+        OCCLUSIONFORMER_CAUSAL_ATTENTION_FULLY_OBSERVED,
+        OCCLUSIONFORMER_CAUSAL_ATTENTION_IMPUTED,
+        OCCLUSIONFORMER_CAUSAL_ATTENTION_OCCL_MAP,
         # OCCLUSIONFORMER_OFFSET_TIMECODES,
         # OCCLUSIONFORMER_IMPUTED_WITH_MARKERS
     ]
@@ -468,21 +468,21 @@ if __name__ == '__main__':
         SDD_BASELINE_OCCLUSIONFORMER,
         BASELINE_NO_POS_CONCAT,
         ORIGINAL_AGENTFORMER,
-        # OCCLUSIONFORMER_CAUSAL_ATTENTION_FULLY_OBSERVED,
+        OCCLUSIONFORMER_CAUSAL_ATTENTION_FULLY_OBSERVED,
         CONST_VEL_FULLY_OBSERVED
     ]
     OCCLUSION_EXPERIMENTS = [
         OCCLUSIONFORMER_NO_MAP,
         OCCLUSIONFORMER_CAUSAL_ATTENTION,
         OCCLUSIONFORMER_WITH_OCCL_MAP,
-        # OCCLUSIONFORMER_CAUSAL_ATTENTION_OCCL_MAP,
+        OCCLUSIONFORMER_CAUSAL_ATTENTION_OCCL_MAP,
         # OCCLUSIONFORMER_OFFSET_TIMECODES,
         CONST_VEL_OCCLUSION_SIMULATION
     ]
     IMPUTED_EXPERIMENTS = [
         OCCLUSIONFORMER_IMPUTED,
         OCCLUSIONFORMER_WITH_OCCL_MAP_IMPUTED,
-        # OCCLUSIONFORMER_CAUSAL_ATTENTION_IMPUTED,
+        OCCLUSIONFORMER_CAUSAL_ATTENTION_IMPUTED,
         # OCCLUSIONFORMER_IMPUTED_WITH_MARKERS,
         CONST_VEL_OCCLUSION_SIMULATION_IMPUTED
     ]
@@ -836,8 +836,7 @@ if __name__ == '__main__':
         print("\n\nQUALITATIVE EXAMPLE:\n\n")
 
         experiment_name = OCCLUSIONFORMER_WITH_OCCL_MAP
-        instance_number = 7698
-        show_pred_ids = [117]
+        instance_number, show_pred_ids = 7698, [117]
         highlight_only_past_pred = True
         figsize = (14, 10)
 
