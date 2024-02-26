@@ -469,7 +469,7 @@ if __name__ == '__main__':
         BASELINE_NO_POS_CONCAT,
         ORIGINAL_AGENTFORMER,
         OCCLUSIONFORMER_CAUSAL_ATTENTION_FULLY_OBSERVED,
-        CONST_VEL_FULLY_OBSERVED
+        # CONST_VEL_FULLY_OBSERVED
     ]
     OCCLUSION_EXPERIMENTS = [
         OCCLUSIONFORMER_NO_MAP,
@@ -477,14 +477,14 @@ if __name__ == '__main__':
         OCCLUSIONFORMER_WITH_OCCL_MAP,
         OCCLUSIONFORMER_CAUSAL_ATTENTION_OCCL_MAP,
         # OCCLUSIONFORMER_OFFSET_TIMECODES,
-        CONST_VEL_OCCLUSION_SIMULATION
+        # CONST_VEL_OCCLUSION_SIMULATION
     ]
     IMPUTED_EXPERIMENTS = [
         OCCLUSIONFORMER_IMPUTED,
         OCCLUSIONFORMER_WITH_OCCL_MAP_IMPUTED,
         OCCLUSIONFORMER_CAUSAL_ATTENTION_IMPUTED,
         # OCCLUSIONFORMER_IMPUTED_WITH_MARKERS,
-        CONST_VEL_OCCLUSION_SIMULATION_IMPUTED
+        # CONST_VEL_OCCLUSION_SIMULATION_IMPUTED
     ]
 
     ADE_SCORES = ['min_ADE', 'mean_ADE']
@@ -835,9 +835,29 @@ if __name__ == '__main__':
     if args.qual_example:
         print("\n\nQUALITATIVE EXAMPLE:\n\n")
 
+        experiment_name = OCCLUSIONFORMER_NO_MAP
+        experiment_name = OCCLUSIONFORMER_CAUSAL_ATTENTION_IMPUTED
+        experiment_name = OCCLUSIONFORMER_CAUSAL_ATTENTION
         experiment_name = OCCLUSIONFORMER_WITH_OCCL_MAP
+        experiment_name = SDD_BASELINE_OCCLUSIONFORMER
+        experiment_name = ORIGINAL_AGENTFORMER
+        experiment_name = OCCLUSIONFORMER_IMPUTED
+        experiment_name = OCCLUSIONFORMER_CAUSAL_ATTENTION_FULLY_OBSERVED
+        experiment_name = BASELINE_NO_POS_CONCAT
+        instance_number, show_pred_ids = 0, [66, 69]
+        instance_number, show_pred_ids = 1000, [452]
+        instance_number, show_pred_ids = 2000, [116, 481]
+        instance_number, show_pred_ids = 3000, [14]
+        instance_number, show_pred_ids = 6000, [2]          # single agent, moving forward
         instance_number, show_pred_ids = 7698, [117]
-        highlight_only_past_pred = True
+        instance_number, show_pred_ids = 8000, [12]         # fast agent (cyclist) (no occlusion)
+        instance_number, show_pred_ids = 9000, [217]
+        instance_number, show_pred_ids = 9998, [13]         # productive use of occlusion map
+        instance_number, show_pred_ids = 500, [20, 41, 98, 111]
+        instance_number, show_pred_ids = 5000, [194, 222, 314]
+        instance_number, show_pred_ids = 4000, [4, 10]          # idles
+
+        highlight_only_past_pred = False
         figsize = (14, 10)
 
         # preparing the dataloader for the experiment
