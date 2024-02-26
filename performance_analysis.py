@@ -321,7 +321,7 @@ def make_box_plot_occlusion_lengths(
     draw_ax.set_ylabel(f'{plot_score}', loc='bottom')
     draw_ax.set_xlabel('last observation timestep', loc='left')
 
-    draw_ax.set_title(f"{plot_score} vs. last observed timestep")
+    # draw_ax.set_title(f"{plot_score} vs. last observed timestep")
 
 
 def oac_histogram(
@@ -436,6 +436,11 @@ if __name__ == '__main__':
     CONST_VEL_FULLY_OBSERVED_MOMENTARY_2 = 'const_vel_fully_observed_momentary_2'
     CONST_VEL_OCCLUSION_SIMULATION = 'const_vel_occlusion_simulation'
     CONST_VEL_OCCLUSION_SIMULATION_IMPUTED = 'const_vel_occlusion_simulation_imputed'
+    OCCLUSIONFORMER_CAUSAL_ATTENTION_FULLY_OBSERVED = 'occlusionformer_causal_attention_fully_observed'
+    OCCLUSIONFORMER_CAUSAL_ATTENTION_IMPUTED = 'occlusionformer_causal_attention_imputed'
+    OCCLUSIONFORMER_CAUSAL_ATTENTION_OCCL_MAP = 'occlusionformer_causal_attention_occl_map'
+    OCCLUSIONFORMER_OFFSET_TIMECODES = 'occlusionformer_offset_timecodes'
+    OCCLUSIONFORMER_IMPUTED_WITH_MARKERS = 'occlusionformer_imputed_with_markers'
 
     EXPERIMENTS = [
         SDD_BASELINE_OCCLUSIONFORMER,
@@ -451,10 +456,36 @@ if __name__ == '__main__':
         CONST_VEL_FULLY_OBSERVED,
         CONST_VEL_FULLY_OBSERVED_MOMENTARY_2,
         CONST_VEL_OCCLUSION_SIMULATION,
+        CONST_VEL_OCCLUSION_SIMULATION_IMPUTED,
+        # OCCLUSIONFORMER_CAUSAL_ATTENTION_FULLY_OBSERVED,
+        # OCCLUSIONFORMER_CAUSAL_ATTENTION_IMPUTED,
+        # OCCLUSIONFORMER_CAUSAL_ATTENTION_OCCL_MAP,
+        # OCCLUSIONFORMER_OFFSET_TIMECODES,
+        # OCCLUSIONFORMER_IMPUTED_WITH_MARKERS
+    ]
+
+    FULLY_OBSERVED_EXPERIMENTS = [
+        SDD_BASELINE_OCCLUSIONFORMER,
+        BASELINE_NO_POS_CONCAT,
+        ORIGINAL_AGENTFORMER,
+        # OCCLUSIONFORMER_CAUSAL_ATTENTION_FULLY_OBSERVED,
+        CONST_VEL_FULLY_OBSERVED
+    ]
+    OCCLUSION_EXPERIMENTS = [
+        OCCLUSIONFORMER_NO_MAP,
+        OCCLUSIONFORMER_CAUSAL_ATTENTION,
+        OCCLUSIONFORMER_WITH_OCCL_MAP,
+        # OCCLUSIONFORMER_CAUSAL_ATTENTION_OCCL_MAP,
+        # OCCLUSIONFORMER_OFFSET_TIMECODES,
+        CONST_VEL_OCCLUSION_SIMULATION
+    ]
+    IMPUTED_EXPERIMENTS = [
+        OCCLUSIONFORMER_IMPUTED,
+        OCCLUSIONFORMER_WITH_OCCL_MAP_IMPUTED,
+        # OCCLUSIONFORMER_CAUSAL_ATTENTION_IMPUTED,
+        # OCCLUSIONFORMER_IMPUTED_WITH_MARKERS,
         CONST_VEL_OCCLUSION_SIMULATION_IMPUTED
     ]
-    OCCLUSION_EXPERIMENTS = [OCCLUSIONFORMER_NO_MAP, OCCLUSIONFORMER_WITH_OCCL_MAP, OCCLUSIONFORMER_CAUSAL_ATTENTION]
-    IMPUTED_EXPERIMENTS = [OCCLUSIONFORMER_IMPUTED, OCCLUSIONFORMER_WITH_OCCL_MAP_IMPUTED]
 
     ADE_SCORES = ['min_ADE', 'mean_ADE']
     PAST_ADE_SCORES = ['min_past_ADE', 'mean_past_ADE']
@@ -462,7 +493,7 @@ if __name__ == '__main__':
     FDE_SCORES = ['min_FDE', 'mean_FDE']
     PAST_FDE_SCORES = ['min_past_FDE', 'mean_past_FDE']
     PRED_LENGTHS = ['past_pred_length', 'pred_length']
-    OCCLUSION_MAP_SCORES = ['OAO', 'OAC']
+    OCCLUSION_MAP_SCORES = ['OAO', 'OAC', 'OAC_t0']
     if MEASURE == 'px':
         for score_var in [ADE_SCORES, PAST_ADE_SCORES, ALL_ADE_SCORES, FDE_SCORES, PAST_FDE_SCORES]:
             score_var = [f'{key}_px' for key in score_var]
@@ -523,17 +554,21 @@ if __name__ == '__main__':
             boxplot_directory = os.path.join(PERFORMANCE_ANALYSIS_DIRECTORY, 'boxplots')
             os.makedirs(boxplot_directory, exist_ok=True)
 
-            for key, value in experiment_sets.items():
+            for experiment_set, experiments in experiment_sets.items():
                 for score_name in boxplot_scores:
                     fig, ax = plt.subplots(figsize=figsize)
                     make_box_plot_occlusion_lengths(
                         draw_ax=ax,
-                        experiments=value,
+                        experiments=experiments,
                         plot_score=score_name
                     )
+                    ax.set_title(f"{score_name}: [{experiment_set}] experiments")
 
-                    filename = f"{key}_{score_name}.png"
-                    filepath = os.path.join(boxplot_directory, filename)
+                    experiment_dir = os.path.join(boxplot_directory, experiment_set)
+                    os.makedirs(experiment_dir, exist_ok=True)
+
+                    filename = f"{score_name}.png"
+                    filepath = os.path.join(experiment_dir, filename)
                     print(f"saving boxplot to:\n{filepath}\n")
                     plt.savefig(filepath, dpi=300, bbox_inches='tight')
                     plt.close()
@@ -542,9 +577,13 @@ if __name__ == '__main__':
                 for score_name in boxplot_scores:
                     fig, ax = plt.subplots(figsize=figsize)
                     make_box_plot_occlusion_lengths(draw_ax=ax, experiments=[experiment], plot_score=score_name)
+                    ax.set_title(f"{score_name}: {experiment}")
 
-                    filename = f"{experiment}_{score_name}.png"
-                    filepath = os.path.join(boxplot_directory, filename)
+                    experiment_dir = os.path.join(boxplot_directory, experiment)
+                    os.makedirs(experiment_dir, exist_ok=True)
+
+                    filename = f"{score_name}.png"
+                    filepath = os.path.join(experiment_dir, filename)
                     print(f"saving boxplot to:\n{filepath}\n")
                     plt.savefig(filepath, dpi=300, bbox_inches='tight')
                     plt.close()
