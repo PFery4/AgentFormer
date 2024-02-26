@@ -889,6 +889,30 @@ if __name__ == '__main__':
 
         print(EXPERIMENT_SEPARATOR)
 
+    # map compliance vs generic performance ###########################################################################
+    if False:       # uninteresting results, no matter the map score / trajectory score combination
+        base_experiment = OCCLUSIONFORMER_NO_MAP
+        compare_experiment = OCCLUSIONFORMER_WITH_OCCL_MAP
+        x_score = 'OAO'
+        y_score = 'mean_past_FDE'
+
+        base_df = get_perf_scores_df(base_experiment)
+        comp_df = get_perf_scores_df(compare_experiment)
+        base_df = base_df[base_df['past_pred_length'] != 0]
+        comp_df = comp_df[comp_df['past_pred_length'] != 0]
+
+        compare_rows = get_comparable_rows(base_df=base_df, compare_df=comp_df)
+        diff_df = comp_df.loc[compare_rows].sub(base_df.loc[compare_rows])
+
+        xs = diff_df[x_score].to_numpy()
+        ys = diff_df[y_score].to_numpy()
+
+        fig, ax = plt.subplots()
+        ax.scatter(xs, ys, marker='x', color='red', alpha=0.3)
+        ax.set_xlabel(x_score)
+        ax.set_ylabel(y_score)
+        plt.show()
+
     # if False:
     #
     #     # plotting instances against one another:
