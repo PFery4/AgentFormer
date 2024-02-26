@@ -592,10 +592,11 @@ if __name__ == '__main__':
 
     # OAC histograms ###################################################
     if args.oac_histograms:
-        print("\n\nOAC HISTOGRAMS:\n\n")
         figsize = (16, 10)
         plot_score = 'OAC'
         as_percentage = False
+
+        print(f"\n\n{plot_score} HISTOGRAMS:\n\n")
 
         if SHOW:
             experiment_name = OCCLUSIONFORMER_NO_MAP
@@ -606,7 +607,7 @@ if __name__ == '__main__':
 
         if SAVE:
 
-            histograms_dir = os.path.join(PERFORMANCE_ANALYSIS_DIRECTORY, 'OAC_histograms')
+            histograms_dir = os.path.join(PERFORMANCE_ANALYSIS_DIRECTORY, f'{plot_score}_histograms')
             os.makedirs(histograms_dir, exist_ok=True)
 
             for experiment_name in [
@@ -625,7 +626,7 @@ if __name__ == '__main__':
 
                     filename = f"histogram_{occl_len}.png"
                     filepath = os.path.join(experiment_dir, filename)
-                    print(f"saving OAC histogram to:\n{filepath}\n")
+                    print(f"saving {plot_score} histogram to:\n{filepath}\n")
                     plt.savefig(filepath, dpi=300, bbox_inches='tight')
                     plt.close()
 
@@ -633,7 +634,7 @@ if __name__ == '__main__':
                 oac_histograms_versus_lastobs(draw_ax=ax, experiment_name=experiment_name, plot_score=plot_score)
                 filename = f"histograms_vs_last_obs.png"
                 filepath = os.path.join(experiment_dir, filename)
-                print(f"saving OAC 2D-histogram to:\n{filepath}\n")
+                print(f"saving {plot_score} 2D-histogram to:\n{filepath}\n")
                 plt.savefig(filepath, dpi=300, bbox_inches='tight')
                 plt.close()
 
@@ -641,7 +642,7 @@ if __name__ == '__main__':
                 make_oac_histograms_figure(fig=fig, experiment_name=experiment_name, plot_score=plot_score)
                 filename = f"histograms_summary.png"
                 filepath = os.path.join(experiment_dir, filename)
-                print(f"saving OAC histograms summary figure to:\n{filepath}\n")
+                print(f"saving {plot_score} histograms summary figure to:\n{filepath}\n")
                 plt.savefig(filepath, dpi=300, bbox_inches='tight')
                 plt.close()
 
