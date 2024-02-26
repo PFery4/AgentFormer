@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 
-from utils.config import Config
+from utils.config import Config, REPO_ROOT
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -104,7 +104,12 @@ if __name__ == '__main__':
     if args.save:
         save_path = os.path.join(cfg.log_dir, f"{'_'.join(args.split)}_losses.png")
         print(f"saving loss graph under:\n{save_path}")
+        plt.savefig(save_path, bbox_inches='tight', transparent=True, dpi=100)
 
+        save_dir = os.path.join(REPO_ROOT, 'results', 'performance_analysis', 'loss_graphs', args.cfg)
+        os.makedirs(save_dir, exist_ok=True)
+        save_path = os.path.join(save_dir, f"{'_'.join(args.split)}_losses.png")
+        print(f"saving loss graph under:\n{save_path}")
         plt.savefig(save_path, bbox_inches='tight', transparent=True, dpi=100)
     if args.show:
         plt.show()
