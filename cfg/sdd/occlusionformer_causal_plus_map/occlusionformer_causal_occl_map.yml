@@ -1,0 +1,61 @@
+# ------------------- General Options -------------------------
+
+description                  : OcclusionFormer (before Dlow)
+results_root_dir             : results
+seed                         : 42
+dataset                      : sdd
+sdd_config_file_name         : config
+# data_root_ethucy             : datasets/eth_ucy
+# data_root_nuscenes_pred      : datasets/nuscenes_pred
+
+# ------------------- Feature Extractor -------------------------
+
+past_frames                   : 8
+future_frames                 : 12
+
+traj_scale                    : 1
+motion_dim                    : 2
+forecast_dim                  : 2
+scene_side_length             : 80.0     # [m]
+global_map_resolution         : 800      # [px]
+rand_rot_scene                : true
+max_train_agent               : 32
+occlusion_process             : 'occlusion_simulation'      # can be either 'fully_observed' or 'occlusion_simulation'
+impute                        : false
+momentary                     : false
+
+# ------------------- Model -------------------------
+
+model_id: dlow
+pred_cfg: occlusionformer_causal_occl_map_pre
+pred_checkpoint_name: <TBD>
+qnet_mlp: [512, 256]
+share_eps: true
+train_w_mean: true
+
+# ------------------- VAE-------------------------
+
+nz                           : 32
+sample_k                     : 20
+
+# ------------------- Training Parameters -------------------------
+
+lr                           : 1.e-4
+loss_cfg:
+  kld:
+    weight: 0.1
+    min_clip: 10
+  diverse:
+    weight: 20
+    d_scale: 10
+  recon:
+    weight: 5.0
+
+num_epochs                    : 3
+lr_fix_epochs                 : 10
+lr_scheduler                  : 'step'
+decay_step                    : 5
+decay_gamma                   : 0.5
+print_freq                    : 500
+validation_freq               : 2500        # number of batches to pass through between each validation (+ saving)
+
