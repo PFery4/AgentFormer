@@ -40,6 +40,9 @@ class Config:
         val_csv_path = os.path.join(self.model_dir, 'models.csv')
         assert os.path.exists(val_csv_path)
         val_csv = pd.read_csv(val_csv_path)
+        val_csv = val_csv[~(val_csv == val_csv.columns).all(axis=1)]
+        val_csv['val_loss'] = val_csv['val_loss'].astype(float)
+
         checkpoint_name = str(val_csv[val_csv['val_loss'] == val_csv['val_loss'].min()]['model_name'].item())
         return checkpoint_name
 
