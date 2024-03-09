@@ -126,6 +126,9 @@ def train(epoch_index: int, batch_idx: int = 0):
         for i in range(batch_idx):
             next(data_iter)
 
+    log_str = f"Done, we are training from: epoch {epoch_index}, batch {batch_idx}"
+    print_log(log_str, log=log)
+
     for i, data in enumerate(data_iter, start=batch_idx):
 
         # training
