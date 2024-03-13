@@ -99,6 +99,7 @@ if __name__ == '__main__':
                 ax.plot(df['tb_x'].to_numpy()[kept_rows], values[kept_rows], c=c, label=f"{split}_{loss}")
 
             ax.set_xticks(new_epochs_tb_x, minor=True)
+            ax.set_title(cfg_str)
             ax.xaxis.grid(True, which='minor')
             fig.set_size_inches(16, 9)
             plt.legend(loc='upper right')
@@ -113,6 +114,6 @@ if __name__ == '__main__':
             save_path = os.path.join(save_dir, f"{'_'.join(args.split)}_losses.png")
             print(f"saving loss graph under:\n{save_path}")
             plt.savefig(save_path, bbox_inches='tight', transparent=True, dpi=100)
-        if args.show:
-            plt.show()
-        print("Goodbye!")
+    if args.show:
+        plt.show()
+    print("Goodbye!")
