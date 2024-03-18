@@ -4,6 +4,7 @@ import pickle
 
 import matplotlib.axes
 import matplotlib.pyplot as plt
+import mpl_toolkits.axes_grid1
 import numpy as np
 import yaml
 import pandas as pd
@@ -402,6 +403,7 @@ if __name__ == '__main__':
     parser.add_argument('--oac_histograms', action='store_true', default=False)
     parser.add_argument('--qual_compare', action='store_true', default=False)
     parser.add_argument('--qual_example', action='store_true', default=False)
+    parser.add_argument('--comp_phase_1_2', action='store_true', default=False)
     parser.add_argument('--save', action='store_true', default=False)
     parser.add_argument('--show', action='store_true', default=False)
     args = parser.parse_args()
@@ -415,6 +417,7 @@ if __name__ == '__main__':
     pd.set_option('display.max_rows', 500)
     pd.set_option('display.max_columns', 500)
     pd.set_option('display.width', 200)
+    pd.set_option('display.max_colwidth', 75)
 
     PERFORMANCE_ANALYSIS_DIRECTORY = os.path.join(REPO_ROOT, 'results', 'performance_analysis')
     os.makedirs(PERFORMANCE_ANALYSIS_DIRECTORY, exist_ok=True)
@@ -441,6 +444,8 @@ if __name__ == '__main__':
     OCCLUSIONFORMER_CAUSAL_ATTENTION_OCCL_MAP = 'occlusionformer_causal_attention_occl_map'
     OCCLUSIONFORMER_OFFSET_TIMECODES = 'occlusionformer_offset_timecodes'
     OCCLUSIONFORMER_IMPUTED_WITH_MARKERS = 'occlusionformer_imputed_with_markers'
+    OCCLUSIONFORMER_CAUSAL_ATTENTION_FULLY_OBSERVED_162 = 'occlusionformer_causal_attention_fully_observed_162'
+    OCCLUSIONFORMER_CAUSAL_ATTENTION_FULLY_OBSERVED_314 = 'occlusionformer_causal_attention_fully_observed_314'
 
     EXPERIMENTS = [
         SDD_BASELINE_OCCLUSIONFORMER,
@@ -460,8 +465,10 @@ if __name__ == '__main__':
         OCCLUSIONFORMER_CAUSAL_ATTENTION_FULLY_OBSERVED,
         OCCLUSIONFORMER_CAUSAL_ATTENTION_IMPUTED,
         OCCLUSIONFORMER_CAUSAL_ATTENTION_OCCL_MAP,
-        # OCCLUSIONFORMER_OFFSET_TIMECODES,
-        # OCCLUSIONFORMER_IMPUTED_WITH_MARKERS
+        OCCLUSIONFORMER_OFFSET_TIMECODES,
+        OCCLUSIONFORMER_IMPUTED_WITH_MARKERS,
+        OCCLUSIONFORMER_CAUSAL_ATTENTION_FULLY_OBSERVED_162,
+        OCCLUSIONFORMER_CAUSAL_ATTENTION_FULLY_OBSERVED_314
     ]
 
     FULLY_OBSERVED_EXPERIMENTS = [
@@ -502,10 +509,15 @@ if __name__ == '__main__':
     # Performance Summary #############################################################################################
     if args.perf_summary:
         print("\n\nPERFORMANCE SUMMARY:\n\n")
-        base_experiment_names = [BASELINE_NO_POS_CONCAT]
+
+        # experiment_names = []
+        experiment_names = EXPERIMENTS
+
+        # metric_names = DISTANCE_METRICS+PRED_LENGTHS+OCCLUSION_MAP_SCORES
+        metric_names = ADE_SCORES + FDE_SCORES
 
         all_perf_df = generate_performance_summary_df(
-            experiment_names=EXPERIMENTS, metric_names=DISTANCE_METRICS+PRED_LENGTHS+OCCLUSION_MAP_SCORES
+            experiment_names=experiment_names, metric_names=metric_names
         )
         all_perf_df.sort_values(by='min_FDE', inplace=True)
 
@@ -514,6 +526,9 @@ if __name__ == '__main__':
             print(all_perf_df)
 
         if SAVE:
+            # base_experiment_names = [BASELINE_NO_POS_CONCAT]
+            base_experiment_names = []
+
             filename = "experiments_performance_summary.csv"
             filepath = os.path.join(PERFORMANCE_ANALYSIS_DIRECTORY, filename)
             print(f"saving dataframe to:\n{filepath}\n")
@@ -835,86 +850,140 @@ if __name__ == '__main__':
     if args.qual_example:
         print("\n\nQUALITATIVE EXAMPLE:\n\n")
 
-        experiment_name = OCCLUSIONFORMER_NO_MAP
-        experiment_name = OCCLUSIONFORMER_CAUSAL_ATTENTION_IMPUTED
-        experiment_name = OCCLUSIONFORMER_CAUSAL_ATTENTION
-        experiment_name = OCCLUSIONFORMER_WITH_OCCL_MAP
-        experiment_name = SDD_BASELINE_OCCLUSIONFORMER
         experiment_name = ORIGINAL_AGENTFORMER
-        experiment_name = OCCLUSIONFORMER_IMPUTED
-        experiment_name = OCCLUSIONFORMER_CAUSAL_ATTENTION_FULLY_OBSERVED
         experiment_name = BASELINE_NO_POS_CONCAT
-        instance_number, show_pred_ids = 0, [66, 69]
+        experiment_name = OCCLUSIONFORMER_CAUSAL_ATTENTION
+        experiment_name = OCCLUSIONFORMER_CAUSAL_ATTENTION_OCCL_MAP
+        experiment_name = OCCLUSIONFORMER_MOMENTARY
+        experiment_name = OCCLUSIONFORMER_CAUSAL_ATTENTION_IMPUTED
+        experiment_name = SDD_BASELINE_OCCLUSIONFORMER
+        experiment_name = OCCLUSIONFORMER_WITH_OCCL_MAP
+        experiment_name = OCCLUSIONFORMER_NO_MAP
+        experiment_name = OCCLUSIONFORMER_WITH_OCCL_MAP_IMPUTED
+        experiment_name = OCCLUSIONFORMER_IMPUTED
+        experiment_name = OCCLUSIONFORMER_CAUSAL_ATTENTION_FULLY_OBSERVED_162
+        experiment_name = OCCLUSIONFORMER_CAUSAL_ATTENTION_FULLY_OBSERVED_314
+        experiment_name = OCCLUSIONFORMER_CAUSAL_ATTENTION_FULLY_OBSERVED
+
+        # experiment_list = [
+        #     f"{OCCLUSIONFORMER_CAUSAL_ATTENTION_FULLY_OBSERVED}_pre",
+        #     f"{OCCLUSIONFORMER_CAUSAL_ATTENTION_FULLY_OBSERVED_162}_pre",
+        #     f"{OCCLUSIONFORMER_CAUSAL_ATTENTION_FULLY_OBSERVED_314}_pre",
+        # ]
+        experiment_list = [
+            # CONST_VEL_OCCLUSION_SIMULATION,
+            OCCLUSIONFORMER_NO_MAP,
+            OCCLUSIONFORMER_WITH_OCCL_MAP
+        ]
+
+        # experiment_name = experiment_name + '_pre'
+        print(f"{experiment_name=}")
         instance_number, show_pred_ids = 1000, [452]
         instance_number, show_pred_ids = 2000, [116, 481]
         instance_number, show_pred_ids = 3000, [14]
         instance_number, show_pred_ids = 6000, [2]          # single agent, moving forward
         instance_number, show_pred_ids = 7698, [117]
         instance_number, show_pred_ids = 8000, [12]         # fast agent (cyclist) (no occlusion)
-        instance_number, show_pred_ids = 9000, [217]
+        instance_number, show_pred_ids = 9000, [119, 217]
         instance_number, show_pred_ids = 9998, [13]         # productive use of occlusion map
-        instance_number, show_pred_ids = 500, [20, 41, 98, 111]
         instance_number, show_pred_ids = 5000, [194, 222, 314]
+        instance_number, show_pred_ids = 500, [20, 41, 98, 111]
         instance_number, show_pred_ids = 4000, [4, 10]          # idles
+        instance_number, show_pred_ids = 8881, [181]        # large turning maneuver under occlusion
+        instance_number, show_pred_ids = 0, [66, 68, 69]
+        # instance_number, show_pred_ids = 11025, [110]          # what?
+        #
+        # # using occlusion map, OAO / OAC_t0 = inf (OAC_t0 is 0.)
+        # instance_number, show_pred_ids = 4041, [38]          # "needle", poor use of occlusion map
+        # instance_number, show_pred_ids = 7930, [37]          # "needle", poor use of occlusion map
+        # instance_number, show_pred_ids = 8074, [49]          # "needle", poor use of occlusion map
+        # instance_number, show_pred_ids = 46, [38]          # "needle", poor use of occlusion map
+        # instance_number, show_pred_ids = 9973, [0]          # "needle", poor use of occlusion map
+        #
+        # # using occlusion map, OAO / OAC_t0 is very high (filtering away OAC_t0 = 0.)
+        # instance_number, show_pred_ids = 446, [51]          # poor use of occlusion map
+        # instance_number, show_pred_ids = 5769, [91]          # poor use of occlusion map, no_map impressively better
+        # instance_number, show_pred_ids = 4757, [115]          # poor use of occlusion map, no_map impressively better
+
+        # # Constant Velocity fails to place occluded agent inside the occlusion zone at t=0
+        # instance_number, show_pred_ids = 1734, [486]
+        # instance_number, show_pred_ids = 5465, [496]
+        # instance_number, show_pred_ids = 6435, [18]
+        # instance_number, show_pred_ids = 8872, [209]
+        # instance_number, show_pred_ids = 9779, [247]
 
         highlight_only_past_pred = False
         figsize = (14, 10)
 
-        # preparing the dataloader for the experiment
-        exp_df = get_perf_scores_df(experiment_name)
-        config_exp = Config(experiment_name)
-        dataloader_exp = HDF5DatasetSDD(config_exp, log=None, split='test')
+        for exp_name in experiment_list:
+            experiment_name = exp_name
+            # preparing the dataloader for the experiment
+            # exp_df = get_perf_scores_df(experiment_name)
+            config_exp = Config(experiment_name)
+            dataloader_exp = HDF5DatasetSDD(config_exp, log=None, split='test')
 
-        # retrieve the corresponding entry name
-        instance_name = f"{instance_number}".rjust(8, '0')
+            # # investigating high OAO / OAC_t0 ratios
+            # print(f"{exp_df['OAO']=}")
+            # print(f"{exp_df['OAC_t0']=}")
+            # mask = exp_df['OAO'] > exp_df['OAC_t0']
+            # exp_df = exp_df[mask & exp_df['OAC_t0'] != 0.]
+            # exp_df['OAO_by_OAC_t0'] = exp_df['OAO'] / exp_df['OAC_t0']
+            # print(exp_df.sort_values('OAO_by_OAC_t0', ascending=False)[['OAO', 'OAC_t0', 'OAO_by_OAC_t0']])
 
-        mini_df = exp_df.loc[instance_number, instance_number, :]
-        print(f"Instance Dataframe:\n{mini_df}")
-        show_agent_pred = []
+            # retrieve the corresponding entry name
+            instance_name = f"{instance_number}".rjust(8, '0')
 
-        # preparing the figure
-        fig, ax = plt.subplots(figsize=figsize)
-        fig.canvas.manager.set_window_title(f"{experiment_name}: (instance nr {instance_name})")
+            # mini_df = exp_df.loc[instance_number, instance_number, :]
+            # mini_df = remove_k_sample_columns(mini_df)
+            # print(f"Instance Dataframe:\n{mini_df}")
+            show_agent_pred = []
 
-        checkpoint_name = config_exp.get_best_val_checkpoint_name()
-        saved_preds_dir = os.path.join(
-            config_exp.result_dir, dataloader_exp.dataset_name, checkpoint_name, 'test'
-        )
+            # preparing the figure
+            fig, ax = plt.subplots(figsize=figsize)
+            fig.canvas.manager.set_window_title(f"{experiment_name}: (instance nr {instance_name})")
 
-        # retrieve the input data dict
-        input_dict = dataloader_exp.__getitem__(instance_number)
-        if 'map_homography' not in input_dict.keys():
-            input_dict['map_homography'] = dataloader_exp.map_homography
+            checkpoint_name = config_exp.get_best_val_checkpoint_name()
+            saved_preds_dir = os.path.join(
+                config_exp.result_dir, dataloader_exp.dataset_name, checkpoint_name, 'test'
+            )
 
-        # retrieve the prediction data dict
-        pred_file = os.path.join(saved_preds_dir, instance_name)
-        assert os.path.exists(pred_file)
-        with open(pred_file, 'rb') as f:
-            pred_dict = pickle.load(f)
-        pred_dict['map_homography'] = input_dict['map_homography']
+            # retrieve the input data dict
+            input_dict = dataloader_exp.__getitem__(instance_number)
+            if 'map_homography' not in input_dict.keys():
+                input_dict['map_homography'] = dataloader_exp.map_homography
 
-        visualize_input_and_predictions(
-            draw_ax=ax,
-            data_dict=input_dict,
-            pred_dict=pred_dict,
-            show_rgb_map=True,
-            show_pred_agent_ids=show_pred_ids,
-            past_pred_alpha=0.5,
-            future_pred_alpha=0.1 if highlight_only_past_pred else 0.5
-        )
-        ax.legend()
-        ax.set_title(experiment_name)
-        fig.subplots_adjust(wspace=0.10, hspace=0.0)
+            # retrieve the prediction data dict
+            pred_file = os.path.join(saved_preds_dir, instance_name)
+            print(f"{pred_file=}")
+            assert os.path.exists(pred_file)
+            with open(pred_file, 'rb') as f:
+                pred_dict = pickle.load(f)
+            pred_dict['map_homography'] = input_dict['map_homography']
+
+            visualize_input_and_predictions(
+                draw_ax=ax,
+                data_dict=input_dict,
+                pred_dict=pred_dict,
+                show_rgb_map=True,
+                show_pred_agent_ids=show_pred_ids,
+                past_pred_alpha=0.5,
+                future_pred_alpha=0.1 if highlight_only_past_pred else 0.5
+            )
+            ax.legend()
+            ax.set_title(experiment_name)
+            fig.subplots_adjust(wspace=0.10, hspace=0.0)
         plt.show()
 
         print(EXPERIMENT_SEPARATOR)
 
     # map compliance vs generic performance ###########################################################################
-    if False:       # uninteresting results, no matter the map score / trajectory score combination
+    if False:
+        # uninteresting results, no matter the map score / trajectory score combination
+        # actually, maybe a (very slight trend)
         base_experiment = OCCLUSIONFORMER_NO_MAP
         compare_experiment = OCCLUSIONFORMER_WITH_OCCL_MAP
-        x_score = 'OAO'
-        y_score = 'mean_past_FDE'
+        x_score = 'OAC_t0'
+        y_score = 'min_FDE'
 
         base_df = get_perf_scores_df(base_experiment)
         comp_df = get_perf_scores_df(compare_experiment)
@@ -929,9 +998,243 @@ if __name__ == '__main__':
 
         fig, ax = plt.subplots()
         ax.scatter(xs, ys, marker='x', color='red', alpha=0.3)
-        ax.set_xlabel(x_score)
-        ax.set_ylabel(y_score)
+        ax.set_xlabel(f"Delta {x_score}")
+        ax.set_ylabel(f"Delta {y_score}")
+        ax.set_title(f"{compare_experiment} vs {base_experiment}")
         plt.show()
+
+        fig, ax = plt.subplots(4, 3)
+        for i, y_score in enumerate(['min_FDE', 'min_ADE', 'mean_FDE', 'mean_ADE']):
+            for j, x_score in enumerate(['OAO', 'OAC', 'OAC_t0']):
+                xs = diff_df[x_score].to_numpy()
+                ys = diff_df[y_score].to_numpy()
+                ax[i, j].scatter(xs, ys, marker='x', color='red', alpha=0.3)
+                if j == 0:
+                    ax[i, j].set_ylabel(f"Delta {y_score}")
+                if i == 3:
+                    ax[i, j].set_xlabel(f"Delta {x_score}")
+                # ax[i, j].set_title(f"{compare_experiment} vs {base_experiment}")
+                ax[i, j].grid(axis='y')
+        fig.suptitle(f"{compare_experiment} vs {base_experiment}")
+        plt.show()
+
+    if False:
+        experiment_name = OCCLUSIONFORMER_NO_MAP
+        experiment_name = OCCLUSIONFORMER_WITH_OCCL_MAP
+        x_score = 'OAC_t0'
+        y_score = 'min_FDE'
+
+        exp_df = get_perf_scores_df(experiment_name)
+        exp_df = exp_df[exp_df['past_pred_length'] != 0]
+        exp_df = remove_k_sample_columns(exp_df)
+
+        # WIP WIP WIP
+        # exp_df = exp_df.sort_values('occlusion_area', ascending=True)
+        # print(f"{exp_df['occlusion_area']=}")
+        # print(exp_df.keys())
+        # print(zblu)
+
+        xs = exp_df[x_score].to_numpy()
+        ys = exp_df[y_score].to_numpy()
+
+        fig, ax = plt.subplots()
+        ax.scatter(xs, ys, marker='x', color='red', alpha=0.3)
+        ax.set_xlabel(f"{x_score}")
+        ax.set_ylabel(f"{y_score}")
+        ax.set_title(f"{experiment_name}")
+        plt.show()
+
+        fig, ax = plt.subplots(4, 3)
+        for i, (y_score, vmax_value) in enumerate(zip(
+                ['min_FDE', 'min_ADE', 'mean_FDE', 'mean_ADE'],
+                [3200, 3200, 2200, 1850]
+        )):
+            for j, x_score in enumerate(['OAO', 'OAC', 'OAC_t0']):
+
+                xs = exp_df[x_score].to_numpy()
+                ys = exp_df[y_score].to_numpy()
+
+                isnan_mask = np.isnan(xs)
+
+                xs = xs[~isnan_mask]
+                ys = ys[~isnan_mask]
+
+                if False:
+                    # scatter plot
+                    ax[i, j].scatter(xs, ys, marker='x', color='red', alpha=0.3)
+                else:
+                    H, yedges, xedges = np.histogram2d(ys, xs, bins=[50, 20])
+                    im = ax[i, j].pcolormesh(xedges, yedges, H, cmap='rainbow', vmin=0.0, vmax=vmax_value)
+
+                    divider = mpl_toolkits.axes_grid1.make_axes_locatable(ax[i, j])
+                    cax = divider.append_axes('right', size='2%', pad=0.02)
+
+                    fig.colorbar(im, cax=cax, orientation='vertical')
+
+                if j == 0:
+                    ax[i, j].set_ylabel(f"{y_score}")
+                if i == 3:
+                    ax[i, j].set_xlabel(f"{x_score}")
+                # ax[i, j].set_title(f"{compare_experiment} vs {base_experiment}")
+                ax[i, j].grid(axis='y')
+        fig.suptitle(f"{experiment_name}")
+        plt.show()
+
+    if False:
+        import copy
+        # OAO / OAC / OAC_t0 correlation
+        experiment_name = OCCLUSIONFORMER_WITH_OCCL_MAP
+        experiment_name = OCCLUSIONFORMER_NO_MAP
+        mode = 'scatter'        # 'scatter' | 'heatmap'
+
+        my_cmap = copy.copy(matplotlib.colormaps['rainbow'])  # copy the default cmap
+        my_cmap.set_bad((0, 0, 0))
+
+        hist_bins = 20
+        d_bin = 1/(hist_bins-1)
+        hist_range = np.array([0-d_bin/2, 1+d_bin/2])
+        hist_range = [hist_range, hist_range]
+
+        scores = ['OAO', 'OAC', 'OAC_t0']
+
+        exp_df = get_perf_scores_df(experiment_name)
+        exp_df = exp_df[exp_df['past_pred_length'] != 0]
+        exp_df = remove_k_sample_columns(exp_df)
+
+        fig, ax = plt.subplots(len(scores), len(scores))
+
+        for i, x_score in enumerate(scores):
+            for j, y_score in enumerate(scores):
+                xs = exp_df[x_score].to_numpy()
+                ys = exp_df[y_score].to_numpy()
+
+                isnan_mask = np.logical_or(np.isnan(xs), np.isnan(ys))
+                is_perfect_mask = np.logical_and(xs == 1.0, ys == 1.0)
+                mask = np.logical_or(isnan_mask, is_perfect_mask)
+
+                xs = xs[~isnan_mask]
+                ys = ys[~isnan_mask]
+
+                if mode == 'scatter':
+                    ax[i, j].scatter(xs, ys, marker='x', color='red', alpha=0.1)
+                elif mode == 'heatmap':
+                    h, xedges, yedges, im = ax[i, j].hist2d(
+                        xs, ys,
+                        bins=hist_bins, range=hist_range, cmap=my_cmap, norm='log'
+                    )
+
+                    divider = mpl_toolkits.axes_grid1.make_axes_locatable(ax[i, j])
+                    cax = divider.append_axes('right', size='2%', pad=0.02)
+                    fig.colorbar(im, cax=cax, orientation='vertical')
+
+                ax[i, j].set_aspect('equal', 'box')
+                ax[i, j].set_xlabel(f"{x_score}")
+                ax[i, j].set_ylabel(f"{y_score}")
+        fig.suptitle(experiment_name)
+        plt.show()
+
+    if False:
+        # evaluating insightfulness of the occlusion map between
+        #   - occlusionformer_no_map
+        #   - occlusionformer_with_occl_map
+        # we are particularly interested in instances where a CV model performs poorly
+
+        COMPARE_SCORES = ADE_SCORES + FDE_SCORES
+        COMPARE_SCORES = PAST_ADE_SCORES + PAST_FDE_SCORES
+        COMPARE_SCORES = OCCLUSION_MAP_SCORES
+        cv_model_name = CONST_VEL_OCCLUSION_SIMULATION
+        no_map_name = OCCLUSIONFORMER_NO_MAP
+        yes_map_name = OCCLUSIONFORMER_WITH_OCCL_MAP
+        experiment_names = [yes_map_name, no_map_name, cv_model_name]
+
+        perf_summary = generate_performance_summary_df(
+            experiment_names=experiment_names, metric_names=DISTANCE_METRICS+PRED_LENGTHS+OCCLUSION_MAP_SCORES
+        )
+        perf_summary.sort_values(by='min_FDE', inplace=True)
+
+        print(f"Performance summary:")
+        print(perf_summary)
+
+        cv_perf_df = get_perf_scores_df(experiment_name=cv_model_name)
+        cv_perf_df = cv_perf_df[cv_perf_df['past_pred_length'] != 0]
+        no_map_perf_df = get_perf_scores_df(experiment_name=no_map_name)
+        no_map_perf_df = no_map_perf_df[no_map_perf_df['past_pred_length'] != 0]
+        yes_map_perf_df = get_perf_scores_df(experiment_name=yes_map_name)
+        yes_map_perf_df = yes_map_perf_df[yes_map_perf_df['past_pred_length'] != 0]
+
+        assert all(cv_perf_df.index == no_map_perf_df.index)
+        assert all(cv_perf_df.index == yes_map_perf_df.index)
+
+        failed_cv_oac_t0 = (cv_perf_df['OAC_t0'] == 0.)
+        print(f"Out of all {len(failed_cv_oac_t0)} occluded cases,\n"
+              f"the constant velocity model misplaced the current position of the agent as being "
+              f"outside the occluded zone "
+              f"{sum(failed_cv_oac_t0)} times ({sum(failed_cv_oac_t0)/len(failed_cv_oac_t0)*100:.2f}%)")
+
+        cv_perf_df = cv_perf_df[failed_cv_oac_t0]
+        no_map_perf_df = no_map_perf_df[failed_cv_oac_t0]
+        yes_map_perf_df = yes_map_perf_df[failed_cv_oac_t0]
+
+        # sample_rows = np.random.choice(cv_perf_df.index, 5, replace=False)
+        # [print(sample) for sample in sample_rows]
+
+        fig, ax = plt.subplots()
+        boxplot_dict = {score_name: None for score_name in COMPARE_SCORES}
+        for score_name in COMPARE_SCORES:
+            diff = (yes_map_perf_df[score_name] - no_map_perf_df[score_name]).to_numpy()
+            boxplot_dict[score_name] = diff
+
+        ax.axhline(0, linestyle='--', color='k', alpha=0.1)  # horizontal line through y=0
+
+        box_plot_xs = []
+        box_plot_ys = []
+        for k, v in boxplot_dict.items():
+            box_plot_xs.append(k)
+            box_plot_ys.append(v)
+
+        bplot = ax.boxplot(box_plot_ys, positions=(range(len(box_plot_ys))))
+        ax.set_xticklabels(box_plot_xs)
+
+        plt.show()
+
+    if args.comp_phase_1_2:
+        # checking the performance difference between phase 1 (model) and phase 2 (model + Dlow for diversity sampling)
+        experiment_list = [
+            OCCLUSIONFORMER_NO_MAP,
+            OCCLUSIONFORMER_CAUSAL_ATTENTION,
+            OCCLUSIONFORMER_IMPUTED,
+            OCCLUSIONFORMER_WITH_OCCL_MAP,
+            OCCLUSIONFORMER_WITH_OCCL_MAP_IMPUTED,
+            OCCLUSIONFORMER_MOMENTARY,
+            OCCLUSIONFORMER_CAUSAL_ATTENTION_FULLY_OBSERVED,
+            OCCLUSIONFORMER_CAUSAL_ATTENTION_FULLY_OBSERVED_314,
+            OCCLUSIONFORMER_CAUSAL_ATTENTION_FULLY_OBSERVED_162
+        ]
+
+        metric_names = ADE_SCORES + FDE_SCORES
+
+        # list of experiment names (phase 1 and phase 2)
+        phase_1_list = [f"{name}_pre" for name in experiment_list]
+        phase_2_list = experiment_list
+
+        # extracting the performance summaries
+        perf_df_1 = generate_performance_summary_df(experiment_names=phase_1_list, metric_names=metric_names)
+        perf_df_2 = generate_performance_summary_df(experiment_names=phase_2_list, metric_names=metric_names)
+
+        experiment_id_columns = ['experiment', 'dataset_used']
+
+        diff_df = perf_df_2[experiment_id_columns].copy()
+        for metric_name in metric_names:
+            diff_df[f"P1:{metric_name}"] = perf_df_1[metric_name]
+            diff_df[f"P2:{metric_name}"] = perf_df_2[metric_name]
+            diff_df[f"Delta:{metric_name}"] = perf_df_2[metric_name] - perf_df_1[metric_name]
+
+        if SHOW:
+            print(f"{diff_df}")
+        if SAVE:
+            print(f"Sorry, saving functionality not implemented for this performance evaluation...")
+            raise NotImplementedError
+
 
     # if False:
     #
