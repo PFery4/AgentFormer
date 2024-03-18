@@ -58,13 +58,6 @@ if __name__ == '__main__':
             df = df[~(df['tb_x'].str.contains('END OF EPOCH'))]
             df.reset_index(inplace=True, drop=True)
 
-            # for debugging, please remove once you run on actual proper csvs
-            if 'epoch' not in df.columns:
-                df = df.astype({'tb_x': int})
-                df['epoch'] = (df['tb_x'] - 1) // 85776
-                df['batch'] = (df['tb_x'] - 1) % 85776
-            # end of debug snippet
-
             # extract the loss names
             loss_names = [name for name in df.columns.tolist() if name not in ['tb_x', 'epoch', 'batch']]
             df = df.astype({'tb_x': int, 'epoch': int, 'batch': int})
