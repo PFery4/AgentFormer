@@ -1200,6 +1200,8 @@ if __name__ == '__main__':
     if args.comp_phase_1_2:
         # checking the performance difference between phase 1 (model) and phase 2 (model + Dlow for diversity sampling)
         experiment_list = [
+            SDD_BASELINE_OCCLUSIONFORMER,
+            BASELINE_NO_POS_CONCAT,
             OCCLUSIONFORMER_NO_MAP,
             OCCLUSIONFORMER_CAUSAL_ATTENTION,
             OCCLUSIONFORMER_IMPUTED,
