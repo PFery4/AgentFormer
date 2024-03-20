@@ -22,7 +22,7 @@ scene_side_length             : 80.0     # [m]
 global_map_resolution         : 800      # [px]
 rand_rot_scene                : true
 max_train_agent               : 32
-occlusion_process             : 'occlusion_simulation'      # can be either 'fully_observed' or 'occlusion_simulation'
+occlusion_process             : 'fully_observed'      # can be either 'fully_observed' or 'occlusion_simulation'
 impute                        : false
 momentary                     : false
 
@@ -96,4 +96,4 @@ decay_step                    : 10
 decay_gamma                   : 0.5
 print_freq                    : 20
 validation_freq               : 5000       # number of batches passed through the model between each save
-
+validation_set_size           : 1250       # desired set size for the validation set
