@@ -151,13 +151,12 @@ def compute_sample_loss(data: Dict, cfg: Dict):
     idx_map = index_mapping_gt_seq_pred_seq(
         ag_gt=data['pred_identity_sequence'][0],
         tsteps_gt=data['pred_timestep_sequence'][0],
-        ag_pred=data['train_dec_agents'][0],
-        tsteps_pred=data['train_dec_timesteps']
+        ag_pred=data['infer_dec_agents'][0],
+        tsteps_pred=data['infer_dec_timesteps']
     )
     gt_identities = data['pred_identity_sequence'][:, idx_map]      # [B, P]
     gt_timesteps = data['pred_timestep_sequence'][:, idx_map]       # [B, P]
     gt_positions = data['pred_position_sequence'][:, idx_map, :]    # [B, P, 2]
-
 
     # checking that the predicted sequence and the ground truth have the same timestep / agent order
     assert torch.all(data['infer_dec_agents'] == gt_identities),\
@@ -169,16 +168,15 @@ def compute_sample_loss(data: Dict, cfg: Dict):
 
     dist = diff.pow(2).sum(-1)
     dist = torch.stack(
-        [dist[:, gt_identities.squeeze() == ag_id].sum(dim=-1) /
-         torch.sum(gt_identities.squeeze() == ag_id)
+        [dist[:, gt_identities.squeeze() == ag_id].sum(dim=-1)
          for ag_id in torch.unique(gt_identities)]
     )       # [N, K]        N agents, K modes
-
     loss_unweighted, _ = dist.min(dim=1)     # [N]
     if cfg.get('normalize', True):
+        loss_unweighted /= (torch.unique(gt_identities).unsqueeze(1) == gt_identities).sum(dim=-1)
         loss_unweighted = loss_unweighted.mean()
     else:
-        loss_unweighted = loss_unweighted.sum()
+        raise NotImplementedError
     loss = loss_unweighted * cfg['weight']
     return loss, loss_unweighted
 
