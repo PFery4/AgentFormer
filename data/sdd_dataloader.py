@@ -690,14 +690,15 @@ class PickleDatasetSDD(PresavedDatasetSDD):
 
         self.pickle_files = sorted(glob.glob1(self.dataset_dir, "*.pickle"))
 
-        if self.split == 'val' and len(self.pickle_files) > parser.validation_freq // 4:
+        if self.split == 'val' and parser.validation_set_size is not None:
+            assert len(self.pickle_files) > parser.validation_set_size
             # Training set might be quite large. When that is the case, we prefer to validate after every
             # <parser.validation_freq> batches rather than every epoch (i.e., validating multiple times per epoch).
             # train / val split size ratios are typically ~80/20. Our desired validation set size should then be:
             #       <parser.validation_freq> * 20/80
-            # If we check that the validation split contains more instances than desired, we artificially
-            # reduce the dataset size by discarding instances, in order to reach the desired val set size.
-            required_val_set_size = parser.validation_freq // 4
+            # We let the user choose the validation set size.
+            # The dataset will then be effectively reduced to <parser.validation_set_size>
+            required_val_set_size = parser.validation_set_size
             keep_instances = np.linspace(0, len(self.pickle_files)-1, num=required_val_set_size).round().astype(int)
 
             assert np.all(keep_instances[1:] != keep_instances[:-1])        # verifying no duplicates
@@ -758,14 +759,15 @@ class HDF5DatasetSDD(PresavedDatasetSDD):
 
             self.separate_dataset_keys = [key for key in h5_file.keys() if not key.isdecimal() and key not in ['seq', 'frame']]
 
-        if self.split == 'val' and len(self.instance_names) > parser.validation_freq // 4:
+        if self.split == 'val' and len(self.instance_names) > parser.validation_set_size:
+            assert len(self.instance_names) > parser.validation_set_size
             # Training set might be quite large. When that is the case, we prefer to validate after every
             # <parser.validation_freq> batches rather than every epoch (i.e., validating multiple times per epoch).
             # train / val split size ratios are typically ~80/20. Our desired validation set size should then be:
             #       <parser.validation_freq> * 20/80
-            # If we check that the validation split contains more instances than desired, we artificially
-            # reduce the dataset size by discarding instances, in order to reach the desired val set size.
-            required_val_set_size = parser.validation_freq // 4
+            # We let the user choose the validation set size.
+            # The dataset will then be effectively reduced to <parser.validation_set_size>
+            required_val_set_size = parser.validation_set_size
             keep_instances = np.linspace(0, len(self.instance_names)-1, num=required_val_set_size).round().astype(int)
 
             assert np.all(keep_instances[1:] != keep_instances[:-1])        # verifying no duplicates
