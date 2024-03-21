@@ -86,7 +86,7 @@ loss_cfg:
 #  occl_map:
 #    weight: 1.0
 
-num_epochs                    : 6
+num_epochs                    : 2
 lr_fix_epochs                 : 10
 lr_scheduler                  : 'step'
 lr_step_freq                  : 5000        # number of batches passed through the model between each scheduler step
