@@ -110,6 +110,8 @@ def save_model(epoch_idx, batch_idx, train_loss_avg, val_loss_avg):
 
 def train(epoch_index: int, batch_idx: int = 0):
     since_train = time.time()
+    log_str = f"In train function, Starting at {get_timestring()}"
+    print_log(log_str, log=log)
 
     train_loss_meter = {x: AverageMeter() for x in cfg.loss_cfg.keys()}
     train_loss_meter['total_loss'] = AverageMeter()
@@ -117,7 +119,9 @@ def train(epoch_index: int, batch_idx: int = 0):
     val_loss_meter = {x: AverageMeter() for x in cfg.loss_cfg.keys()}
     val_loss_meter['total_loss'] = AverageMeter()
 
+    print(f"creating iterator over the dataloader")
     data_iter = iter(training_loader)
+    print(f"iterator ready")
 
     if batch_idx != 0:
         log_str = f"Continuing from where we last stopped! Skipping the first {batch_idx} instances for this epoch."
@@ -160,14 +164,9 @@ def train(epoch_index: int, batch_idx: int = 0):
         #   advance the scheduler, perform validation, report validation losses, and save the model
         if (cfg.validation_freq > 0 and i % cfg.validation_freq == cfg.validation_freq - 1) or \
                 (i + 1) == len(training_loader):
-
             log_str = f"VALIDATING:\nat training step nr {i+1}\nvalidating over {len(validation_loader)} instances."
             print_log(log_str, log=log)
             val_time = time.time()
-
-            # advance the scheduler
-            scheduler.step()
-            model.step_annealer()
 
             # make sure the model is not training
             model.eval()
@@ -220,6 +219,13 @@ def train(epoch_index: int, batch_idx: int = 0):
             model.train(True)
 
             print_log("\n\n", log=log)
+
+        if (i % cfg.lr_step_freq == cfg.lr_step_freq - 1) or (i + 1) == len(training_loader):
+            log_str = f"Advancing the scheduler at batch: {i}\n"
+            print_log(log_str, log=log)
+            # advance the scheduler
+            scheduler.step()
+            model.step_annealer()
 
     mark_epoch_end_in_csv(csv_logfile=csv_train_logfile, epoch_idx=epoch_index)
     mark_epoch_end_in_csv(csv_logfile=csv_val_logfile, epoch_idx=epoch_index)
@@ -311,10 +317,10 @@ if __name__ == '__main__':
     if cfg.dataset == "sdd":
         # sdd_dataset = TorchDataGeneratorSDD(parser=cfg, log=log, split='train')
         sdd_train_set = dataset_class(parser=cfg, log=log, split='train')
-        training_loader = DataLoader(dataset=sdd_train_set, shuffle=True, num_workers=2)
+        training_loader = DataLoader(dataset=sdd_train_set, shuffle=True, num_workers=0)
 
         sdd_val_set = dataset_class(parser=cfg, log=log, split='val')
-        validation_loader = DataLoader(dataset=sdd_val_set, shuffle=False, num_workers=2)
+        validation_loader = DataLoader(dataset=sdd_val_set, shuffle=False, num_workers=0)
         print_log(f"\nUsing dataset of class: {dataset_class}\n", log)
 
     """ model """
@@ -355,10 +361,15 @@ if __name__ == '__main__':
         log_str = f"Beginning Epoch: {epoch_i}\n"
         print_log(log_str, log=log)
 
+        print("setting model to train")
         model.train(True)
+        print("model ready to train")
+
         if epoch_i == start_epoch_idx:
+            print(f"beginning epoch {epoch_i} at a specific batch: {start_batch_idx}")
             train(epoch_index=epoch_i, batch_idx=start_batch_idx)
         else:
+            print(f"beginning epoch {epoch_i} from the very start")
             train(epoch_index=epoch_i, batch_idx=0)
 
     log_str = "Done for now, Goodbye!"
