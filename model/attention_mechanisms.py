@@ -11,11 +11,18 @@ class SelfOtherAwareAttention(Module):
     Base class for AgentAwareAttention and MapAgentAwareAttention
     """
 
-    def __init__(self, qk_dim: int, v_dim: int, num_heads: int, dropout: float = 0.1):
+    def __init__(
+            self, qk_dim: int, v_dim: int, num_heads: int, dropout: float = 0.1,
+            bias_self: bool = False, bias_other: bool = False, bias_out: bool = True
+    ):
         super().__init__()
         self.qk_dim = qk_dim                    # T
         self.v_dim = v_dim                      # V
         self.num_heads = num_heads              # H
+
+        self.bias_self = bias_self
+        self.bias_other = bias_other
+        self.bias_out = bias_out
 
         self.qk_head_dim = qk_dim // num_heads          # t
         assert self.qk_head_dim * self.num_heads == self.qk_dim, "traj_dim must be divisible by num_heads"
@@ -26,14 +33,14 @@ class SelfOtherAwareAttention(Module):
         self.qk_scaling = float(self.qk_head_dim ** -0.5)
 
         # MLP's for mapping trajectory sequences to keys, queries and values
-        self.w_q_self = torch.nn.Linear(self.qk_dim, self.qk_dim, bias=False)
-        self.w_q_other = torch.nn.Linear(self.qk_dim, self.qk_dim, bias=False)
-        self.w_k_self = torch.nn.Linear(self.qk_dim, self.qk_dim, bias=False)
-        self.w_k_other = torch.nn.Linear(self.qk_dim, self.qk_dim, bias=False)
-        self.w_v = torch.nn.Linear(self.qk_dim, self.v_dim, bias=False)
+        self.w_q_self = torch.nn.Linear(self.qk_dim, self.qk_dim, bias=self.bias_self)
+        self.w_q_other = torch.nn.Linear(self.qk_dim, self.qk_dim, bias=self.bias_other)
+        self.w_k_self = torch.nn.Linear(self.qk_dim, self.qk_dim, bias=self.bias_self)
+        self.w_k_other = torch.nn.Linear(self.qk_dim, self.qk_dim, bias=self.bias_other)
+        self.w_v = torch.nn.Linear(self.qk_dim, self.v_dim, bias=self.bias_other)
 
         # output MLP
-        self.fc = torch.nn.Linear(self.v_dim, self.v_dim)
+        self.fc = torch.nn.Linear(self.v_dim, self.v_dim, bias=self.bias_out)
 
         # dropout layer
         self.dropout = torch.nn.Dropout(dropout)
@@ -51,14 +58,23 @@ class SelfOtherAwareAttention(Module):
         # print(f"\n\n\n\n")
 
     def _reset_parameters(self):
+        # we might need to initialize according to the following:
         # https://ai.stackexchange.com/questions/30491/is-there-a-proper-initialization-technique-for-the-weight-matrices-in-multi-head
-        torch.nn.init.xavier_normal_(self.w_q_self.weight)
-        torch.nn.init.xavier_normal_(self.w_k_self.weight)
-        torch.nn.init.xavier_normal_(self.w_q_other.weight)
-        torch.nn.init.xavier_normal_(self.w_k_other.weight)
-        torch.nn.init.xavier_normal_(self.w_v.weight)
-        torch.nn.init.xavier_normal_(self.fc.weight)
-        torch.nn.init.zeros_(self.fc.bias)
+        torch.nn.init.xavier_uniform_(self.w_q_self.weight)
+        torch.nn.init.xavier_uniform_(self.w_k_self.weight)
+        torch.nn.init.xavier_uniform_(self.w_q_other.weight)
+        torch.nn.init.xavier_uniform_(self.w_k_other.weight)
+        torch.nn.init.xavier_uniform_(self.w_v.weight)
+        # torch.nn.init.xavier_uniform_(self.fc.weight)
+
+        if self.bias_self:
+            torch.nn.init.zeros_(self.w_q_self.bias)
+            torch.nn.init.zeros_(self.w_k_self.bias)
+        if self.bias_other:
+            torch.nn.init.zeros_(self.w_q_other.bias)
+            torch.nn.init.zeros_(self.w_k_other.bias)
+        if self.bias_out:
+            torch.nn.init.zeros_(self.fc.bias)
 
     # @staticmethod
     # def self_other_aware_mask(q_identities: Tensor, k_identities: Tensor):
