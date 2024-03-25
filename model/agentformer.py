@@ -81,16 +81,17 @@ class PositionalEncoding(nn.Module):
     """ Positional Encoding """
     def __init__(
             self, d_model: int,
-            dropout: float = 0.1, timestep_window: Tuple[int, int] = (-20, 30),
-            concat: bool = False, time_shift: int = 0
+            dropout: float = 0.1, timestep_window: Tuple[int, int] = (0, 20),
+            concat: bool = False, t_zero_index: int = 7
     ):
         super(PositionalEncoding, self).__init__()
         self.dropout = nn.Dropout(p=dropout)
         self.d_model = d_model
         self.concat = concat
-        self.time_shift = time_shift
-        timestep_window = torch.arange(*timestep_window, dtype=torch.int).unsqueeze(1)       # [t_range, 1]
+        self.t_zero_index = t_zero_index
+        timestep_window = torch.arange(*timestep_window, dtype=torch.int)       # [T_total]
         self.register_buffer('timestep_window', timestep_window)
+        assert t_zero_index < self.timestep_window.shape[0]
         if concat:
             self.fc = nn.Linear(2 * d_model, d_model)
 
@@ -99,12 +100,12 @@ class PositionalEncoding(nn.Module):
 
     def build_enc_table(self) -> torch.Tensor:
         # shape [t_range, d_model]
-        pe = torch.zeros(len(self.timestep_window), self.d_model)
+        pe = torch.zeros(self.timestep_window.shape[0], self.d_model)
 
         # shape [d_model//2]
         div_term = torch.exp(torch.arange(0, self.d_model, 2).float() * (-np.log(10000.0) / self.d_model))
-        pe[:, 0::2] = torch.sin(self.timestep_window * div_term)
-        pe[:, 1::2] = torch.cos(self.timestep_window * div_term)
+        pe[:, 0::2] = torch.sin(self.timestep_window.unsqueeze(1) * div_term)
+        pe[:, 1::2] = torch.cos(self.timestep_window.unsqueeze(1) * div_term)
         return pe       # [t_range, d_model]
 
     def time_encode(self, sequence_timesteps: torch.Tensor) -> torch.Tensor:
@@ -116,7 +117,7 @@ class PositionalEncoding(nn.Module):
         # x: [B, T, model_dim]
         # time_tensor: [B, T]
         pos_enc = torch.stack(
-            [self.time_encode(time_sequence + self.time_shift) for time_sequence in time_tensor], dim=0
+            [self.time_encode(time_sequence + self.t_zero_index) for time_sequence in time_tensor], dim=0
         )    # [B, T, model_dim]
 
         if self.concat:
@@ -180,7 +181,7 @@ class ContextEncoder(nn.Module):
 
         self.pos_encoder = PositionalEncoding(
             self.model_dim, dropout=self.dropout,
-            concat=ctx['pos_concat'], time_shift=ctx['pos_time_shift']
+            concat=ctx['pos_concat'], t_zero_index=ctx['t_zero_index']
         )
 
         if self.causal_attention:
@@ -285,7 +286,7 @@ class FutureEncoder(nn.Module):
 
         self.pos_encoder = PositionalEncoding(
             self.model_dim, dropout=self.dropout,
-            concat=ctx['pos_concat'], time_shift=ctx['pos_time_shift']
+            concat=ctx['pos_concat'], t_zero_index=ctx['t_zero_index']
         )
 
         num_dist_params = 2 * self.nz if self.z_type == 'gaussian' else self.nz     # either gaussian or discrete
@@ -449,7 +450,7 @@ class FutureDecoder(nn.Module):
 
         self.pos_encoder = PositionalEncoding(
             self.model_dim, dropout=self.dropout,
-            concat=ctx['pos_concat'], time_shift=ctx['pos_time_shift']
+            concat=ctx['pos_concat'], t_zero_index=ctx['t_zero_index']
         )
 
         out_module_kwargs = {"hidden_dims": self.out_mlp_dim}
@@ -824,7 +825,7 @@ class AgentFormer(nn.Module):
             'tf_ff_dim': cfg.tf_ff_dim,
             'tf_dropout': cfg.tf_dropout,
             'pos_concat': cfg.get('pos_concat', False),
-            'pos_time_shift': int(cfg.get('pos_time_shift', 0)),
+            't_zero_index': int(cfg.get('t_zero_index', 0)),
             'ar_detach': cfg.get('ar_detach', True),
             'sn_out_type': cfg.get('sn_out_type', 'scene_norm'),
             'learn_prior': cfg.get('learn_prior', False),
