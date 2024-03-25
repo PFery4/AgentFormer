@@ -70,6 +70,16 @@ def mean_pooling(sequences: Tensor, identities: Tensor) -> Tensor:
     return single_mean_pooling(sequences[0, ...], identities[0, ...]).unsqueeze(0)
 
 
+def plot_tensor(ax: matplotlib.axes.Axes, tensor: torch.Tensor, cmap: str = 'Blues'):
+    assert tensor.dim() == 2
+    img = tensor.detach().cpu().numpy()
+
+    ax.set_xlim(0, img.shape[1])
+    ax.set_ylim(img.shape[0]+1, 1)
+    pos = ax.imshow(img, cmap=cmap, extent=(0, img.shape[1], img.shape[0] + 1, 1))
+    plt.colorbar(pos)
+
+
 POOLING_FUNCTIONS = {
     'mean': mean_pooling,
     'max': None
