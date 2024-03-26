@@ -128,8 +128,14 @@ class SelfOtherAwareAttention(Module):
 
 
 class AgentAwareAttention(SelfOtherAwareAttention):
-    def __init__(self, traj_dim: int, v_dim: int, num_heads: int, dropout: float = 0.1):
-        super().__init__(qk_dim=traj_dim, v_dim=v_dim, num_heads=num_heads, dropout=dropout)
+    def __init__(
+            self, traj_dim: int, v_dim: int, num_heads: int, dropout: float = 0.1,
+            bias_self: bool = False, bias_other: bool = False, bias_out: bool = True
+    ):
+        super().__init__(
+            qk_dim=traj_dim, v_dim=v_dim, num_heads=num_heads, dropout=dropout,
+            bias_self=bias_self, bias_other=bias_other, bias_out=bias_out
+        )
 
     def forward(
             self,
@@ -184,8 +190,14 @@ class AgentAwareAttention(SelfOtherAwareAttention):
 
 class MapAgentAwareAttention(SelfOtherAwareAttention):
 
-    def __init__(self, traj_dim: int, map_dim: int, v_dim: int, num_heads: int, dropout: float = 0.1):
-        super().__init__(qk_dim=traj_dim, v_dim=v_dim, num_heads=num_heads, dropout=dropout)
+    def __init__(
+            self, traj_dim: int, map_dim: int, v_dim: int, num_heads: int, dropout: float = 0.1,
+            bias_self: bool = False, bias_other: bool = False, bias_out: bool = True
+    ):
+        super().__init__(
+            qk_dim=traj_dim, v_dim=v_dim, num_heads=num_heads, dropout=dropout,
+            bias_self=bias_self, bias_other=bias_other, bias_out=bias_out
+        )
         self.qk_map_dim = map_dim                   # M
 
         self.qk_map_head_dim = map_dim // num_heads        # m

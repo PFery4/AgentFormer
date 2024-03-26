@@ -60,13 +60,15 @@ class BaseAttentionEncoderLayer(Module):
 class AgentAwareAttentionEncoderLayer(BaseAttentionEncoderLayer):
     def __init__(
             self, d_model: int, n_head: int,
-            dim_feedforward: int = 2048, dropout: float = 0.1, activation: str = 'relu'
+            dim_feedforward: int = 2048, dropout: float = 0.1, activation: str = 'relu',
+            bias_self: bool = False, bias_other: bool = False, bias_out: bool = True
     ):
         super().__init__(
             d_model=d_model, dim_feedforward=dim_feedforward, dropout=dropout, activation=activation
         )
         self.self_attn = AgentAwareAttention(
-            traj_dim=d_model, v_dim=d_model, num_heads=n_head, dropout=dropout
+            traj_dim=d_model, v_dim=d_model, num_heads=n_head, dropout=dropout,
+            bias_self=bias_self, bias_other=bias_other, bias_out=bias_out
         )
 
     def forward(
@@ -98,13 +100,15 @@ class MapAgentAwareAttentionEncoderLayer(BaseAttentionEncoderLayer):
 
     def __init__(
             self, d_model: int, n_head: int,
-            dim_feedforward: int = 2048, dropout: float = 0.1, activation: str = 'relu'
+            dim_feedforward: int = 2048, dropout: float = 0.1, activation: str = 'relu',
+            bias_self: bool = False, bias_other: bool = False, bias_out: bool = True
     ):
         super().__init__(
             d_model=d_model, dim_feedforward=dim_feedforward, dropout=dropout, activation=activation
         )
         self.self_attn = MapAgentAwareAttention(
-            traj_dim=d_model, map_dim=d_model, v_dim=d_model, num_heads=n_head, dropout=dropout
+            traj_dim=d_model, map_dim=d_model, v_dim=d_model, num_heads=n_head, dropout=dropout,
+            bias_self=bias_self, bias_other=bias_other, bias_out=bias_out
         )
 
         self.map_linear1 = torch.nn.Linear(d_model, dim_feedforward)
@@ -191,17 +195,20 @@ class BaseAttentionDecoderLayer(Module):
 class AgentAwareAttentionDecoderLayer(BaseAttentionDecoderLayer):
     def __init__(
             self, d_model: int, n_head: int,
-            dim_feedforward: int = 2048, dropout: float = 0.1, activation: str = 'relu'
+            dim_feedforward: int = 2048, dropout: float = 0.1, activation: str = 'relu',
+            bias_self: bool = False, bias_other: bool = False, bias_out: bool = True
     ):
         super().__init__(
             d_model=d_model, dim_feedforward=dim_feedforward, dropout=dropout, activation=activation
         )
 
         self.self_attn = AgentAwareAttention(
-            traj_dim=d_model, v_dim=d_model, num_heads=n_head, dropout=dropout
+            traj_dim=d_model, v_dim=d_model, num_heads=n_head, dropout=dropout,
+            bias_self=bias_self, bias_other=bias_other, bias_out=bias_out
         )
         self.cross_attn = AgentAwareAttention(
-            traj_dim=d_model, v_dim=d_model, num_heads=n_head, dropout=dropout
+            traj_dim=d_model, v_dim=d_model, num_heads=n_head, dropout=dropout,
+            bias_self=bias_self, bias_other=bias_other, bias_out=bias_out
         )
 
     def forward(
@@ -239,16 +246,19 @@ class AgentAwareAttentionDecoderLayer(BaseAttentionDecoderLayer):
 class MapAgentAwareAttentionDecoderLayer(BaseAttentionDecoderLayer):
     def __init__(
             self, d_model: int, n_head: int,
-            dim_feedforward: int = 2048, dropout: float = 0.1, activation: str = 'relu'
+            dim_feedforward: int = 2048, dropout: float = 0.1, activation: str = 'relu',
+            bias_self: bool = False, bias_other: bool = False, bias_out: bool = True
     ):
         super().__init__(
             d_model=d_model, dim_feedforward=dim_feedforward, dropout=dropout, activation=activation
         )
         self.self_attn = MapAgentAwareAttention(
-            traj_dim=d_model, map_dim=d_model, v_dim=d_model, num_heads=n_head, dropout=dropout
+            traj_dim=d_model, map_dim=d_model, v_dim=d_model, num_heads=n_head, dropout=dropout,
+            bias_self=bias_self, bias_other=bias_other, bias_out=bias_out
         )
         self.cross_attn = MapAgentAwareAttention(
-            traj_dim=d_model, map_dim=d_model, v_dim=d_model, num_heads=n_head, dropout=dropout
+            traj_dim=d_model, map_dim=d_model, v_dim=d_model, num_heads=n_head, dropout=dropout,
+            bias_self=bias_self, bias_other=bias_other, bias_out=bias_out
         )
 
         self.map_linear1 = torch.nn.Linear(d_model, dim_feedforward)

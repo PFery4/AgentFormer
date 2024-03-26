@@ -165,6 +165,9 @@ class ContextEncoder(nn.Module):
         self.ff_dim = ctx['tf_ff_dim']
         self.n_head = ctx['tf_n_head']
         self.dropout = ctx['tf_dropout']
+        self.bias_self = ctx.get('bias_self', False)
+        self.bias_other = ctx.get('bias_other', False)
+        self.bias_out = ctx.get('bias_self', True)
         self.n_layer = ctx['context_encoder'].get('n_layer', 6)
         self.input_type = ctx['input_type']
         self.input_impute_markers = ctx['input_impute_markers']
@@ -179,7 +182,10 @@ class ContextEncoder(nn.Module):
             'd_model': self.model_dim,
             'n_head': self.n_head,
             'dim_feedforward': self.ff_dim,
-            'dropout': self.dropout
+            'dropout': self.dropout,
+            'bias_self': self.bias_self,
+            'bias_other': self.bias_other,
+            'bias_out': self.bias_out
         }
 
         if self.global_map_attention:
@@ -269,6 +275,9 @@ class FutureEncoder(nn.Module):
         self.ff_dim = ctx['tf_ff_dim']
         self.n_head = ctx['tf_n_head']
         self.dropout = ctx['tf_dropout']
+        self.bias_self = ctx.get('bias_self', False)
+        self.bias_other = ctx.get('bias_other', False)
+        self.bias_out = ctx.get('bias_self', True)
         self.n_layer = ctx['future_encoder'].get('n_layer', 6)
         self.out_mlp_dim = ctx['future_encoder'].get('out_mlp_dim', None)
         self.input_type = ctx['fut_input_type']
@@ -284,7 +293,10 @@ class FutureEncoder(nn.Module):
             'd_model': self.model_dim,
             'n_head': self.n_head,
             'dim_feedforward': self.ff_dim,
-            'dropout': self.dropout
+            'dropout': self.dropout,
+            'bias_self': self.bias_self,
+            'bias_other': self.bias_other,
+            'bias_out': self.bias_out
         }
 
         if self.global_map_attention:
@@ -432,6 +444,9 @@ class FutureDecoder(nn.Module):
         self.ff_dim = ctx['tf_ff_dim']
         self.n_head = ctx['tf_n_head']
         self.dropout = ctx['tf_dropout']
+        self.bias_self = ctx.get('bias_self', False)
+        self.bias_other = ctx.get('bias_other', False)
+        self.bias_out = ctx.get('bias_self', True)
         self.n_layer = ctx['future_decoder'].get('n_layer', 6)
         self.out_mlp_dim = ctx['future_decoder'].get('out_mlp_dim', None)
         self.learn_prior = ctx['learn_prior']
@@ -448,7 +463,10 @@ class FutureDecoder(nn.Module):
             'd_model': self.model_dim,
             'n_head': self.n_head,
             'dim_feedforward': self.ff_dim,
-            'dropout': self.dropout
+            'dropout': self.dropout,
+            'bias_self': self.bias_self,
+            'bias_other': self.bias_other,
+            'bias_out': self.bias_out
         }
 
         if self.global_map_attention:
@@ -834,6 +852,9 @@ class AgentFormer(nn.Module):
             'tf_model_dim': cfg.tf_model_dim,
             'tf_ff_dim': cfg.tf_ff_dim,
             'tf_dropout': cfg.tf_dropout,
+            'bias_self': cfg.get('bias_self', False),
+            'bias_other': cfg.get('bias_other', False),
+            'bias_out': cfg.get('bias_out', True),
             'pos_concat': cfg.get('pos_concat', False),
             't_zero_index': int(cfg.get('t_zero_index', 0)),
             'ar_detach': cfg.get('ar_detach', True),
