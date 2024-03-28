@@ -149,22 +149,32 @@ class ContextEncoder(nn.Module):
                 traj_in.append(map_enc)
             else:
                 raise ValueError('unknown input_type!')
-        traj_in = torch.cat(traj_in, dim=-1)
-        tf_in = self.input_fc(traj_in.view(-1, traj_in.shape[-1])).view(-1, 1, self.model_dim)
+        traj_in = torch.cat(traj_in, dim=-1)                        # [Tobs, N, features]
+
+        tf_in = self.input_fc(
+            traj_in.view(-1, traj_in.shape[-1])
+        ).view(-1, 1, self.model_dim)                               # [Tobs * N, 1, features]
+
         agent_enc_shuffle = data['agent_enc_shuffle'] if self.agent_enc_shuffle else None
-        tf_in_pos = self.pos_encoder(tf_in, num_a=data['agent_num'], agent_enc_shuffle=agent_enc_shuffle)
+        tf_in_pos = self.pos_encoder(
+            tf_in, num_a=data['agent_num'], agent_enc_shuffle=agent_enc_shuffle
+        )                                                           # [Tobs * N, 1, features]
+
+        src_agent_mask = data['agent_mask'].clone()                 # [N, N]
+        src_mask = generate_mask(
+            tf_in.shape[0], tf_in.shape[0], data['agent_num'], src_agent_mask
+        ).to(tf_in.device)                                          # [Tobs * N, Tobs * N]
         
-        src_agent_mask = data['agent_mask'].clone()
-        src_mask = generate_mask(tf_in.shape[0], tf_in.shape[0], data['agent_num'], src_agent_mask).to(tf_in.device)
+        data['context_enc'] = self.tf_encoder(
+            tf_in_pos, mask=src_mask, num_agent=data['agent_num']
+        )                                                           # [Tobs * N, 1, model_dim]
         
-        data['context_enc'] = self.tf_encoder(tf_in_pos, mask=src_mask, num_agent=data['agent_num'])
-        
-        context_rs = data['context_enc'].view(-1, data['agent_num'], self.model_dim)
+        context_rs = data['context_enc'].view(-1, data['agent_num'], self.model_dim)        # [Tobs, N, model_dim]
         # compute per agent context
         if self.pooling == 'mean':
-            data['agent_context'] = torch.mean(context_rs, dim=0)
+            data['agent_context'] = torch.mean(context_rs, dim=0)               # [N, model_dim]
         else:
-            data['agent_context'] = torch.max(context_rs, dim=0)[0]
+            data['agent_context'] = torch.max(context_rs, dim=0)[0]             # [N, model_dim]
 
 
 """ Future Encoder """
