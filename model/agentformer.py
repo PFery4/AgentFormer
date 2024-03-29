@@ -167,7 +167,7 @@ class ContextEncoder(nn.Module):
         self.dropout = ctx['tf_dropout']
         self.bias_self = ctx.get('bias_self', False)
         self.bias_other = ctx.get('bias_other', False)
-        self.bias_out = ctx.get('bias_self', True)
+        self.bias_out = ctx.get('bias_out', True)
         self.n_layer = ctx['context_encoder'].get('n_layer', 6)
         self.input_type = ctx['input_type']
         self.input_impute_markers = ctx['input_impute_markers']
@@ -277,7 +277,7 @@ class FutureEncoder(nn.Module):
         self.dropout = ctx['tf_dropout']
         self.bias_self = ctx.get('bias_self', False)
         self.bias_other = ctx.get('bias_other', False)
-        self.bias_out = ctx.get('bias_self', True)
+        self.bias_out = ctx.get('bias_out', True)
         self.n_layer = ctx['future_encoder'].get('n_layer', 6)
         self.out_mlp_dim = ctx['future_encoder'].get('out_mlp_dim', None)
         self.input_type = ctx['fut_input_type']
@@ -446,7 +446,7 @@ class FutureDecoder(nn.Module):
         self.dropout = ctx['tf_dropout']
         self.bias_self = ctx.get('bias_self', False)
         self.bias_other = ctx.get('bias_other', False)
-        self.bias_out = ctx.get('bias_self', True)
+        self.bias_out = ctx.get('bias_out', True)
         self.n_layer = ctx['future_decoder'].get('n_layer', 6)
         self.out_mlp_dim = ctx['future_decoder'].get('out_mlp_dim', None)
         self.learn_prior = ctx['learn_prior']
