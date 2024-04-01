@@ -153,12 +153,12 @@ class ContextEncoder(nn.Module):
 
         tf_in = self.input_fc(
             traj_in.view(-1, traj_in.shape[-1])
-        ).view(-1, 1, self.model_dim)                               # [Tobs * N, 1, features]
+        ).view(-1, 1, self.model_dim)                               # [Tobs * N, 1, model_dim]
 
         agent_enc_shuffle = data['agent_enc_shuffle'] if self.agent_enc_shuffle else None
         tf_in_pos = self.pos_encoder(
             tf_in, num_a=data['agent_num'], agent_enc_shuffle=agent_enc_shuffle
-        )                                                           # [Tobs * N, 1, features]
+        )                                                           # [Tobs * N, 1, model_dim]
 
         src_agent_mask = data['agent_mask'].clone()                 # [N, N]
         src_mask = generate_mask(
@@ -238,31 +238,41 @@ class FutureEncoder(nn.Module):
                 traj_in.append(map_enc)
             else:
                 raise ValueError('unknown input_type!')
-        traj_in = torch.cat(traj_in, dim=-1)
-        tf_in = self.input_fc(traj_in.view(-1, traj_in.shape[-1])).view(-1, 1, self.model_dim)
+        traj_in = torch.cat(traj_in, dim=-1)                # [Tpred, N, features]
+        tf_in = self.input_fc(
+            traj_in.view(-1, traj_in.shape[-1])
+        ).view(-1, 1, self.model_dim)                       # [Tpred * N, 1, model_dim]
         agent_enc_shuffle = data['agent_enc_shuffle'] if self.agent_enc_shuffle else None
-        tf_in_pos = self.pos_encoder(tf_in, num_a=data['agent_num'], agent_enc_shuffle=agent_enc_shuffle)
+        tf_in_pos = self.pos_encoder(
+            tf_in, num_a=data['agent_num'], agent_enc_shuffle=agent_enc_shuffle
+        )                                                   # [Tpred * N, 1, model_dim]
 
-        mem_agent_mask = data['agent_mask'].clone()
-        tgt_agent_mask = data['agent_mask'].clone()
-        mem_mask = generate_mask(tf_in.shape[0], data['context_enc'].shape[0], data['agent_num'], mem_agent_mask).to(tf_in.device)
-        tgt_mask = generate_mask(tf_in.shape[0], tf_in.shape[0], data['agent_num'], tgt_agent_mask).to(tf_in.device)
-        
-        tf_out, _ = self.tf_decoder(tf_in_pos, data['context_enc'], memory_mask=mem_mask, tgt_mask=tgt_mask, num_agent=data['agent_num'])
-        tf_out = tf_out.view(traj_in.shape[0], -1, self.model_dim)
+        mem_agent_mask = data['agent_mask'].clone()         # [N, N]
+        tgt_agent_mask = data['agent_mask'].clone()         # [N, N]
+        mem_mask = generate_mask(
+            tf_in.shape[0], data['context_enc'].shape[0], data['agent_num'], mem_agent_mask
+        ).to(tf_in.device)                                  # [Tpred * N, Tobs * N]
+        tgt_mask = generate_mask(
+            tf_in.shape[0], tf_in.shape[0], data['agent_num'], tgt_agent_mask
+        ).to(tf_in.device)                                  # [Tpred * N, Tpred * N]
+
+        tf_out, _ = self.tf_decoder(
+            tf_in_pos, data['context_enc'], memory_mask=mem_mask, tgt_mask=tgt_mask, num_agent=data['agent_num']
+        )                                                   # [Tpred * N, 1, model_dim]
+        tf_out = tf_out.view(traj_in.shape[0], -1, self.model_dim)      # [Tpred, N, model_dim]
 
         if self.pooling == 'mean':
-            h = torch.mean(tf_out, dim=0)
+            h = torch.mean(tf_out, dim=0)           # [N, model_dim]
         else:
-            h = torch.max(tf_out, dim=0)[0]
+            h = torch.max(tf_out, dim=0)[0]         # [N, model_dim]
         if self.out_mlp_dim is not None:
-            h = self.out_mlp(h)
-        q_z_params = self.q_z_net(h)
+            h = self.out_mlp(h)                     # [N, model_dim]
+        q_z_params = self.q_z_net(h)                # [N, 2 * nz]
         if self.z_type == 'gaussian':
             data['q_z_dist'] = Normal(params=q_z_params)
         else:
             data['q_z_dist'] = Categorical(logits=q_z_params, temp=self.z_tau_annealer.val())
-        data['q_z_samp'] = data['q_z_dist'].rsample()
+        data['q_z_samp'] = data['q_z_dist'].rsample()       # [N, nz]
 
 
 """ Future Decoder """
