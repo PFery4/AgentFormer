@@ -103,10 +103,10 @@ class SelfOtherAwareAttention(Module):
 
         # print(f"2. {q_self.shape, q_other.shape, k_self.shape, k_other.shape=}")
 
-        q_self = q_self.reshape(B, L, self.num_heads, self.qk_head_dim).transpose(1, 2)          # [B, H, L, t]
-        q_other = q_other.reshape(B, L, self.num_heads, self.qk_head_dim).transpose(1, 2)        # [B, H, L, t]
-        k_self = k_self.reshape(B, S, self.num_heads, self.qk_head_dim).permute(0, 2, 3, 1)      # [B, H, t, S]
-        k_other = k_other.reshape(B, S, self.num_heads, self.qk_head_dim).permute(0, 2, 3, 1)    # [B, H, t, S]
+        q_self = q_self.view(B, L, self.num_heads, self.qk_head_dim).transpose(1, 2)          # [B, H, L, t]
+        q_other = q_other.view(B, L, self.num_heads, self.qk_head_dim).transpose(1, 2)        # [B, H, L, t]
+        k_self = k_self.view(B, S, self.num_heads, self.qk_head_dim).permute(0, 2, 3, 1)      # [B, H, t, S]
+        k_other = k_other.view(B, S, self.num_heads, self.qk_head_dim).permute(0, 2, 3, 1)    # [B, H, t, S]
 
         # print(f"3. {q_self.shape, q_other.shape, k_self.shape, k_other.shape=}")
 
@@ -160,7 +160,7 @@ class AgentAwareAttention(SelfOtherAwareAttention):
 
         # mapping inputs to keys, queries and values
         v = self.w_v(v)                                                         # [B, S, V]
-        v = v.reshape(B, S, self.num_heads, self.v_head_dim).transpose(1, 2)    # [B, H, S, v]
+        v = v.view(B, S, self.num_heads, self.v_head_dim).transpose(1, 2)    # [B, H, S, v]
 
         # print(f"1. {v.shape=}")
 
@@ -272,17 +272,17 @@ class MapAgentAwareAttention(SelfOtherAwareAttention):
         # print(f"{q_map_self.shape, q_map_agents.shape, k_map_self.shape, k_map_agents.shape, v_map_.shape=}")
 
         # Tensor reshaping
-        q_traj_map = q_traj_map.reshape(B, L, self.num_heads, self.qk_map_head_dim).transpose(1, 2)     # [B, H, L, t]
-        k_traj_map = k_traj_map.reshape(
+        q_traj_map = q_traj_map.view(B, L, self.num_heads, self.qk_map_head_dim).transpose(1, 2)     # [B, H, L, t]
+        k_traj_map = k_traj_map.view(
             B, S, self.num_heads, self.qk_map_head_dim
         ).permute(0, 2, 3, 1)                                                                           # [B, H, m, S]
-        v_traj = v_traj.reshape(B, S, self.num_heads, self.v_head_dim).transpose(1, 2)                  # [B, H, S, v]
+        v_traj = v_traj.view(B, S, self.num_heads, self.v_head_dim).transpose(1, 2)                  # [B, H, S, v]
 
-        q_map_self = q_map_self.reshape(B, self.num_heads, 1, self.qk_map_head_dim)             # [B, H, 1, m]
-        q_map_agents = q_map_agents.reshape(B, self.num_heads, 1, self.qk_map_head_dim)         # [B, H, 1, m]
-        k_map_self = k_map_self.reshape(B, self.num_heads, self.qk_map_head_dim, 1)             # [B, H, m, 1]
-        k_map_agents = k_map_agents.reshape(B, self.num_heads, self.qk_head_dim, 1)             # [B, H, t, 1]
-        v_map_ = v_map_.reshape(B, self.num_heads, 1, self.v_head_dim)                          # [B, H, 1, v]
+        q_map_self = q_map_self.view(B, self.num_heads, 1, self.qk_map_head_dim)             # [B, H, 1, m]
+        q_map_agents = q_map_agents.view(B, self.num_heads, 1, self.qk_map_head_dim)         # [B, H, 1, m]
+        k_map_self = k_map_self.view(B, self.num_heads, self.qk_map_head_dim, 1)             # [B, H, m, 1]
+        k_map_agents = k_map_agents.view(B, self.num_heads, self.qk_head_dim, 1)             # [B, H, t, 1]
+        v_map_ = v_map_.view(B, self.num_heads, 1, self.v_head_dim)                          # [B, H, 1, v]
 
         # print(f"\n{q_traj_map.shape, k_traj_map.shape, v_traj.shape=}")
         # print(f"{q_map_self.shape, q_map_agents.shape, k_map_self.shape, k_map_agents.shape, v_map_.shape=}\n")
