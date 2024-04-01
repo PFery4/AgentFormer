@@ -102,6 +102,8 @@ class PositionalEncoding(nn.Module):
         timestep_window = torch.arange(*timestep_window, dtype=torch.int)       # [T_total]
         self.register_buffer('timestep_window', timestep_window)
         assert t_zero_index < self.timestep_window.shape[0]
+        self.t_index_shift = self.t_zero_index - self.timestep_window[0]
+
         if concat:
             self.fc = nn.Linear(2 * d_model, d_model)
 
@@ -118,17 +120,10 @@ class PositionalEncoding(nn.Module):
         pe[:, 1::2] = torch.cos(self.timestep_window.unsqueeze(1) * div_term)
         return pe       # [t_range, d_model]
 
-    def time_encode(self, sequence_timesteps: torch.Tensor) -> torch.Tensor:
-        # sequence_timesteps: [T_total]
-        # out: [T_total, self.d_model]
-        return self.pe[sequence_timesteps-self.timestep_window[0], ...]
-
     def forward(self, x: torch.Tensor, time_tensor: torch.Tensor):
         # x: [B, T, model_dim]
         # time_tensor: [B, T]
-        pos_enc = torch.stack(
-            [self.time_encode(time_sequence + self.t_zero_index) for time_sequence in time_tensor], dim=0
-        )    # [B, T, model_dim]
+        pos_enc = self.pe[time_tensor + self.t_index_shift]             # [B, T, model_dim]
 
         if self.concat:
             x = torch.cat([x, pos_enc], dim=-1)
