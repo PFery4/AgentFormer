@@ -324,17 +324,17 @@ class FutureDecoder(nn.Module):
             initialize_weights(self.p_z_net.modules())
 
     def decode_traj_ar(self, data, mode, context, pre_motion, pre_vel, pre_motion_scene_norm, z, sample_num, need_weights=False):
-        agent_num = data['agent_num']
+        agent_num = data['agent_num']       # N
         if self.pred_type == 'vel':
-            dec_in = pre_vel[[-1]]
+            dec_in = pre_vel[[-1]]                          # [1, N * K, 2]
         elif self.pred_type == 'pos':
-            dec_in = pre_motion[[-1]]
+            dec_in = pre_motion[[-1]]                       # [1, N * K, 2]
         elif self.pred_type == 'scene_norm':
-            dec_in = pre_motion_scene_norm[[-1]]
+            dec_in = pre_motion_scene_norm[[-1]]            # [1, N * K, 2]
         else:
-            dec_in = torch.zeros_like(pre_motion[[-1]])
-        dec_in = dec_in.view(-1, sample_num, dec_in.shape[-1])
-        z_in = z.view(-1, sample_num, z.shape[-1])
+            dec_in = torch.zeros_like(pre_motion[[-1]])     # [1, N * K, 2]
+        dec_in = dec_in.view(-1, sample_num, dec_in.shape[-1])      # [N, K, 2]
+        z_in = z.view(-1, sample_num, z.shape[-1])                  # [N, K, nz]
         in_arr = [dec_in, z_in]
         for key in self.input_type:
             if key == 'heading':
@@ -345,38 +345,50 @@ class FutureDecoder(nn.Module):
                 in_arr.append(map_enc)
             else:
                 raise ValueError('wrong decode input type!')
-        dec_in_z = torch.cat(in_arr, dim=-1)
+        dec_in_z = torch.cat(in_arr, dim=-1)                        # [N, K, features]
 
-        mem_agent_mask = data['agent_mask'].clone()
-        tgt_agent_mask = data['agent_mask'].clone()
+        mem_agent_mask = data['agent_mask'].clone()             # [N, N]
+        tgt_agent_mask = data['agent_mask'].clone()             # [N, N]
 
         for i in range(self.future_frames):
-            tf_in = self.input_fc(dec_in_z.view(-1, dec_in_z.shape[-1])).view(dec_in_z.shape[0], -1, self.model_dim)
+            tf_in = self.input_fc(
+                dec_in_z.view(-1, dec_in_z.shape[-1])
+            ).view(dec_in_z.shape[0], -1, self.model_dim)       # [N * (i+1), K, model_dim]
             agent_enc_shuffle = data['agent_enc_shuffle'] if self.agent_enc_shuffle else None
-            tf_in_pos = self.pos_encoder(tf_in, num_a=agent_num, agent_enc_shuffle=agent_enc_shuffle, t_offset=self.past_frames-1 if self.pos_offset else 0)
+            tf_in_pos = self.pos_encoder(
+                tf_in, num_a=agent_num, agent_enc_shuffle=agent_enc_shuffle,
+                t_offset=self.past_frames-1 if self.pos_offset else 0
+            )                                                   # [N * (i+1), K, model_dim]
             # tf_in_pos = tf_in
-            mem_mask = generate_mask(tf_in.shape[0], context.shape[0], data['agent_num'], mem_agent_mask).to(tf_in.device)
-            tgt_mask = generate_ar_mask(tf_in_pos.shape[0], agent_num, tgt_agent_mask).to(tf_in.device)
+            mem_mask = generate_mask(
+                tf_in.shape[0], context.shape[0], data['agent_num'], mem_agent_mask
+            ).to(tf_in.device)                                  # [N * (i+1), N * Tobs]
+            tgt_mask = generate_ar_mask(
+                tf_in_pos.shape[0], agent_num, tgt_agent_mask
+            ).to(tf_in.device)                                  # [N * (i+1), N * (i+1)]
 
-            tf_out, attn_weights = self.tf_decoder(tf_in_pos, context, memory_mask=mem_mask, tgt_mask=tgt_mask, num_agent=data['agent_num'], need_weights=need_weights)
+            tf_out, attn_weights = self.tf_decoder(
+                tf_in_pos, context, memory_mask=mem_mask, tgt_mask=tgt_mask,
+                num_agent=data['agent_num'], need_weights=need_weights
+            )                                                   # [N * (i+1), K, model_dim], dict
 
-            out_tmp = tf_out.view(-1, tf_out.shape[-1])
+            out_tmp = tf_out.view(-1, tf_out.shape[-1])         # [(N * (i+1)) * K, model_dim]
             if self.out_mlp_dim is not None:
-                out_tmp = self.out_mlp(out_tmp)
-            seq_out = self.out_fc(out_tmp).view(tf_out.shape[0], -1, self.forecast_dim)
+                out_tmp = self.out_mlp(out_tmp)                 # [(N * (i+1)) * K, model_dim]
+            seq_out = self.out_fc(out_tmp).view(tf_out.shape[0], -1, self.forecast_dim)     # [N * (i+1), K, 2]
             if self.pred_type == 'scene_norm' and self.sn_out_type in {'vel', 'norm'}:
-                norm_motion = seq_out.view(-1, agent_num * sample_num, seq_out.shape[-1])
+                norm_motion = seq_out.view(-1, agent_num * sample_num, seq_out.shape[-1])   # [i+1, N * K, 2]
                 if self.sn_out_type == 'vel':
                     norm_motion = torch.cumsum(norm_motion, dim=0)
                 if self.sn_out_heading:
                     angles = data['heading'].repeat_interleave(sample_num)
                     norm_motion = rotation_2d_torch(norm_motion, angles)[0]
-                seq_out = norm_motion + pre_motion_scene_norm[[-1]]
-                seq_out = seq_out.view(tf_out.shape[0], -1, seq_out.shape[-1])
+                seq_out = norm_motion + pre_motion_scene_norm[[-1]]                         # [i+1, N * K, 2]
+                seq_out = seq_out.view(tf_out.shape[0], -1, seq_out.shape[-1])              # [N * (i+1), K, 2]
             if self.ar_detach:
-                out_in = seq_out[-agent_num:].clone().detach()
+                out_in = seq_out[-agent_num:].clone().detach()          # [N, K, 2]
             else:
-                out_in = seq_out[-agent_num:]
+                out_in = seq_out[-agent_num:]                           # [N, K, 2]
             # create dec_in_z
             in_arr = [out_in, z_in]
             for key in self.input_type:
@@ -386,25 +398,25 @@ class FutureDecoder(nn.Module):
                     in_arr.append(map_enc)
                 else:
                     raise ValueError('wrong decoder input type!')
-            out_in_z = torch.cat(in_arr, dim=-1)
-            dec_in_z = torch.cat([dec_in_z, out_in_z], dim=0)
+            out_in_z = torch.cat(in_arr, dim=-1)                    # [N, K, features]
+            dec_in_z = torch.cat([dec_in_z, out_in_z], dim=0)       # [N * (i+2), K, features]
 
-        seq_out = seq_out.view(-1, agent_num * sample_num, seq_out.shape[-1])
-        data[f'{mode}_seq_out'] = seq_out
+        seq_out = seq_out.view(-1, agent_num * sample_num, seq_out.shape[-1])       # [Tpred, N * K, 2]
+        data[f'{mode}_seq_out'] = seq_out                                           # [Tpred, N * K, 2]
 
         if self.pred_type == 'vel':
-            dec_motion = torch.cumsum(seq_out, dim=0)
-            dec_motion += pre_motion[[-1]]
+            dec_motion = torch.cumsum(seq_out, dim=0)           # [Tpred, N * K, 2]
+            dec_motion += pre_motion[[-1]]                      # [Tpred, N * K, 2]
         elif self.pred_type == 'pos':
-            dec_motion = seq_out.clone()
+            dec_motion = seq_out.clone()                        # [Tpred, N * K, 2]
         elif self.pred_type == 'scene_norm':
-            dec_motion = seq_out + data['scene_orig']
+            dec_motion = seq_out + data['scene_orig']           # [Tpred, N * K, 2]
         else:
-            dec_motion = seq_out + pre_motion[[-1]]
+            dec_motion = seq_out + pre_motion[[-1]]             # [Tpred, N * K, 2]
 
-        dec_motion = dec_motion.transpose(0, 1).contiguous()       # M x frames x 7
+        dec_motion = dec_motion.transpose(0, 1).contiguous()       # [N * K, Tpred, 2]
         if mode == 'infer':
-            dec_motion = dec_motion.view(-1, sample_num, *dec_motion.shape[1:])        # M x Samples x frames x 3
+            dec_motion = dec_motion.view(-1, sample_num, *dec_motion.shape[1:])        # [N, K, Tpred, 2]
         data[f'{mode}_dec_motion'] = dec_motion
         if need_weights:
             data['attn_weights'] = attn_weights
@@ -413,16 +425,16 @@ class FutureDecoder(nn.Module):
         raise NotImplementedError
 
     def forward(self, data, mode, sample_num=1, autoregress=True, z=None, need_weights=False):
-        context = data['context_enc'].repeat_interleave(sample_num, dim=1)       # 80 x 64
-        pre_motion = data['pre_motion'].repeat_interleave(sample_num, dim=1)             # 10 x 80 x 2
+        context = data['context_enc'].repeat_interleave(sample_num, dim=1)                  # [Tobs * N, K, model_dim]
+        pre_motion = data['pre_motion'].repeat_interleave(sample_num, dim=1)                # [Tobs, N * K, 2]
         pre_vel = data['pre_vel'].repeat_interleave(sample_num, dim=1) if self.pred_type == 'vel' else None
-        pre_motion_scene_norm = data['pre_motion_scene_norm'].repeat_interleave(sample_num, dim=1)
-        
+        pre_motion_scene_norm = data['pre_motion_scene_norm'].repeat_interleave(sample_num, dim=1)  # [Tobs, N * K, 2]
+
         # p(z)
         prior_key = 'p_z_dist' + ('_infer' if mode == 'infer' else '')
         if self.learn_prior:
-            h = data['agent_context'].repeat_interleave(sample_num, dim=0)
-            p_z_params = self.p_z_net(h)
+            h = data['agent_context'].repeat_interleave(sample_num, dim=0)          # [N * K, model_dim]
+            p_z_params = self.p_z_net(h)                                            # [N * K, 2 * nz]
             if self.z_type == 'gaussian':
                 data[prior_key] = Normal(params=p_z_params)
             else:
@@ -435,9 +447,9 @@ class FutureDecoder(nn.Module):
 
         if z is None:
             if mode in {'train', 'recon'}:
-                z = data['q_z_samp'] if mode == 'train' else data['q_z_dist'].mode()
+                z = data['q_z_samp'] if mode == 'train' else data['q_z_dist'].mode()        # [N * K, nz]
             elif mode == 'infer':
-                z = data['p_z_dist_infer'].sample()
+                z = data['p_z_dist_infer'].sample()                                         # [N * K, nz]
             else:
                 raise ValueError('Unknown Mode!')
 
