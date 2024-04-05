@@ -13,6 +13,7 @@ import copy
 import glob, glob2
 from torch import nn
 
+from typing import Optional
 from io import TextIOWrapper
 
 
@@ -411,3 +412,28 @@ def load_list_from_folder(folder_path, ext_filter=None, depth=1, recursive=False
         file.close()
 
     return fulllist, num_elem
+
+
+def get_cuda_device(device_index: Optional[int] = None):
+    # DELFTBLUE GPU ##################################################################################################
+    assert torch.cuda.is_available(), "Torch CUDA is not available!"
+    print("Torch CUDA is available")
+
+    num_of_devices = torch.cuda.device_count()
+    assert num_of_devices, "No CUDA devices!"
+
+    if device_index is None:
+        device_index = torch.cuda.current_device()
+
+    assert device_index < num_of_devices, "device index out of range!"
+
+    print(f"Number of CUDA devices: {num_of_devices}")
+    device_id = torch.cuda.device(device_index)
+    device_name = torch.cuda.get_device_name(device_index)
+    print(f"Selected device index: {device_index}")
+    print(f"Selected device id: {device_id}")
+    print(f"Selected device name: {device_name}")
+    device = torch.device('cuda', index=device_index)
+    torch.cuda.set_device(device_index)
+
+    return device
