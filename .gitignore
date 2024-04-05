@@ -17,3 +17,6 @@ datasets/SDD/*
 
 # ignoring the compressed zip file of agentformer_models
 agentformer_models.zip
+
+# ignoring the contents of the test_configs directory inside cfg/sdd
+cfg/sdd/test_configs/*
