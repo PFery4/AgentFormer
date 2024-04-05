@@ -167,15 +167,15 @@ if __name__ == '__main__':
         with open(os.path.join(saved_preds_dir, filename), 'rb') as f:
             pred_data = pickle.load(f)
 
-        valid_ids = pred_data['valid_id'][0]                        # [N]
-        gt_identities = pred_data['pred_identity_sequence'][0]      # [P]
-        gt_timesteps = pred_data['pred_timestep_sequence'][0]       # [P]
-        gt_positions = pred_data['pred_position_sequence'][0]       # [P, 2]
+        valid_ids = pred_data['valid_id'][0].to(model.device)                        # [N]
+        gt_identities = pred_data['pred_identity_sequence'][0].to(model.device)      # [P]
+        gt_timesteps = pred_data['pred_timestep_sequence'][0].to(model.device)       # [P]
+        gt_positions = pred_data['pred_position_sequence'][0].to(model.device)       # [P, 2]
 
-        infer_pred_identities = pred_data['infer_dec_agents'][0]        # [P]
-        infer_pred_timesteps = pred_data['infer_dec_timesteps']         # [P]
-        infer_pred_positions = pred_data['infer_dec_motion']            # [K, P, 2]
-        infer_pred_past_mask = pred_data['infer_dec_past_mask']         # [P]
+        infer_pred_identities = pred_data['infer_dec_agents'][0].to(model.device)        # [P]
+        infer_pred_timesteps = pred_data['infer_dec_timesteps'].to(model.device)         # [P]
+        infer_pred_positions = pred_data['infer_dec_motion'].to(model.device)            # [K, P, 2]
+        infer_pred_past_mask = pred_data['infer_dec_past_mask'].to(model.device)         # [P]
 
         if cfg.get('impute', False):
             true_gt_pred_mask = ~in_data['true_observation_mask'][0]         # [N, T_total]
