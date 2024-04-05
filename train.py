@@ -13,7 +13,8 @@ from data.sdd_dataloader import dataset_dict
 from model.model_lib import model_dict
 from utils.torch import get_scheduler
 from utils.config import Config
-from utils.utils import prepare_seed, print_log, AverageMeter, convert_secs2time, get_timestring, memory_report
+from utils.utils import prepare_seed, print_log, AverageMeter, convert_secs2time, get_timestring,\
+    get_cuda_device, memory_report
 
 from typing import Optional
 from io import TextIOWrapper
@@ -236,57 +237,20 @@ if __name__ == '__main__':
     parser.add_argument('--cfg', default=None)
     parser.add_argument('--checkpoint_name', default=None)
     parser.add_argument('--tmp', action='store_true', default=False)
-    parser.add_argument('--gpu', type=int, default=0)
+    parser.add_argument('--gpu', default=None)
     parser.add_argument('--dataset_class', default='hdf5')          # [hdf5, pickle, torch_preprocess]
     args = parser.parse_args()
 
     assert args.dataset_class in ['hdf5', 'pickle', 'torch_preprocess']
+    args.gpu = int(args.gpu) if args.gpu is not None else args.gpu
 
     """ setup """
     cfg = Config(args.cfg, args.tmp, create_dirs=False)
     prepare_seed(cfg.seed)
     torch.set_default_dtype(torch.float32)
-    # DELFTBLUE GPU ##################################################################################################
-    # device = torch.device('cuda', index=args.gpu) if torch.cuda.is_available() else torch.device('cpu')
-    # if torch.cuda.is_available():
-    #     device = torch.device('cuda', index=args.gpu)
-    #     torch.cuda.set_device(args.gpu)
-    # else:
-    #     device = torch.device('cpu')
-    #
-    # print("-" * 120)
-    # print(f"{torch.cuda.is_available()=}")
-    # print(f"{torch.cuda.device_count()=}")
-    # print(f"{torch.cuda.current_device()=}")
-    # print(f"{torch.cuda.device(torch.cuda.current_device())=}")
-    # print(f"{torch.cuda.get_device_name(torch.cuda.current_device())=}")
-    # print(f"{device=}")
-    # print("-" * 120)
-    #
-    # device = torch.device('cuda', index=args.gpu) if torch.cuda.is_available() else torch.device('cpu')
-    # if torch.cuda.is_available(): torch.cuda.set_device(args.gpu)
-    cuda_avail = torch.cuda.is_available()
-    if cuda_avail:
-        print("Torch CUDA is available")
-        num_of_devices = torch.cuda.device_count()
-        if num_of_devices:
-            print(f"Number of CUDA devices: {num_of_devices}")
-            current_device = torch.cuda.current_device()
-            current_device_id = torch.cuda.device(current_device)
-            current_device_name = torch.cuda.get_device_name(current_device)
-            print(f"Current device: {current_device}")
-            print(f"Current device id: {current_device_id}")
-            print(f"Current device name: {current_device_name}")
-            print()
-            device = torch.device('cuda', index=current_device)
-            torch.cuda.set_device(current_device)
-        else:
-            print("No CUDA devices!")
-            sys.exit()
-    else:
-        print("Torch CUDA is not available!")
-        sys.exit()
-    # DELFTBLUE GPU ##################################################################################################
+
+    # cuda device
+    device = get_cuda_device(device_index=args.gpu)
 
     time_str = get_timestring()
     log = open(os.path.join(cfg.log_dir, 'log.txt'), 'a+')

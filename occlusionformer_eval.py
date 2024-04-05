@@ -9,7 +9,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from utils.config import Config, REPO_ROOT
-from utils.utils import prepare_seed, print_log, mkdir_if_missing
+from utils.utils import prepare_seed, print_log, mkdir_if_missing, get_cuda_device
 from utils.performance_metrics import \
     compute_samples_ADE,\
     compute_samples_FDE,\
@@ -28,38 +28,20 @@ if __name__ == '__main__':
     parser.add_argument('--data_split', type=str, default='test')
     parser.add_argument('--checkpoint_name', default='best_val')        # can be 'best_val' / 'untrained' / <model_id>
     parser.add_argument('--tmp', action='store_true', default=False)
-    parser.add_argument('--gpu', type=int, default=0)
+    parser.add_argument('--gpu', default=None)
     parser.add_argument('--dataset_class', default='hdf5')          # [hdf5, pickle, torch_preprocess]
     args = parser.parse_args()
 
     split = args.data_split
     checkpoint_name = args.checkpoint_name
+    args.gpu = int(args.gpu) if args.gpu is not None else args.gpu
+
     cfg = Config(cfg_id=args.cfg, tmp=args.tmp, create_dirs=False)
     prepare_seed(cfg.seed)
     torch.set_default_dtype(torch.float32)
 
     # device
-    cuda_avail = torch.cuda.is_available()
-    if cuda_avail:
-        print("Torch CUDA is available")
-        num_of_devices = torch.cuda.device_count()
-        if num_of_devices:
-            print(f"Number of CUDA devices: {num_of_devices}")
-            current_device = torch.cuda.current_device()
-            current_device_id = torch.cuda.device(current_device)
-            current_device_name = torch.cuda.get_device_name(current_device)
-            print(f"Current device: {current_device}")
-            print(f"Current device id: {current_device_id}")
-            print(f"Current device name: {current_device_name}")
-            print()
-            device = torch.device('cuda', index=current_device)
-            torch.cuda.set_device(current_device)
-        else:
-            print("No CUDA devices!")
-            sys.exit()
-    else:
-        print("Torch CUDA is not available!")
-        sys.exit()
+    device = get_cuda_device(device_index=args.gpu)
 
     # log
     log = open(os.path.join(cfg.log_dir, 'log_test.txt'), 'w')
