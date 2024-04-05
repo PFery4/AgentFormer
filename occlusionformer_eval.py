@@ -66,7 +66,7 @@ if __name__ == '__main__':
             checkpoint_name = cfg.get_best_val_checkpoint_name()
             print(f"Best validation checkpoint name is: {checkpoint_name}")
         cp_path = cfg.model_path % checkpoint_name
-        assert os.path.exists(cp_path)
+        assert os.path.exists(cp_path), f"checkpoint path does not exist:\n{cp_path}"
         print_log(f'loading model from checkpoint: {cp_path}', log, display=True)
         model_cp = torch.load(cp_path, map_location='cpu')
         model.load_state_dict(model_cp['model_dict'])
