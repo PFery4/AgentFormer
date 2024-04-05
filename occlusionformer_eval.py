@@ -61,20 +61,18 @@ if __name__ == '__main__':
     model.eval()
     if model_id in ['const_velocity', 'oracle']:
         checkpoint_name = 'untrained'
-    elif checkpoint_name == 'best_val':
-        # TODO: Make sure the loading will work in case we submit a checkpoint_name instead of 'best_val'
-        checkpoint_name = cfg.get_best_val_checkpoint_name()
-        print(f"Best validation checkpoint name is: {checkpoint_name}")
+    else:
+        if checkpoint_name == 'best_val':
+            checkpoint_name = cfg.get_best_val_checkpoint_name()
+            print(f"Best validation checkpoint name is: {checkpoint_name}")
         cp_path = cfg.model_path % checkpoint_name
+        assert os.path.exists(cp_path)
         print_log(f'loading model from checkpoint: {cp_path}', log, display=True)
         model_cp = torch.load(cp_path, map_location='cpu')
         model.load_state_dict(model_cp['model_dict'])
 
     # loading model predictions
-    if checkpoint_name == 'untrained':
-        saved_preds_dir = os.path.join(cfg.result_dir, sdd_test_set.dataset_name, 'untrained', split)
-    else:
-        saved_preds_dir = os.path.join(cfg.result_dir, sdd_test_set.dataset_name, checkpoint_name, split)
+    saved_preds_dir = os.path.join(cfg.result_dir, sdd_test_set.dataset_name, checkpoint_name, split)
     assert os.path.exists(saved_preds_dir)
     log_str = f'loading predictions from the following directory:\n{saved_preds_dir}\n\n'
     print_log(log_str, log=log)
