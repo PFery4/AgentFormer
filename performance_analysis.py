@@ -510,8 +510,29 @@ if __name__ == '__main__':
     if args.perf_summary:
         print("\n\nPERFORMANCE SUMMARY:\n\n")
 
-        # experiment_names = []
-        experiment_names = EXPERIMENTS
+        # experiment_names = EXPERIMENTS
+        experiment_names = [
+            'original_100_pre',
+            'original_101_pre',
+            'original_102_pre',
+            'original_103_pre',
+            'original_104_pre',
+            'original_100',
+            'original_101',
+            'original_102',
+            'original_103',
+            'original_104',
+            'occlusionformer_basis_bias_1_pre',
+            'occlusionformer_basis_bias_2_pre',
+            'occlusionformer_basis_bias_3_pre',
+            'occlusionformer_basis_bias_4_pre',
+            'occlusionformer_basis_bias_5_pre',
+            'occlusionformer_basis_bias_1',
+            'occlusionformer_basis_bias_2',
+            'occlusionformer_basis_bias_3',
+            'occlusionformer_basis_bias_4',
+            'occlusionformer_basis_bias_5',
+        ]
 
         # metric_names = DISTANCE_METRICS+PRED_LENGTHS+OCCLUSION_MAP_SCORES
         metric_names = ADE_SCORES + FDE_SCORES
@@ -865,32 +886,29 @@ if __name__ == '__main__':
         experiment_name = OCCLUSIONFORMER_CAUSAL_ATTENTION_FULLY_OBSERVED_314
         experiment_name = OCCLUSIONFORMER_CAUSAL_ATTENTION_FULLY_OBSERVED
 
-        # experiment_list = [
-        #     f"{OCCLUSIONFORMER_CAUSAL_ATTENTION_FULLY_OBSERVED}_pre",
-        #     f"{OCCLUSIONFORMER_CAUSAL_ATTENTION_FULLY_OBSERVED_162}_pre",
-        #     f"{OCCLUSIONFORMER_CAUSAL_ATTENTION_FULLY_OBSERVED_314}_pre",
-        # ]
         experiment_list = [
-            # CONST_VEL_OCCLUSION_SIMULATION,
-            OCCLUSIONFORMER_NO_MAP,
-            OCCLUSIONFORMER_WITH_OCCL_MAP
+            'occlusionformer_basis_bias_1',
+            'occlusionformer_basis_bias_2',
+            'occlusionformer_basis_bias_3',
+            'occlusionformer_basis_bias_4',
+            'occlusionformer_basis_bias_5',
         ]
 
         # experiment_name = experiment_name + '_pre'
         print(f"{experiment_name=}")
         instance_number, show_pred_ids = 1000, [452]
-        instance_number, show_pred_ids = 2000, [116, 481]
         instance_number, show_pred_ids = 3000, [14]
         instance_number, show_pred_ids = 6000, [2]          # single agent, moving forward
-        instance_number, show_pred_ids = 7698, [117]
         instance_number, show_pred_ids = 8000, [12]         # fast agent (cyclist) (no occlusion)
         instance_number, show_pred_ids = 9000, [119, 217]
         instance_number, show_pred_ids = 9998, [13]         # productive use of occlusion map
+        instance_number, show_pred_ids = 2000, [116, 481]
+        instance_number, show_pred_ids = 8881, [181]        # large turning maneuver under occlusion
         instance_number, show_pred_ids = 5000, [194, 222, 314]
+        instance_number, show_pred_ids = 0, [66, 68, 69]
+        instance_number, show_pred_ids = 7698, [117]
         instance_number, show_pred_ids = 500, [20, 41, 98, 111]
         instance_number, show_pred_ids = 4000, [4, 10]          # idles
-        instance_number, show_pred_ids = 8881, [181]        # large turning maneuver under occlusion
-        instance_number, show_pred_ids = 0, [66, 68, 69]
         # instance_number, show_pred_ids = 11025, [110]          # what?
         #
         # # using occlusion map, OAO / OAC_t0 = inf (OAC_t0 is 0.)
@@ -1200,17 +1218,17 @@ if __name__ == '__main__':
     if args.comp_phase_1_2:
         # checking the performance difference between phase 1 (model) and phase 2 (model + Dlow for diversity sampling)
         experiment_list = [
-            SDD_BASELINE_OCCLUSIONFORMER,
-            BASELINE_NO_POS_CONCAT,
-            OCCLUSIONFORMER_NO_MAP,
-            OCCLUSIONFORMER_CAUSAL_ATTENTION,
-            OCCLUSIONFORMER_IMPUTED,
-            OCCLUSIONFORMER_WITH_OCCL_MAP,
-            OCCLUSIONFORMER_WITH_OCCL_MAP_IMPUTED,
-            OCCLUSIONFORMER_MOMENTARY,
-            OCCLUSIONFORMER_CAUSAL_ATTENTION_FULLY_OBSERVED,
             OCCLUSIONFORMER_CAUSAL_ATTENTION_FULLY_OBSERVED_314,
-            OCCLUSIONFORMER_CAUSAL_ATTENTION_FULLY_OBSERVED_162
+            BASELINE_NO_POS_CONCAT,
+            OCCLUSIONFORMER_CAUSAL_ATTENTION,
+            OCCLUSIONFORMER_MOMENTARY,
+            SDD_BASELINE_OCCLUSIONFORMER,
+            OCCLUSIONFORMER_WITH_OCCL_MAP,
+            OCCLUSIONFORMER_NO_MAP,
+            OCCLUSIONFORMER_WITH_OCCL_MAP_IMPUTED,
+            OCCLUSIONFORMER_IMPUTED,
+            OCCLUSIONFORMER_CAUSAL_ATTENTION_FULLY_OBSERVED_162,
+            OCCLUSIONFORMER_CAUSAL_ATTENTION_FULLY_OBSERVED,
         ]
 
         metric_names = ADE_SCORES + FDE_SCORES
