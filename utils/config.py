@@ -37,6 +37,9 @@ class Config:
             recreate_dirs(self.tb_dir)
 
     def get_best_val_checkpoint_name(self):
+        if self.yml_dict['model_id'] in {'const_velocity', 'oracle'}:
+            return 'untrained'
+        
         val_csv_path = os.path.join(self.model_dir, 'models.csv')
         assert os.path.exists(val_csv_path)
         val_csv = pd.read_csv(val_csv_path)
