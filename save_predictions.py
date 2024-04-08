@@ -50,19 +50,17 @@ if __name__ == '__main__':
     model.eval()
     if model_id in ['const_velocity', 'oracle']:
         checkpoint_name = 'untrained'
-    elif checkpoint_name == 'best_val':
-        checkpoint_name = cfg.get_best_val_checkpoint_name()
-        print(f"Best validation checkpoint name is: {checkpoint_name}")
+    else:
+        if checkpoint_name == 'best_val':
+            checkpoint_name = cfg.get_best_val_checkpoint_name()
+            print(f"Best validation checkpoint name is: {checkpoint_name}")
         cp_path = cfg.model_path % checkpoint_name
         print_log(f'loading model from checkpoint: {cp_path}', log, display=True)
         model_cp = torch.load(cp_path, map_location='cpu')
         model.load_state_dict(model_cp['model_dict'])
 
     # saving model predictions
-    if checkpoint_name == 'untrained':
-        save_dir = os.path.join(cfg.result_dir, sdd_test_set.dataset_name, 'untrained', split)
-    else:
-        save_dir = os.path.join(cfg.result_dir, sdd_test_set.dataset_name, checkpoint_name, split)
+    save_dir = os.path.join(cfg.result_dir, sdd_test_set.dataset_name, checkpoint_name, split)
     log_str = f'saving predictions under the following directory:\n{save_dir}\n\n'
     print_log(log_str, log=log)
     mkdir_if_missing(save_dir)
