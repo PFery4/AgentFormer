@@ -690,7 +690,33 @@ class PickleDatasetSDD(PresavedDatasetSDD):
 
         self.pickle_files = sorted(glob.glob1(self.dataset_dir, "*.pickle"))
 
-        if self.split == 'val' and parser.validation_set_size is not None:
+        if parser.get('difficult', False):
+            print("KEEPING ONLY THE DIFFICULT CASES")
+
+            # verify the dataset is the correct configuration
+            assert self.occlusion_process == 'occlusion_simulation'
+            assert not self.impute
+            assert not self.momentary
+
+            from utils.performance_analysis import get_perf_scores_df
+
+            cv_perf_df = get_perf_scores_df(
+                experiment_name='const_vel_occlusion_simulation',
+                model_name='untrained',
+                split=self.split
+            )
+            cv_perf_df = cv_perf_df[cv_perf_df['past_pred_length'] > 0]
+            cv_perf_df = cv_perf_df[cv_perf_df['OAC_t0'] == 0.]
+
+            difficult_instances = cv_perf_df.index.get_level_values('idx').unique().tolist()
+            difficult_instances = [f'{instance:08}.pickle' for instance in difficult_instances]
+
+            difficult_mask = np.in1d(self.pickle_files, difficult_instances)
+
+            difficult_pickle_files = list(np.array(self.pickle_files)[difficult_mask])
+            self.pickle_files = difficult_pickle_files
+
+        elif self.split == 'val' and parser.validation_set_size is not None:
             assert len(self.pickle_files) > parser.validation_set_size
             # Training set might be quite large. When that is the case, we prefer to validate after every
             # <parser.validation_freq> batches rather than every epoch (i.e., validating multiple times per epoch).
@@ -759,7 +785,34 @@ class HDF5DatasetSDD(PresavedDatasetSDD):
 
             self.separate_dataset_keys = [key for key in h5_file.keys() if not key.isdecimal() and key not in ['seq', 'frame']]
 
-        if self.split == 'val' and len(self.instance_names) > parser.validation_set_size:
+        if parser.get('difficult', False):
+            print("KEEPING ONLY THE DIFFICULT CASES")
+
+            # verify the dataset is the correct configuration
+            assert self.occlusion_process == 'occlusion_simulation'
+            assert not self.impute
+            assert not self.momentary
+
+            from utils.performance_analysis import get_perf_scores_df
+
+            cv_perf_df = get_perf_scores_df(
+                experiment_name='const_vel_occlusion_simulation',
+                model_name='untrained',
+                split=self.split
+            )
+            cv_perf_df = cv_perf_df[cv_perf_df['past_pred_length'] > 0]
+            cv_perf_df = cv_perf_df[cv_perf_df['OAC_t0'] == 0.]
+
+            difficult_instances = cv_perf_df.index.get_level_values('idx').unique().tolist()
+            difficult_instances = [f'{instance:08}' for instance in difficult_instances]
+            difficult_mask = np.in1d(self.instance_names, difficult_instances)
+
+            difficult_instance_names = list(np.array(self.instance_names)[difficult_mask])
+            difficult_instance_nums = list(np.array(self.instance_nums)[difficult_mask])
+            self.instance_names = difficult_instance_names
+            self.instance_nums = difficult_instance_nums
+
+        elif self.split == 'val' and len(self.instance_names) > parser.validation_set_size:
             assert len(self.instance_names) > parser.validation_set_size
             # Training set might be quite large. When that is the case, we prefer to validate after every
             # <parser.validation_freq> batches rather than every epoch (i.e., validating multiple times per epoch).
@@ -835,19 +888,26 @@ dataset_dict = {
 
 
 if __name__ == '__main__':
+    import utils.sdd_visualize
+    from utils.utils import prepare_seed
 
     # config_str = 'dataset_fully_observed_momentary_2_no_rand_rot'
     # config_str = 'dataset_fully_observed_no_rand_rot'
-    config_str = 'dataset_occlusion_simulation_no_rand_rot'
+    # config_str = 'dataset_occlusion_simulation_no_rand_rot'
+    # config_str = 'dataset_occlusion_simulation'
+    # config_str = 'original_100_pre'
+    # dataset_class = 'torch_preprocess'
     # dataset_class = 'hdf5'
-    dataset_class = 'torch_preprocess'
-    split = 'test'
+    # dataset_class = 'pickle'
+    # split = 'test'
+    # split = 'train'
 
-    import utils.sdd_visualize
-    from utils.utils import prepare_seed
+    # config_str, dataset_class, split = 'dataset_occlusion_simulation', 'hdf5', 'test'
+    config_str, dataset_class, split = 'original_100_pre', 'pickle', 'train'
+
     cfg = Config(config_str)
     prepare_seed(cfg.seed)
-    torch_dataset = dataset_dict[dataset_class](parser=cfg, log=None, split='test')
+    torch_dataset = dataset_dict[dataset_class](parser=cfg, log=None, split=split)
 
     out_dict = torch_dataset.__getitem__(50)
     if 'map_homography' not in out_dict.keys():
