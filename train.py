@@ -318,6 +318,17 @@ if __name__ == '__main__':
         if 'batch_idx' in model_cp:
             start_batch_idx = model_cp['batch_idx'] + 1
 
+    # if the loaded model was saved at the very end of an epoch, we manually set the epoch and batch indices to the
+    # beginning of the next epoch.
+    if start_batch_idx == len(training_loader):
+        log_str = f"Loaded model was saved at the end of epoch {start_epoch_idx} (at batch #{start_batch_idx})"
+        print_log(log_str, log=log)
+        start_epoch_idx += 1
+        start_batch_idx = 0
+        log_str = f"resetting start conditions to the beginning of the next epoch: " \
+                  f"epoch {start_epoch_idx}, batch # {start_batch_idx}"
+        print_log(log_str, log=log)
+
     """ start training """
 
     model.train()
