@@ -716,7 +716,7 @@ class PickleDatasetSDD(PresavedDatasetSDD):
             difficult_pickle_files = list(np.array(self.pickle_files)[difficult_mask])
             self.pickle_files = difficult_pickle_files
 
-        elif self.split == 'val' and parser.validation_set_size is not None:
+        elif self.split == 'val' and parser.get('validation_set_size', None) is not None:
             assert len(self.pickle_files) > parser.validation_set_size
             # Training set might be quite large. When that is the case, we prefer to validate after every
             # <parser.validation_freq> batches rather than every epoch (i.e., validating multiple times per epoch).
@@ -812,7 +812,7 @@ class HDF5DatasetSDD(PresavedDatasetSDD):
             self.instance_names = difficult_instance_names
             self.instance_nums = difficult_instance_nums
 
-        elif self.split == 'val' and len(self.instance_names) > parser.validation_set_size:
+        elif self.split == 'val' and parser.get('validation_set_size', None) is not None:
             assert len(self.instance_names) > parser.validation_set_size
             # Training set might be quite large. When that is the case, we prefer to validate after every
             # <parser.validation_freq> batches rather than every epoch (i.e., validating multiple times per epoch).
