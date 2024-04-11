@@ -101,47 +101,31 @@ class MapAgentAwareAttentionEncoderLayer(BaseAttentionEncoderLayer):
     def __init__(
             self, d_model: int, n_head: int,
             dim_feedforward: int = 2048, dropout: float = 0.1, activation: str = 'relu',
-            bias_self: bool = False, bias_other: bool = False, bias_out: bool = True
+            bias_self: bool = False, bias_other: bool = False, bias_out: bool = True,
+            bias_map: bool = False
     ):
         super().__init__(
             d_model=d_model, dim_feedforward=dim_feedforward, dropout=dropout, activation=activation
         )
         self.self_attn = MapAgentAwareAttention(
             traj_dim=d_model, map_dim=d_model, v_dim=d_model, num_heads=n_head, dropout=dropout,
-            bias_self=bias_self, bias_other=bias_other, bias_out=bias_out
+            bias_self=bias_self, bias_other=bias_other, bias_out=bias_out, bias_map=bias_map
         )
-
-        self.map_linear1 = torch.nn.Linear(d_model, dim_feedforward)
-        self.map_dropout = torch.nn.Dropout(dropout)
-        self.map_linear2 = torch.nn.Linear(dim_feedforward, d_model)
-
-        self.map_norm1 = torch.nn.LayerNorm(d_model)
-        self.map_norm2 = torch.nn.LayerNorm(d_model)
-        self.map_dropout1 = torch.nn.Dropout(dropout)
-        self.map_dropout2 = torch.nn.Dropout(dropout)
-
-        self.map_activation = LAYER_ACTIVATION_FUNCTIONS[activation]
 
     def forward(
             self, src: Tensor, src_self_other_mask: Tensor, map_feature: Tensor,
             src_mask: Optional[Tensor] = None
     ) -> Tuple[Tensor, Tensor]:
-        src2, map_feature2, _ = self.self_attn(
+        src2, _ = self.self_attn(
             q=src, k=src, v=src,
-            q_map=map_feature, k_map=map_feature, v_map=map_feature,
-            self_other_mask=src_self_other_mask, mask=src_mask
+            self_other_mask=src_self_other_mask, mask=src_mask,
+            k_map=map_feature, v_map=map_feature
         )
         src = src + self.dropout1(src2)
         src = self.norm1(src)
         src2 = self.linear2(self.dropout(self.activation(self.linear1(src))))
         src = src + self.dropout2(src2)
         src = self.norm2(src)
-
-        map_feature = map_feature + self.map_dropout1(map_feature2)
-        map_feature = self.map_norm1(map_feature)
-        map_feature2 = self.map_linear2(self.map_dropout(self.map_activation(self.map_linear1(map_feature))))
-        map_feature = map_feature + self.map_dropout2(map_feature2)
-        map_feature = self.map_norm2(map_feature)
 
         return src, map_feature
 
@@ -247,32 +231,20 @@ class MapAgentAwareAttentionDecoderLayer(BaseAttentionDecoderLayer):
     def __init__(
             self, d_model: int, n_head: int,
             dim_feedforward: int = 2048, dropout: float = 0.1, activation: str = 'relu',
-            bias_self: bool = False, bias_other: bool = False, bias_out: bool = True
+            bias_self: bool = False, bias_other: bool = False, bias_out: bool = True,
+            bias_map: bool = False
     ):
         super().__init__(
             d_model=d_model, dim_feedforward=dim_feedforward, dropout=dropout, activation=activation
         )
         self.self_attn = MapAgentAwareAttention(
             traj_dim=d_model, map_dim=d_model, v_dim=d_model, num_heads=n_head, dropout=dropout,
-            bias_self=bias_self, bias_other=bias_other, bias_out=bias_out
+            bias_self=bias_self, bias_other=bias_other, bias_out=bias_out, bias_map=bias_map
         )
         self.cross_attn = MapAgentAwareAttention(
             traj_dim=d_model, map_dim=d_model, v_dim=d_model, num_heads=n_head, dropout=dropout,
-            bias_self=bias_self, bias_other=bias_other, bias_out=bias_out
+            bias_self=bias_self, bias_other=bias_other, bias_out=bias_out, bias_map=bias_map
         )
-
-        self.map_linear1 = torch.nn.Linear(d_model, dim_feedforward)
-        self.map_dropout = torch.nn.Dropout(dropout)
-        self.map_linear2 = torch.nn.Linear(dim_feedforward, d_model)
-
-        self.map_norm1 = torch.nn.LayerNorm(d_model)
-        self.map_norm2 = torch.nn.LayerNorm(d_model)
-        self.map_norm3 = torch.nn.LayerNorm(d_model)
-        self.map_dropout1 = torch.nn.Dropout(dropout)
-        self.map_dropout2 = torch.nn.Dropout(dropout)
-        self.map_dropout3 = torch.nn.Dropout(dropout)
-
-        self.map_activation = LAYER_ACTIVATION_FUNCTIONS[activation]
 
     def forward(
             self, tgt: Tensor, memory: Tensor,
@@ -280,34 +252,23 @@ class MapAgentAwareAttentionDecoderLayer(BaseAttentionDecoderLayer):
             tgt_map: Tensor, mem_map: Tensor,
             tgt_mask: Optional[Tensor] = None, memory_mask: Optional[Tensor] = None
     ) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
-        tgt2, tgt_map2, self_attn_weights = self.self_attn(
+        tgt2, self_attn_weights = self.self_attn(
             q=tgt, k=tgt, v=tgt,
-            q_map=tgt_map, k_map=tgt_map, v_map=tgt_map,
-            self_other_mask=tgt_tgt_self_other_mask, mask=tgt_mask
+            self_other_mask=tgt_tgt_self_other_mask, mask=tgt_mask,
+            k_map=tgt_map, v_map=tgt_map
         )
-
         tgt = tgt + self.dropout1(tgt2)
         tgt = self.norm1(tgt)
-        tgt_map = tgt_map + self.map_dropout1(tgt_map2)
-        tgt_map = self.map_norm1(tgt_map)
 
-        tgt2, tgt_map2, cross_attn_weights = self.cross_attn(
+        tgt2, cross_attn_weights = self.cross_attn(
             q=tgt, k=memory, v=memory,
-            q_map=tgt_map, k_map=mem_map, v_map=mem_map,
-            self_other_mask=tgt_mem_self_other_mask, mask=memory_mask
+            self_other_mask=tgt_mem_self_other_mask, mask=memory_mask,
+            k_map=mem_map, v_map=mem_map
         )
-
         tgt = tgt + self.dropout2(tgt2)
         tgt = self.norm2(tgt)
         tgt2 = self.linear2(self.dropout(self.activation(self.linear1(tgt))))
         tgt = tgt + self.dropout3(tgt2)
         tgt = self.norm3(tgt)
 
-        tgt_map = tgt_map + self.map_dropout2(tgt_map2)
-        tgt_map = self.map_norm2(tgt_map)
-        tgt_map2 = self.map_linear2(self.map_dropout(self.map_activation(self.map_linear1(tgt_map))))
-        tgt_map = tgt_map + self.map_dropout3(tgt_map2)
-        tgt_map = self.map_norm3(tgt_map)
-
         return tgt, tgt_map, self_attn_weights, cross_attn_weights
-
