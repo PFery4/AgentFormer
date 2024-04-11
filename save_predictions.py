@@ -39,7 +39,7 @@ if __name__ == '__main__':
     dataset_class = dataset_dict[args.dataset_class]
     if cfg.dataset == 'sdd':
         sdd_test_set = dataset_class(parser=cfg, log=log, split=split)
-        test_loader = DataLoader(dataset=sdd_test_set, shuffle=False, num_workers=2)
+        test_loader = DataLoader(dataset=sdd_test_set, shuffle=False, num_workers=0)
     else:
         raise NotImplementedError
 

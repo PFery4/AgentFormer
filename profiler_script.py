@@ -115,7 +115,7 @@ if __name__ == '__main__':
 
     sdd_dataset = dataset_class(parser=cfg, log=log, split='train')
     print(f"dataset class is of type: {type(sdd_dataset)}")
-    training_loader = DataLoader(dataset=sdd_dataset, shuffle=True, num_workers=1)
+    training_loader = DataLoader(dataset=sdd_dataset, shuffle=True, num_workers=0)
 
     model_id = cfg.get('model_id', 'agentformer')
     model = model_dict[model_id](cfg)
