@@ -738,6 +738,7 @@ class PickleDatasetSDD(PresavedDatasetSDD):
             self.pickle_files = keep_pickle_files
             assert len(self.pickle_files) == required_val_set_size
 
+        assert self.__len__() != 0
         prnt_str = f'total number of samples: {self.__len__()}'
         print_log(prnt_str, log=log) if log is not None else print(prnt_str)
         prnt_str = f'------------------------------ done --------------------------------\n'
@@ -838,6 +839,7 @@ class HDF5DatasetSDD(PresavedDatasetSDD):
 
         assert len(self.instance_names) == len(self.instance_nums)
 
+        assert self.__len__() != 0
         prnt_str = f'total number of samples: {self.__len__()}'
         print_log(prnt_str, log=log) if log is not None else print(prnt_str)
         prnt_str = f'------------------------------ done --------------------------------\n'
@@ -902,8 +904,10 @@ if __name__ == '__main__':
     # split = 'test'
     # split = 'train'
 
-    # config_str, dataset_class, split = 'dataset_occlusion_simulation', 'hdf5', 'test'
     config_str, dataset_class, split = 'original_100_pre', 'pickle', 'train'
+    # config_str, dataset_class, split = 'dataset_occlusion_simulation', 'hdf5', 'test'
+    # config_str, dataset_class, split = 'dataset_occlusion_simulation', 'pickle', 'train'
+    # config_str, dataset_class, split = 'dataset_occlusion_simulation', 'pickle', 'val'
 
     cfg = Config(config_str)
     prepare_seed(cfg.seed)
