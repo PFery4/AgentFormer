@@ -184,6 +184,9 @@ class ContextEncoder(nn.Module):
         }
 
         if self.global_map_attention:
+            self.bias_map = ctx.get('bias_map', False)
+            layer_params['bias_map'] = self.bias_map
+
             self.tf_encoder = OcclusionFormerEncoder(layer_params=layer_params, num_layers=self.n_layer)
             self.tf_encoder_call = self.map_agent_encoder_call
         else:
@@ -295,6 +298,9 @@ class FutureEncoder(nn.Module):
         }
 
         if self.global_map_attention:
+            self.bias_map = ctx.get('bias_map', False)
+            layer_params['bias_map'] = self.bias_map
+
             self.tf_decoder = OcclusionFormerDecoder(layer_params=layer_params, num_layers=self.n_layer)
             self.tf_decoder_call = self.map_agent_decoder_call
         else:
@@ -465,6 +471,9 @@ class FutureDecoder(nn.Module):
         }
 
         if self.global_map_attention:
+            self.bias_map = ctx.get('bias_map', False)
+            layer_params['bias_map'] = self.bias_map
+
             self.tf_decoder = OcclusionFormerDecoder(layer_params=layer_params, num_layers=self.n_layer)
             self.tf_decoder_call = self.map_agent_decoder_call
         else:
@@ -837,6 +846,7 @@ class AgentFormer(nn.Module):
             'bias_self': cfg.get('bias_self', False),
             'bias_other': cfg.get('bias_other', False),
             'bias_out': cfg.get('bias_out', True),
+            'bias_map': cfg.get('bias_map', False),
             'pos_concat': cfg.get('pos_concat', False),
             't_zero_index': int(cfg.get('t_zero_index', 0)),
             'ar_detach': cfg.get('ar_detach', True),
