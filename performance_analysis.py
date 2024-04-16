@@ -147,30 +147,34 @@ if __name__ == '__main__':
 
         # experiment_names = EXPERIMENTS
         experiment_names = [
-            'original_100_pre',
-            'original_101_pre',
-            'original_102_pre',
-            'original_103_pre',
-            'original_104_pre',
-            'original_100',
-            'original_101',
-            'original_102',
-            'original_103',
-            'original_104',
-            'occlusionformer_basis_bias_1_pre',
-            'occlusionformer_basis_bias_2_pre',
-            'occlusionformer_basis_bias_3_pre',
-            'occlusionformer_basis_bias_4_pre',
-            'occlusionformer_basis_bias_5_pre',
-            'occlusionformer_basis_bias_1',
-            'occlusionformer_basis_bias_2',
-            'occlusionformer_basis_bias_3',
-            'occlusionformer_basis_bias_4',
-            'occlusionformer_basis_bias_5',
+            # 'original_100_pre',
+            # 'original_101_pre',
+            # 'original_102_pre',
+            # 'original_103_pre',
+            # 'original_104_pre',
+            # 'original_100',
+            # 'original_101',
+            # 'original_102',
+            # 'original_103',
+            # 'original_104',
+            # 'occlusionformer_basis_bias_1_pre',
+            # 'occlusionformer_basis_bias_2_pre',
+            # 'occlusionformer_basis_bias_3_pre',
+            # 'occlusionformer_basis_bias_4_pre',
+            # 'occlusionformer_basis_bias_5_pre',
+            # 'occlusionformer_basis_bias_1',
+            # 'occlusionformer_basis_bias_2',
+            # 'occlusionformer_basis_bias_3',
+            # 'occlusionformer_basis_bias_4',
+            # 'occlusionformer_basis_bias_5',
+            'v2_difficult_occlusions_pre',
+            'v2_difficult_occlusions_with_map_w5_pre',
+            'v2_difficult_occlusions_with_map_w10_pre',
+            'v2_difficult_occlusions_with_map_w15_pre'
         ]
 
         # metric_names = DISTANCE_METRICS+PRED_LENGTHS+OCCLUSION_MAP_SCORES
-        metric_names = ADE_SCORES + FDE_SCORES
+        metric_names = ADE_SCORES + FDE_SCORES + OCCLUSION_MAP_SCORES
 
         all_perf_df = generate_performance_summary_df(
             experiment_names=experiment_names, metric_names=metric_names
@@ -527,7 +531,11 @@ if __name__ == '__main__':
             # 'occlusionformer_basis_bias_3',
             # 'occlusionformer_basis_bias_4',
             # 'occlusionformer_basis_bias_5',
-            CONST_VEL_OCCLUSION_SIMULATION
+            CONST_VEL_OCCLUSION_SIMULATION,
+            'v2_difficult_occlusions_pre',
+            'v2_difficult_occlusions_with_map_w5_pre',
+            'v2_difficult_occlusions_with_map_w10_pre',
+            'v2_difficult_occlusions_with_map_w15_pre'
         ]
 
         # experiment_name = experiment_name + '_pre'
@@ -569,37 +577,36 @@ if __name__ == '__main__':
         instance_number, show_pred_ids = 6435, [18]     # probably an inaccuracy in the coordinate frame (just inside the zone, but still registered as outside)
         instance_number, show_pred_ids = 5465, [496]    # probably an inaccuracy in the coordinate frame (just inside the zone, but still registered as outside)
         instance_number, show_pred_ids = 1734, [486]    # overextension of the prediction
-        instance_number, show_pred_ids = 8966, [210]    # following the edge of the occlusion zone
-        instance_number, show_pred_ids = 859, [115]    # probably an inaccuracy in the coordinate frame (just inside the zone, but still registered as outside)
-        instance_number, show_pred_ids = 2366, [17]    # overextension of the prediction
-        instance_number, show_pred_ids = 3313, [28]    # CV just too slow before entering the occlusion zone
-        instance_number, show_pred_ids = 69, [39]    # overextension of the prediction
-        instance_number, show_pred_ids = 8011, [39]    # overextension of the prediction
-        instance_number, show_pred_ids = 10973, [107]    # overextension of the prediction
-        instance_number, show_pred_ids = 6185, [24]    # overextension of the prediction
-        instance_number, show_pred_ids = 7589, [64]     # following the edge of the occlusion zone
-        instance_number, show_pred_ids = 4947, [434]    # following the edge of the occlusion zone
-        instance_number, show_pred_ids = 3030, [93]    # following the edge of the occlusion zone
-        instance_number, show_pred_ids = 5886, [410]    # overextension of the prediction
-        instance_number, show_pred_ids = 11703, [26]    # CV just too slow before entering the occlusion zone
-        instance_number, show_pred_ids = 9973, [0]    # a needle
-        instance_number, show_pred_ids = 716, [23]    # probably an inaccuracy in the coordinate frame (just inside the zone, but still registered as outside)
-        instance_number, show_pred_ids = 1898, [246]    # probably an inaccuracy in the coordinate frame (just inside the zone, but still registered as outside)
+        # instance_number, show_pred_ids = 8966, [210]    # following the edge of the occlusion zone
+        # instance_number, show_pred_ids = 859, [115]    # probably an inaccuracy in the coordinate frame (just inside the zone, but still registered as outside)
+        # instance_number, show_pred_ids = 2366, [17]    # overextension of the prediction
+        # instance_number, show_pred_ids = 3313, [28]    # CV just too slow before entering the occlusion zone
+        # instance_number, show_pred_ids = 69, [39]    # overextension of the prediction
+        # instance_number, show_pred_ids = 8011, [39]    # overextension of the prediction
+        # instance_number, show_pred_ids = 10973, [107]    # overextension of the prediction
+        # instance_number, show_pred_ids = 6185, [24]    # overextension of the prediction
+        # instance_number, show_pred_ids = 7589, [64]     # following the edge of the occlusion zone
+        # instance_number, show_pred_ids = 4947, [434]    # following the edge of the occlusion zone
+        # instance_number, show_pred_ids = 3030, [93]    # following the edge of the occlusion zone
+        # instance_number, show_pred_ids = 5886, [410]    # overextension of the prediction
+        # instance_number, show_pred_ids = 11703, [26]    # CV just too slow before entering the occlusion zone
+        # instance_number, show_pred_ids = 9973, [0]    # a needle
+        # instance_number, show_pred_ids = 716, [23]    # probably an inaccuracy in the coordinate frame (just inside the zone, but still registered as outside)
+        # instance_number, show_pred_ids = 1898, [246]    # probably an inaccuracy in the coordinate frame (just inside the zone, but still registered as outside)
 
-        # Constant Velocity fails to place occluded agent inside the occlusion zone at t=0, AND past_pred_length > 1
-        instance_number, show_pred_ids = 5369, [125]    # following the edge of the occlusion zone
-        instance_number, show_pred_ids = 2898, [1]      # idle
-        instance_number, show_pred_ids = 4957, [163]      # overshot
-        instance_number, show_pred_ids = 11049, [118]      # undershot
-        instance_number, show_pred_ids = 5643, [693]      # following the edge of the occlusion zone
-        instance_number, show_pred_ids = 6305, [6]      # overshot
-        instance_number, show_pred_ids = 7446, [24]      # overshot
-        instance_number, show_pred_ids = 175, [39]      # following the edge of the occlusion zone
-        instance_number, show_pred_ids = 8096, [49]      # idle
-        instance_number, show_pred_ids = 2366, [17]      # overshot
+        # # Constant Velocity fails to place occluded agent inside the occlusion zone at t=0, AND past_pred_length > 1
+        # instance_number, show_pred_ids = 5369, [125]    # following the edge of the occlusion zone
+        # instance_number, show_pred_ids = 11049, [118]      # undershot
+        # instance_number, show_pred_ids = 5643, [693]      # following the edge of the occlusion zone
+        # instance_number, show_pred_ids = 6305, [6]      # overshot
+        # instance_number, show_pred_ids = 175, [39]      # following the edge of the occlusion zone
+        # instance_number, show_pred_ids = 2898, [1]      # idle
+        # instance_number, show_pred_ids = 7446, [24]      # overshot
+        # instance_number, show_pred_ids = 2366, [17]      # overshot
+        # instance_number, show_pred_ids = 8096, [49]      # idle
+        # instance_number, show_pred_ids = 4957, [163]      # overshot
 
-
-        highlight_only_past_pred = False
+        highlight_only_past_pred = True
         figsize = (14, 10)
 
         for exp_name in experiment_list:
@@ -617,8 +624,9 @@ if __name__ == '__main__':
             # exp_df['OAO_by_OAC_t0'] = exp_df['OAO'] / exp_df['OAC_t0']
             # print(exp_df.sort_values('OAO_by_OAC_t0', ascending=False)[['OAO', 'OAC_t0', 'OAO_by_OAC_t0']])
 
-            # retrieve the corresponding entry name
+            # retrieve the corresponding entry name and dataset index
             instance_name = f"{instance_number}".rjust(8, '0')
+            instance_index = dataloader_exp.get_instance_idx(instance_num=instance_number)
 
             # mini_df = exp_df.loc[instance_number, instance_number, :]
             # mini_df = remove_k_sample_columns(mini_df)
@@ -635,7 +643,7 @@ if __name__ == '__main__':
             )
 
             # retrieve the input data dict
-            input_dict = dataloader_exp.__getitem__(instance_number)
+            input_dict = dataloader_exp.__getitem__(instance_index)
             if 'map_homography' not in input_dict.keys():
                 input_dict['map_homography'] = dataloader_exp.map_homography
 
