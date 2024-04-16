@@ -881,6 +881,17 @@ class HDF5DatasetSDD(PresavedDatasetSDD):
 
         return data_dict
 
+    def get_instance_idx(self, instance_name: Optional[str] = None, instance_num: Optional[int] = None):
+        assert instance_name is not None or instance_num is not None
+
+        if instance_name is not None and instance_name in self.instance_names:
+            return self.instance_names.index(instance_name)
+
+        if instance_num is not None and instance_num in self.instance_nums:
+            return self.instance_nums.index(instance_num)
+
+        return None
+
 
 dataset_dict = {
         'hdf5': HDF5DatasetSDD,
