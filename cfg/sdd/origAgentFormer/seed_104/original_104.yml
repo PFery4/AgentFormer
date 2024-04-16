@@ -29,7 +29,7 @@ impute                        : false
 
 model_id: orig_dlow
 pred_cfg: original_104_pre
-pred_checkpoint_name: epoch_1_batch_74999
+pred_checkpoint_name: epoch_2_batch_69999
 qnet_mlp: [512, 256]
 share_eps: true
 train_w_mean: true
