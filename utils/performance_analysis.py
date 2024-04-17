@@ -19,7 +19,7 @@ def get_perf_scores_df(experiment_name: str, model_name: Optional[str] = None, s
     assert os.path.exists(target_path)
 
     if model_name is None:
-        model_name = os.listdir(target_path)[0]
+        model_name = sorted(os.listdir(target_path))[-1]
     target_path = os.path.join(target_path, model_name, split, 'prediction_scores.csv')
     assert os.path.exists(target_path)
 
@@ -66,9 +66,9 @@ def generate_performance_summary_df(experiment_names: List, metric_names: List) 
     for experiment_name in experiment_names:
         run_results_path = os.path.join(REPO_ROOT, 'results', experiment_name, 'results')
         dataset_used = os.listdir(run_results_path)[0]
-        model_name = os.listdir(os.path.join(run_results_path, dataset_used))[0]
+        model_name = sorted(os.listdir(os.path.join(run_results_path, dataset_used)))[-1]
 
-        scores_dict = get_perf_scores_dict(experiment_name=experiment_name)
+        scores_dict = get_perf_scores_dict(experiment_name=experiment_name, model_name=model_name)
         scores_dict['experiment'] = experiment_name
         scores_dict['dataset_used'] = dataset_used
         scores_dict['model_name'] = model_name
