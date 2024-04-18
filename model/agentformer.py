@@ -884,6 +884,9 @@ class AgentFormer(nn.Module):
             elif not map_enc_cfg.use_scene_map and map_enc_cfg.use_occlusion_map: self.set_map_data = self.set_map_data_occlusion
             else: raise NotImplementedError
 
+            self.occl_loss_map_key = 'clipped_dist_transformed_occlusion_map' if cfg.get('quick_fix', False) \
+                else 'nlog_probability_occlusion_map'
+
         ctx['input_impute_markers'] = self.input_impute_markers
 
         # models
@@ -941,7 +944,8 @@ class AgentFormer(nn.Module):
         if self.global_map_attention:
             self.set_map_data(data=data)
 
-            self.data['nlog_probability_occlusion_map'] = data['nlog_probability_occlusion_map'] \
+            # print(f"{self.occl_loss_map_key=}")
+            self.data['occlusion_loss_map'] = data[self.occl_loss_map_key] \
                 .detach().clone().to(self.device)  # [B, H, W]
             self.data['map_homography'] = data['map_homography'].detach().clone().to(self.device)  # [B, 3, 3]
 
