@@ -184,9 +184,9 @@ def compute_sample_loss(data: Dict, cfg: Dict):
 def compute_occlusion_map_loss(data: Dict, cfg: Dict):
     points = data['train_dec_motion']                       # [B, P, 2]
     mask = data['train_dec_past_mask']                      # [P]
-    nlog_p_map = data['nlog_probability_occlusion_map']     # [B, H, W]
+    loss_map = data['occlusion_loss_map']                   # [B, H, W]
     homography_matrix = data['map_homography']              # [B, 3, 3]
-    H, W = nlog_p_map.shape[-2:]
+    H, W = loss_map.shape[-2:]
 
     # transforming points to scene coordinate system
     points = torch.cat([points, torch.ones((*points.shape[:-1], 1)).to(points.device)], dim=-1).transpose(-1, -2)
@@ -202,10 +202,10 @@ def compute_occlusion_map_loss(data: Dict, cfg: Dict):
     y0 = torch.floor(y).long()
     y1 = y0+1
 
-    Ia = nlog_p_map[:, y0[-1], x0[-1]]
-    Ib = nlog_p_map[:, y1[-1], x0[-1]]
-    Ic = nlog_p_map[:, y0[-1], x1[-1]]
-    Id = nlog_p_map[:, y1[-1], x1[-1]]
+    Ia = loss_map[:, y0[-1], x0[-1]]
+    Ib = loss_map[:, y1[-1], x0[-1]]
+    Ic = loss_map[:, y0[-1], x1[-1]]
+    Id = loss_map[:, y1[-1], x1[-1]]
 
     wa = (x1 - x) * (y1 - y)
     wb = (x1 - x) * (y - y0)
