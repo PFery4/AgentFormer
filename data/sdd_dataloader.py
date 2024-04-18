@@ -9,6 +9,7 @@ import matplotlib.axes
 import matplotlib.pyplot as plt
 import mpl_toolkits.axes_grid1
 import matplotlib.colors as colors
+import pandas as pd
 from matplotlib.path import Path
 import torch
 import torch.nn.functional as F
@@ -619,7 +620,18 @@ class MomentaryTorchDataGeneratorSDD(TorchDataGeneratorSDD):
 class PresavedDatasetSDD(Dataset):
     presaved_datasets_dir = os.path.join(REPO_ROOT, 'datasets', 'SDD', 'pre_saved_datasets')
 
+    # This is a "quick fix".
+    # We performed the wrong px/m coordinate conversion when computing the distance transformed map.
+    # Ideally we should correct this in the TorchDatasetGenerator class.
+    # the real fix is to have the distance transformed map scaled by the proper factor:
+    # TorchDatasetGenerator.map_side / TorchDatasetGenerator.map_resolution
+    coord_conv_dir = os.path.join(REPO_ROOT, 'datasets', 'SDD', 'coordinates_conversion.txt')
+    coord_conv_table = pd.read_csv(coord_conv_dir, sep=';', index_col=('scene', 'video'))
+
     def __init__(self, parser: Config, log: Optional[TextIOWrapper] = None, split: str = 'train'):
+
+        self.quick_fix = parser.get('quick_fix', False)   # again, the quick fix should be result upstream, in the TorchDatasetGenerator class.
+
         self.split = split
 
         assert split in ['train', 'val', 'test']
@@ -681,6 +693,29 @@ class PresavedDatasetSDD(Dataset):
 
     def __getitem__(self, idx: int) -> Dict:
         raise NotImplementedError
+
+    def apply_quick_fix(self, data_dict: Dict):
+        scene, video = data_dict['seq'].split('_')
+        px_by_m = self.coord_conv_table.loc[scene, video]['px/m']
+
+        data_dict['dist_transformed_occlusion_map'] *= px_by_m * self.map_side / self.map_resolution
+
+        # clipped_map = -torch.clamp(data_dict['dist_transformed_occlusion_map'], min=0.)
+        # data_dict['probability_occlusion_map'] = torch.nn.functional.softmax(
+        #     clipped_map.view(-1), dim=0
+        # ).view(clipped_map.shape)
+        # data_dict['nlog_probability_occlusion_map'] = -torch.nn.functional.log_softmax(
+        #     clipped_map.view(-1), dim=0
+        # ).view(clipped_map.shape)
+
+        data_dict['clipped_dist_transformed_occlusion_map'] = torch.clamp(
+            data_dict['dist_transformed_occlusion_map'], min=0.
+        )
+
+        del data_dict['probability_occlusion_map']
+        del data_dict['nlog_probability_occlusion_map']
+
+        return data_dict
 
 
 class PickleDatasetSDD(PresavedDatasetSDD):
@@ -763,6 +798,10 @@ class PickleDatasetSDD(PresavedDatasetSDD):
             if data_dict['true_observation_mask'] is None:
                 data_dict['true_observation_mask'] = data_dict['observation_mask']
             data_dict['imputation_mask'] = data_dict['true_observation_mask'][data_dict['observation_mask']]
+
+        # Quick Fix
+        if self.quick_fix:
+            data_dict = self.apply_quick_fix(data_dict)
 
         return data_dict
 
@@ -878,6 +917,10 @@ class HDF5DatasetSDD(PresavedDatasetSDD):
             if 'true_observation_mask' not in data_dict.keys():
                 data_dict['true_observation_mask'] = data_dict['observation_mask']
             data_dict['imputation_mask'] = data_dict['true_observation_mask'][data_dict['observation_mask']]
+
+        # Quick Fix
+        if self.quick_fix:
+            data_dict = self.apply_quick_fix(data_dict)
 
         return data_dict
 
