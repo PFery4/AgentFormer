@@ -884,8 +884,7 @@ class AgentFormer(nn.Module):
             elif not map_enc_cfg.use_scene_map and map_enc_cfg.use_occlusion_map: self.set_map_data = self.set_map_data_occlusion
             else: raise NotImplementedError
 
-            self.occl_loss_map_key = 'clipped_dist_transformed_occlusion_map' if cfg.get('quick_fix', False) \
-                else 'nlog_probability_occlusion_map'
+            self.occl_loss_map_key = cfg.get('loss_map', 'nlog_probability_occlusion_map')
 
         ctx['input_impute_markers'] = self.input_impute_markers
 
