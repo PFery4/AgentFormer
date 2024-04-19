@@ -20,7 +20,7 @@ if __name__ == '__main__':
     print(args.split)
     assert all([name in ['train', 'val'] for name in args.split])
     assert args.save or args.show, "You must choose to either *show* or *save* the loss graph..."
-    color_maps = {'train': 'cool', 'val': 'autumn'}
+    color_maps = {'train': 'cool', 'val': 'winter'}
 
     for cfg_str in args.cfg:
         cfg = Config(cfg_str)
