@@ -33,10 +33,13 @@ from utils.performance_analysis import \
 if __name__ == '__main__':
     # Script Controls #################################################################################################
     parser = argparse.ArgumentParser()
+    parser.add_argument('--cfg', nargs='+', default=None)
     parser.add_argument('--perf_summary', action='store_true', default=False)
     parser.add_argument('--boxplots', action='store_true', default=False)
     parser.add_argument('--oac_histograms', action='store_true', default=False)
     parser.add_argument('--qual_compare', action='store_true', default=False)
+    parser.add_argument('--instance_num', type=int, default=None)
+    parser.add_argument('--identities', nargs='+', type=int, default=[])
     parser.add_argument('--qual_example', action='store_true', default=False)
     parser.add_argument('--comp_phase_1_2', action='store_true', default=False)
     parser.add_argument('--save', action='store_true', default=False)
@@ -60,73 +63,17 @@ if __name__ == '__main__':
     MEASURE = 'm'       # 'm' | 'px'
     EXPERIMENT_SEPARATOR = "\n\n\n\n" + "#" * 200 + "\n\n\n\n"
 
-    SDD_BASELINE_OCCLUSIONFORMER = 'sdd_baseline_occlusionformer'
-    BASELINE_NO_POS_CONCAT = 'baseline_no_pos_concat'
-    OCCLUSIONFORMER_NO_MAP = 'occlusionformer_no_map'
-    OCCLUSIONFORMER_CAUSAL_ATTENTION = 'occlusionformer_causal_attention'
-    OCCLUSIONFORMER_IMPUTED = 'occlusionformer_imputed'
-    OCCLUSIONFORMER_WITH_OCCL_MAP = 'occlusionformer_with_occl_map'
-    OCCLUSIONFORMER_WITH_OCCL_MAP_IMPUTED = 'occlusionformer_with_occl_map_imputed'
-    ORIGINAL_AGENTFORMER = 'original_agentformer'
-    OCCLUSIONFORMER_MOMENTARY = 'occlusionformer_momentary'
-    OCCLUSIONFORMER_WITH_BOTH_MAPS = 'occlusionformer_with_both_maps'
-    CONST_VEL_FULLY_OBSERVED = 'const_vel_fully_observed'
-    CONST_VEL_FULLY_OBSERVED_MOMENTARY_2 = 'const_vel_fully_observed_momentary_2'
-    CONST_VEL_OCCLUSION_SIMULATION = 'const_vel_occlusion_simulation'
-    CONST_VEL_OCCLUSION_SIMULATION_IMPUTED = 'const_vel_occlusion_simulation_imputed'
-    OCCLUSIONFORMER_CAUSAL_ATTENTION_FULLY_OBSERVED = 'occlusionformer_causal_attention_fully_observed'
-    OCCLUSIONFORMER_CAUSAL_ATTENTION_IMPUTED = 'occlusionformer_causal_attention_imputed'
-    OCCLUSIONFORMER_CAUSAL_ATTENTION_OCCL_MAP = 'occlusionformer_causal_attention_occl_map'
-    OCCLUSIONFORMER_OFFSET_TIMECODES = 'occlusionformer_offset_timecodes'
-    OCCLUSIONFORMER_IMPUTED_WITH_MARKERS = 'occlusionformer_imputed_with_markers'
-    OCCLUSIONFORMER_CAUSAL_ATTENTION_FULLY_OBSERVED_162 = 'occlusionformer_causal_attention_fully_observed_162'
-    OCCLUSIONFORMER_CAUSAL_ATTENTION_FULLY_OBSERVED_314 = 'occlusionformer_causal_attention_fully_observed_314'
-
-    EXPERIMENTS = [
-        SDD_BASELINE_OCCLUSIONFORMER,
-        BASELINE_NO_POS_CONCAT,
-        OCCLUSIONFORMER_NO_MAP,
-        OCCLUSIONFORMER_CAUSAL_ATTENTION,
-        OCCLUSIONFORMER_IMPUTED,
-        OCCLUSIONFORMER_WITH_OCCL_MAP,
-        OCCLUSIONFORMER_WITH_OCCL_MAP_IMPUTED,
-        ORIGINAL_AGENTFORMER,
-        OCCLUSIONFORMER_MOMENTARY,
-        # OCCLUSIONFORMER_WITH_BOTH_MAPS,
-        CONST_VEL_FULLY_OBSERVED,
-        CONST_VEL_FULLY_OBSERVED_MOMENTARY_2,
-        CONST_VEL_OCCLUSION_SIMULATION,
-        CONST_VEL_OCCLUSION_SIMULATION_IMPUTED,
-        OCCLUSIONFORMER_CAUSAL_ATTENTION_FULLY_OBSERVED,
-        OCCLUSIONFORMER_CAUSAL_ATTENTION_IMPUTED,
-        OCCLUSIONFORMER_CAUSAL_ATTENTION_OCCL_MAP,
-        OCCLUSIONFORMER_OFFSET_TIMECODES,
-        OCCLUSIONFORMER_IMPUTED_WITH_MARKERS,
-        OCCLUSIONFORMER_CAUSAL_ATTENTION_FULLY_OBSERVED_162,
-        OCCLUSIONFORMER_CAUSAL_ATTENTION_FULLY_OBSERVED_314
-    ]
-
-    FULLY_OBSERVED_EXPERIMENTS = [
-        SDD_BASELINE_OCCLUSIONFORMER,
-        BASELINE_NO_POS_CONCAT,
-        ORIGINAL_AGENTFORMER,
-        OCCLUSIONFORMER_CAUSAL_ATTENTION_FULLY_OBSERVED,
-        # CONST_VEL_FULLY_OBSERVED
-    ]
-    OCCLUSION_EXPERIMENTS = [
-        OCCLUSIONFORMER_NO_MAP,
-        OCCLUSIONFORMER_CAUSAL_ATTENTION,
-        OCCLUSIONFORMER_WITH_OCCL_MAP,
-        OCCLUSIONFORMER_CAUSAL_ATTENTION_OCCL_MAP,
-        # OCCLUSIONFORMER_OFFSET_TIMECODES,
-        # CONST_VEL_OCCLUSION_SIMULATION
-    ]
-    IMPUTED_EXPERIMENTS = [
-        OCCLUSIONFORMER_IMPUTED,
-        OCCLUSIONFORMER_WITH_OCCL_MAP_IMPUTED,
-        OCCLUSIONFORMER_CAUSAL_ATTENTION_IMPUTED,
-        # OCCLUSIONFORMER_IMPUTED_WITH_MARKERS,
-        # CONST_VEL_OCCLUSION_SIMULATION_IMPUTED
+    DEFAULT_CFG = [
+        'original_100',
+        'original_101',
+        'original_102',
+        'original_103',
+        'original_104',
+        'occlusionformer_basis_bias_1',
+        'occlusionformer_basis_bias_2',
+        'occlusionformer_basis_bias_3',
+        'occlusionformer_basis_bias_4',
+        'occlusionformer_basis_bias_5',
     ]
 
     ADE_SCORES = ['min_ADE', 'mean_ADE']
@@ -145,33 +92,7 @@ if __name__ == '__main__':
     if args.perf_summary:
         print("\n\nPERFORMANCE SUMMARY:\n\n")
 
-        # experiment_names = EXPERIMENTS
-        experiment_names = [
-            # 'original_100_pre',
-            # 'original_101_pre',
-            # 'original_102_pre',
-            # 'original_103_pre',
-            # 'original_104_pre',
-            # 'original_100',
-            # 'original_101',
-            # 'original_102',
-            # 'original_103',
-            # 'original_104',
-            # 'occlusionformer_basis_bias_1_pre',
-            # 'occlusionformer_basis_bias_2_pre',
-            # 'occlusionformer_basis_bias_3_pre',
-            # 'occlusionformer_basis_bias_4_pre',
-            # 'occlusionformer_basis_bias_5_pre',
-            # 'occlusionformer_basis_bias_1',
-            # 'occlusionformer_basis_bias_2',
-            # 'occlusionformer_basis_bias_3',
-            # 'occlusionformer_basis_bias_4',
-            # 'occlusionformer_basis_bias_5',
-            'v2_difficult_occlusions_pre',
-            'v2_difficult_occlusions_with_map_w5_pre',
-            'v2_difficult_occlusions_with_map_w10_pre',
-            'v2_difficult_occlusions_with_map_w15_pre'
-        ]
+        experiment_names = args.cfg if args.cfg is not None else DEFAULT_CFG
 
         # metric_names = DISTANCE_METRICS+PRED_LENGTHS+OCCLUSION_MAP_SCORES
         metric_names = ADE_SCORES + FDE_SCORES + OCCLUSION_MAP_SCORES
@@ -186,7 +107,6 @@ if __name__ == '__main__':
             print(all_perf_df)
 
         if SAVE:
-            # base_experiment_names = [BASELINE_NO_POS_CONCAT]
             base_experiment_names = []
 
             filename = "experiments_performance_summary.csv"
@@ -207,6 +127,9 @@ if __name__ == '__main__':
 
     # score boxplots vs last observed timesteps #######################################################################
     if args.boxplots:
+
+        raise NotImplementedError
+
         print("\n\nBOXPLOTS:\n\n")
         experiment_sets = {
             'occlusion': OCCLUSION_EXPERIMENTS,
@@ -267,6 +190,9 @@ if __name__ == '__main__':
 
     # OAC histograms ###################################################
     if args.oac_histograms:
+
+        raise NotImplementedError
+
         figsize = (16, 10)
         plot_score = 'OAC'      # 'OAC', 'OAC_t0', 'OAO'
         as_percentage = False
@@ -325,6 +251,9 @@ if __name__ == '__main__':
 
     # qualitative display of predictions: comparison of experiments ###################################################
     if args.qual_compare:
+
+        raise NotImplementedError
+
         print("\n\nQUALITATIVE COMPARISON:\n\n")
 
         if SHOW:
@@ -510,107 +439,15 @@ if __name__ == '__main__':
     if args.qual_example:
         print("\n\nQUALITATIVE EXAMPLE:\n\n")
 
-        experiment_name = ORIGINAL_AGENTFORMER
-        experiment_name = BASELINE_NO_POS_CONCAT
-        experiment_name = OCCLUSIONFORMER_CAUSAL_ATTENTION
-        experiment_name = OCCLUSIONFORMER_CAUSAL_ATTENTION_OCCL_MAP
-        experiment_name = OCCLUSIONFORMER_MOMENTARY
-        experiment_name = OCCLUSIONFORMER_CAUSAL_ATTENTION_IMPUTED
-        experiment_name = SDD_BASELINE_OCCLUSIONFORMER
-        experiment_name = OCCLUSIONFORMER_WITH_OCCL_MAP
-        experiment_name = OCCLUSIONFORMER_NO_MAP
-        experiment_name = OCCLUSIONFORMER_WITH_OCCL_MAP_IMPUTED
-        experiment_name = OCCLUSIONFORMER_IMPUTED
-        experiment_name = OCCLUSIONFORMER_CAUSAL_ATTENTION_FULLY_OBSERVED_162
-        experiment_name = OCCLUSIONFORMER_CAUSAL_ATTENTION_FULLY_OBSERVED_314
-        experiment_name = OCCLUSIONFORMER_CAUSAL_ATTENTION_FULLY_OBSERVED
+        experiment_names = args.cfg if args.cfg is not None else DEFAULT_CFG
+        assert args.instance_num is not None
 
-        experiment_list = [
-            # 'occlusionformer_basis_bias_1',
-            # 'occlusionformer_basis_bias_2',
-            # 'occlusionformer_basis_bias_3',
-            # 'occlusionformer_basis_bias_4',
-            # 'occlusionformer_basis_bias_5',
-            CONST_VEL_OCCLUSION_SIMULATION,
-            'v2_difficult_occlusions_pre',
-            'v2_difficult_occlusions_with_map_w5_pre',
-            'v2_difficult_occlusions_with_map_w10_pre',
-            'v2_difficult_occlusions_with_map_w15_pre'
-        ]
+        instance_number, show_pred_ids = args.instance_num, args.identities     # int, List[int]
 
-        # experiment_name = experiment_name + '_pre'
-        print(f"{experiment_name=}")
-        instance_number, show_pred_ids = 1000, [452]
-        instance_number, show_pred_ids = 3000, [14]
-        instance_number, show_pred_ids = 6000, [2]          # single agent, moving forward
-        instance_number, show_pred_ids = 8000, [12]         # fast agent (cyclist) (no occlusion)
-        instance_number, show_pred_ids = 9000, [119, 217]
-        instance_number, show_pred_ids = 9998, [13]         # productive use of occlusion map
-        instance_number, show_pred_ids = 2000, [116, 481]
-        instance_number, show_pred_ids = 8881, [181]        # large turning maneuver under occlusion
-        instance_number, show_pred_ids = 5000, [194, 222, 314]
-        instance_number, show_pred_ids = 0, [66, 68, 69]
-        instance_number, show_pred_ids = 7698, [117]
-        instance_number, show_pred_ids = 500, [20, 41, 98, 111]
-        instance_number, show_pred_ids = 4000, [4, 10]          # idles
-        # instance_number, show_pred_ids = 11025, [110]          # what?
-        #
-        # # using occlusion map, OAO / OAC_t0 = inf (OAC_t0 is 0.)
-        # instance_number, show_pred_ids = 4041, [38]          # "needle", poor use of occlusion map
-        # instance_number, show_pred_ids = 7930, [37]          # "needle", poor use of occlusion map
-        # instance_number, show_pred_ids = 8074, [49]          # "needle", poor use of occlusion map
-        # instance_number, show_pred_ids = 46, [38]          # "needle", poor use of occlusion map
-        # instance_number, show_pred_ids = 9973, [0]          # "needle", poor use of occlusion map
-        #
-        # # using occlusion map, OAO / OAC_t0 is very high (filtering away OAC_t0 = 0.)
-        # instance_number, show_pred_ids = 446, [51]          # poor use of occlusion map
-        # instance_number, show_pred_ids = 5769, [91]          # poor use of occlusion map, no_map impressively better
-        # instance_number, show_pred_ids = 4757, [115]          # poor use of occlusion map, no_map impressively better
-
-        # # Constant Velocity fails to place occluded agent inside the occlusion zone at t=0
-        instance_number, show_pred_ids = 7231, [82]     # a needle
-        instance_number, show_pred_ids = 57, [39]       # following the edge of the occlusion zone
-        instance_number, show_pred_ids = 1665, [628]       # CV just too slow before entering the occlusion zone
-        instance_number, show_pred_ids = 4061, [85]       # CV just too slow before entering the occlusion zone
-        instance_number, show_pred_ids = 9779, [247]    # probably an inaccuracy in the coordinate frame (just inside the zone, but still registered as outside)
-        instance_number, show_pred_ids = 8872, [209]    # CV just too slow before entering the occlusion zone
-        instance_number, show_pred_ids = 6435, [18]     # probably an inaccuracy in the coordinate frame (just inside the zone, but still registered as outside)
-        instance_number, show_pred_ids = 5465, [496]    # probably an inaccuracy in the coordinate frame (just inside the zone, but still registered as outside)
-        instance_number, show_pred_ids = 1734, [486]    # overextension of the prediction
-        # instance_number, show_pred_ids = 8966, [210]    # following the edge of the occlusion zone
-        # instance_number, show_pred_ids = 859, [115]    # probably an inaccuracy in the coordinate frame (just inside the zone, but still registered as outside)
-        # instance_number, show_pred_ids = 2366, [17]    # overextension of the prediction
-        # instance_number, show_pred_ids = 3313, [28]    # CV just too slow before entering the occlusion zone
-        # instance_number, show_pred_ids = 69, [39]    # overextension of the prediction
-        # instance_number, show_pred_ids = 8011, [39]    # overextension of the prediction
-        # instance_number, show_pred_ids = 10973, [107]    # overextension of the prediction
-        # instance_number, show_pred_ids = 6185, [24]    # overextension of the prediction
-        # instance_number, show_pred_ids = 7589, [64]     # following the edge of the occlusion zone
-        # instance_number, show_pred_ids = 4947, [434]    # following the edge of the occlusion zone
-        # instance_number, show_pred_ids = 3030, [93]    # following the edge of the occlusion zone
-        # instance_number, show_pred_ids = 5886, [410]    # overextension of the prediction
-        # instance_number, show_pred_ids = 11703, [26]    # CV just too slow before entering the occlusion zone
-        # instance_number, show_pred_ids = 9973, [0]    # a needle
-        # instance_number, show_pred_ids = 716, [23]    # probably an inaccuracy in the coordinate frame (just inside the zone, but still registered as outside)
-        # instance_number, show_pred_ids = 1898, [246]    # probably an inaccuracy in the coordinate frame (just inside the zone, but still registered as outside)
-
-        # # Constant Velocity fails to place occluded agent inside the occlusion zone at t=0, AND past_pred_length > 1
-        # instance_number, show_pred_ids = 5369, [125]    # following the edge of the occlusion zone
-        # instance_number, show_pred_ids = 11049, [118]      # undershot
-        # instance_number, show_pred_ids = 5643, [693]      # following the edge of the occlusion zone
-        # instance_number, show_pred_ids = 6305, [6]      # overshot
-        # instance_number, show_pred_ids = 175, [39]      # following the edge of the occlusion zone
-        # instance_number, show_pred_ids = 2898, [1]      # idle
-        # instance_number, show_pred_ids = 7446, [24]      # overshot
-        # instance_number, show_pred_ids = 2366, [17]      # overshot
-        # instance_number, show_pred_ids = 8096, [49]      # idle
-        # instance_number, show_pred_ids = 4957, [163]      # overshot
-
-        highlight_only_past_pred = True
+        highlight_only_past_pred = False
         figsize = (14, 10)
 
-        for exp_name in experiment_list:
-            experiment_name = exp_name
+        for experiment_name in experiment_names:
             # preparing the dataloader for the experiment
             # exp_df = get_perf_scores_df(experiment_name)
             config_exp = Config(experiment_name)
@@ -831,6 +668,8 @@ if __name__ == '__main__':
         plt.show()
 
     if True:
+
+        raise NotImplementedError
         # evaluating insightfulness of the occlusion map between
         #   - occlusionformer_no_map
         #   - occlusionformer_with_occl_map
@@ -895,6 +734,9 @@ if __name__ == '__main__':
         plt.show()
 
     if args.comp_phase_1_2:
+
+        raise NotImplementedError
+
         # checking the performance difference between phase 1 (model) and phase 2 (model + Dlow for diversity sampling)
         experiment_list = [
             OCCLUSIONFORMER_CAUSAL_ATTENTION_FULLY_OBSERVED_314,
