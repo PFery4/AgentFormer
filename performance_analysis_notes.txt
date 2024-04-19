@@ -1,0 +1,71 @@
+
+Examples of instance number and corresponding identities to submit to performance_analysis.py
+
+
+instance_number, show_pred_ids = 1000, [452]
+instance_number, show_pred_ids = 3000, [14]
+instance_number, show_pred_ids = 6000, [2]          # single agent, moving forward
+instance_number, show_pred_ids = 8000, [12]         # fast agent (cyclist) (no occlusion)
+instance_number, show_pred_ids = 9000, [119, 217]
+instance_number, show_pred_ids = 9998, [13]         # productive use of occlusion map
+instance_number, show_pred_ids = 2000, [116, 481]
+instance_number, show_pred_ids = 8881, [181]        # large turning maneuver under occlusion
+instance_number, show_pred_ids = 5000, [194, 222, 314]
+instance_number, show_pred_ids = 0, [66, 68, 69]
+instance_number, show_pred_ids = 7698, [117]
+instance_number, show_pred_ids = 500, [20, 41, 98, 111]
+instance_number, show_pred_ids = 4000, [4, 10]          # idles
+instance_number, show_pred_ids = 11025, [110]          # what?
+
+# using occlusion map, OAO / OAC_t0 = inf (OAC_t0 is 0.)
+instance_number, show_pred_ids = 4041, [38]          # "needle", poor use of occlusion map
+instance_number, show_pred_ids = 7930, [37]          # "needle", poor use of occlusion map
+instance_number, show_pred_ids = 8074, [49]          # "needle", poor use of occlusion map
+instance_number, show_pred_ids = 46, [38]          # "needle", poor use of occlusion map
+instance_number, show_pred_ids = 9973, [0]          # "needle", poor use of occlusion map
+
+# using occlusion map, OAO / OAC_t0 is very high (filtering away OAC_t0 = 0.)
+instance_number, show_pred_ids = 446, [51]          # poor use of occlusion map
+instance_number, show_pred_ids = 5769, [91]          # poor use of occlusion map, no_map impressively better
+instance_number, show_pred_ids = 4757, [115]          # poor use of occlusion map, no_map impressively better
+
+# Constant Velocity fails to place occluded agent inside the occlusion zone at t=0
+instance_number, show_pred_ids = 7231, [82]     # a needle
+instance_number, show_pred_ids = 57, [39]       # following the edge of the occlusion zone
+instance_number, show_pred_ids = 1665, [628]       # CV just too slow before entering the occlusion zone
+instance_number, show_pred_ids = 4061, [85]       # CV just too slow before entering the occlusion zone
+instance_number, show_pred_ids = 9779, [247]    # probably an inaccuracy in the coordinate frame (just inside the zone, but still registered as outside)
+instance_number, show_pred_ids = 8872, [209]    # CV just too slow before entering the occlusion zone
+instance_number, show_pred_ids = 6435, [18]     # probably an inaccuracy in the coordinate frame (just inside the zone, but still registered as outside)
+instance_number, show_pred_ids = 5465, [496]    # probably an inaccuracy in the coordinate frame (just inside the zone, but still registered as outside)
+instance_number, show_pred_ids = 1734, [486]    # overextension of the prediction
+instance_number, show_pred_ids = 8966, [210]    # following the edge of the occlusion zone
+instance_number, show_pred_ids = 859, [115]    # probably an inaccuracy in the coordinate frame (just inside the zone, but still registered as outside)
+instance_number, show_pred_ids = 2366, [17]    # overextension of the prediction
+instance_number, show_pred_ids = 3313, [28]    # CV just too slow before entering the occlusion zone
+instance_number, show_pred_ids = 69, [39]    # overextension of the prediction
+instance_number, show_pred_ids = 8011, [39]    # overextension of the prediction
+instance_number, show_pred_ids = 10973, [107]    # overextension of the prediction
+instance_number, show_pred_ids = 6185, [24]    # overextension of the prediction
+instance_number, show_pred_ids = 7589, [64]     # following the edge of the occlusion zone
+instance_number, show_pred_ids = 4947, [434]    # following the edge of the occlusion zone
+instance_number, show_pred_ids = 3030, [93]    # following the edge of the occlusion zone
+instance_number, show_pred_ids = 5886, [410]    # overextension of the prediction
+instance_number, show_pred_ids = 11703, [26]    # CV just too slow before entering the occlusion zone
+instance_number, show_pred_ids = 9973, [0]    # a needle
+instance_number, show_pred_ids = 716, [23]    # probably an inaccuracy in the coordinate frame (just inside the zone, but still registered as outside)
+instance_number, show_pred_ids = 1898, [246]    # probably an inaccuracy in the coordinate frame (just inside the zone, but still registered as outside)
+
+# Constant Velocity fails to place occluded agent inside the occlusion zone at t=0, AND past_pred_length > 1
+instance_number, show_pred_ids = 5369, [125]    # following the edge of the occlusion zone
+instance_number, show_pred_ids = 11049, [118]      # undershot
+instance_number, show_pred_ids = 5643, [693]      # following the edge of the occlusion zone
+instance_number, show_pred_ids = 6305, [6]      # overshot
+instance_number, show_pred_ids = 175, [39]      # following the edge of the occlusion zone
+instance_number, show_pred_ids = 2898, [1]      # idle
+instance_number, show_pred_ids = 7446, [24]      # overshot
+instance_number, show_pred_ids = 2366, [17]      # overshot
+instance_number, show_pred_ids = 8096, [49]      # idle
+instance_number, show_pred_ids = 4957, [163]      # overshot
+
+
