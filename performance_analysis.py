@@ -255,62 +255,23 @@ if __name__ == '__main__':
 
     # OAC histograms ###################################################
     if args.oac_histograms:
-
-        raise NotImplementedError
-
         figsize = (16, 10)
         plot_score = 'OAC'      # 'OAC', 'OAC_t0', 'OAO'
         as_percentage = False
 
         print(f"\n\n{plot_score} HISTOGRAMS:\n\n")
 
-        if SHOW:
-            experiment_name = OCCLUSIONFORMER_NO_MAP
+        experiment_names = args.cfg
 
+        for experiment_name in experiment_names:
             fig = plt.figure(figsize=figsize)
             make_oac_histograms_figure(fig=fig, experiment_name=experiment_name, plot_score=plot_score)
+
+        if SHOW:
             plt.show()
 
         if SAVE:
-
-            histograms_dir = os.path.join(PERFORMANCE_ANALYSIS_DIRECTORY, f'{plot_score}_histograms')
-            os.makedirs(histograms_dir, exist_ok=True)
-
-            for experiment_name in [
-                OCCLUSIONFORMER_NO_MAP, OCCLUSIONFORMER_WITH_OCCL_MAP, OCCLUSIONFORMER_CAUSAL_ATTENTION
-            ]:
-                experiment_dir = os.path.join(histograms_dir, experiment_name)
-                os.makedirs(experiment_dir, exist_ok=True)
-
-                for occl_len in range(1, 7):
-                    fig, ax = plt.subplots(figsize=figsize)
-
-                    oac_histogram(
-                        draw_ax=ax, experiment_name=experiment_name, plot_score=plot_score,
-                        categorization=('past_pred_length', occl_len), as_percentage=as_percentage
-                    )
-
-                    filename = f"histogram_{occl_len}.png"
-                    filepath = os.path.join(experiment_dir, filename)
-                    print(f"saving {plot_score} histogram to:\n{filepath}\n")
-                    plt.savefig(filepath, dpi=300, bbox_inches='tight')
-                    plt.close()
-
-                fig, ax = plt.subplots(figsize=figsize)
-                oac_histograms_versus_lastobs(draw_ax=ax, experiment_name=experiment_name, plot_score=plot_score)
-                filename = f"histograms_vs_last_obs.png"
-                filepath = os.path.join(experiment_dir, filename)
-                print(f"saving {plot_score} 2D-histogram to:\n{filepath}\n")
-                plt.savefig(filepath, dpi=300, bbox_inches='tight')
-                plt.close()
-
-                fig = plt.figure(figsize=figsize)
-                make_oac_histograms_figure(fig=fig, experiment_name=experiment_name, plot_score=plot_score)
-                filename = f"histograms_summary.png"
-                filepath = os.path.join(experiment_dir, filename)
-                print(f"saving {plot_score} histograms summary figure to:\n{filepath}\n")
-                plt.savefig(filepath, dpi=300, bbox_inches='tight')
-                plt.close()
+            print("OAC_histograms: no saving implementation (yet)!")
 
         print(EXPERIMENT_SEPARATOR)
 
