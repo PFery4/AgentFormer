@@ -27,7 +27,8 @@ from utils.performance_analysis import \
     oac_histogram, \
     oac_histograms_versus_lastobs, \
     get_perf_scores_df, \
-    get_comparable_rows
+    get_comparable_rows, \
+    remove_k_sample_columns
 
 
 if __name__ == '__main__':
@@ -277,10 +278,11 @@ if __name__ == '__main__':
 
     # map compliance vs generic performance ###########################################################################
     if False:
+        # Learning with(out) the occlusion map: map compliance difference vs ADE/FDE scores difference
         # uninteresting results, no matter the map score / trajectory score combination
         # actually, maybe a (very slight trend)
-        base_experiment = OCCLUSIONFORMER_NO_MAP
-        compare_experiment = OCCLUSIONFORMER_WITH_OCCL_MAP
+        base_experiment = 'v2_difficult_occlusions_pre'
+        compare_experiment = 'v2_difficult_occlusions_dist_map_w50_pre'
         x_score = 'OAC_t0'
         y_score = 'min_FDE'
 
@@ -318,20 +320,15 @@ if __name__ == '__main__':
         plt.show()
 
     if False:
-        experiment_name = OCCLUSIONFORMER_NO_MAP
-        experiment_name = OCCLUSIONFORMER_WITH_OCCL_MAP
+        # Map compliance scores vs ADE/FDE scores heatmaps
+        experiment_name = 'v2_difficult_occlusions_pre'
+        experiment_name = 'v2_difficult_occlusions_dist_map_w50_pre'
         x_score = 'OAC_t0'
         y_score = 'min_FDE'
 
         exp_df = get_perf_scores_df(experiment_name)
         exp_df = exp_df[exp_df['past_pred_length'] != 0]
         exp_df = remove_k_sample_columns(exp_df)
-
-        # WIP WIP WIP
-        # exp_df = exp_df.sort_values('occlusion_area', ascending=True)
-        # print(f"{exp_df['occlusion_area']=}")
-        # print(exp_df.keys())
-        # print(zblu)
 
         xs = exp_df[x_score].to_numpy()
         ys = exp_df[y_score].to_numpy()
@@ -346,7 +343,7 @@ if __name__ == '__main__':
         fig, ax = plt.subplots(4, 3)
         for i, (y_score, vmax_value) in enumerate(zip(
                 ['min_FDE', 'min_ADE', 'mean_FDE', 'mean_ADE'],
-                [3200, 3200, 2200, 1850]
+                [80, 80, 80, 80]
         )):
             for j, x_score in enumerate(['OAO', 'OAC', 'OAC_t0']):
 
@@ -541,98 +538,4 @@ if __name__ == '__main__':
             print(f"Sorry, saving functionality not implemented for this performance evaluation...")
             raise NotImplementedError
 
-
-    # if False:
-    #
-    #     # plotting instances against one another:
-    #     base_experiment = 'baseline_no_pos_concat'
-    #     compare_experiment = 'occlusionformer_no_map'
-    #     column_to_sort_by = 'min_FDE'
-    #     n = 5
-    #
-    #     base_df = get_perf_scores_df(base_experiment)
-    #     compare_df = get_perf_scores_df(compare_experiment)
-    #     # filtering the comparison dataframe to only keep agents whose trajectories have been occluded
-    #     compare_df = compare_df[compare_df['past_pred_length'] != 0]
-    #
-    #     diff_df = performance_dataframes_comparison(base_df, compare_df)
-    #
-    #     sort_indices = diff_df.sort_values(column_to_sort_by, ascending=True).index
-    #     summary_df = pd.DataFrame(columns=[base_experiment, compare_experiment, 'difference'])
-    #     summary_df[base_experiment] = base_df[[column_to_sort_by]]
-    #     summary_df[compare_experiment] = compare_df[[column_to_sort_by]]
-    #     summary_df['difference'] = diff_df[[column_to_sort_by]]
-    #     # print(base_df.loc[sort_indices][[column_to_sort_by]].head(n))
-    #     # print(compare_df.loc[sort_indices][[column_to_sort_by]].head(n))
-    #     # print(diff_df.loc[sort_indices][[column_to_sort_by]].head(n))
-    #     print(f"Greatest {column_to_sort_by} difference: {compare_experiment} vs. {base_experiment}")
-    #     print(summary_df.loc[sort_indices].head(n))
-    #
-    #     # defining dataloader objects to retrieve input data
-    #     config_base = Config(base_experiment)
-    #     dataloader_base = HDF5DatasetSDD(config_base, log=None, split='test')
-    #     config_compare = Config(compare_experiment)
-    #     dataloader_compare = HDF5DatasetSDD(config_compare, log=None, split='test')
-    #
-    #     # for filename in sort_indices.get_level_values('filename').tolist()[:n]:
-    #     for multi_index in sort_indices[:n]:
-    #
-    #         idx, filename, agent_id = multi_index
-    #
-    #         # retrieve the corresponding entry name
-    #         # instance_name = filename.split('.')[0]
-    #         instance_name = f"{filename}".rjust(8, '0')
-    #
-    #         # preparing the figure
-    #         fig, ax = plt.subplots(1, 2)
-    #         fig.canvas.manager.set_window_title(
-    #             f"{compare_experiment} vs. {base_experiment}: (instance nr {instance_name})"
-    #         )
-    #
-    #         # retrieving agent identities who are occluded, for which we are interested in displaying their predictions
-    #         # show_prediction_agents = compare_df.loc[idx].index.get_level_values('agent_id').tolist()
-    #         show_prediction_agents = [agent_id]
-    #
-    #         for i, (experiment_name, config, dataloader, perf_df) in enumerate([
-    #             (base_experiment, config_base, dataloader_base, base_df),
-    #             (compare_experiment, config_compare, dataloader_compare, compare_df)
-    #         ]):
-    #
-    #             # defining path to saved predictions to retrieve prediction data
-    #             checkpoint_name = config.get_best_val_checkpoint_name()
-    #             saved_preds_dir = os.path.join(
-    #                 config.result_dir, dataloader.dataset_name, checkpoint_name, 'test'
-    #             )
-    #
-    #             # retrieve the input data dict
-    #             input_dict = dataloader.__getitem__(idx)
-    #             if 'map_homography' not in input_dict.keys():
-    #                 input_dict['map_homography'] = dataloader.map_homography
-    #
-    #             # retrieve the prediction data dict
-    #             pred_file = os.path.join(saved_preds_dir, instance_name)
-    #             assert os.path.exists(pred_file)
-    #             with open(pred_file, 'rb') as f:
-    #                 pred_dict = pickle.load(f)
-    #             pred_dict['map_homography'] = input_dict['map_homography']
-    #
-    #             visualize_input_and_predictions(
-    #                 draw_ax=ax[i],
-    #                 data_dict=input_dict,
-    #                 pred_dict=pred_dict,
-    #                 show_rgb_map=True,
-    #                 show_pred_agent_ids=show_prediction_agents
-    #             )
-    #             # write_scores_per_mode(
-    #             #     draw_ax=ax[i],
-    #             #     pred_dict=pred_dict,
-    #             #     show_agent_ids=show_prediction_agents,
-    #             #     write_mode_number=True, write_ade_score=True, write_fde_score=True
-    #             # )
-    #             ax[i].legend()
-    #
-    #         # show figure
-    #         plt.show()
-
     print(f"\n\nGoodbye!")
-
