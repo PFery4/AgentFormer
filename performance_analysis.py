@@ -202,64 +202,54 @@ if __name__ == '__main__':
 
     # score boxplots vs last observed timesteps #######################################################################
     if args.boxplots:
-
-        raise NotImplementedError
-
         print("\n\nBOXPLOTS:\n\n")
-        experiment_sets = {
-            'occlusion': OCCLUSION_EXPERIMENTS,
-            'imputation': IMPUTED_EXPERIMENTS,
-            'experiments': OCCLUSION_EXPERIMENTS+IMPUTED_EXPERIMENTS
-        }
-        boxplot_scores = ADE_SCORES+PAST_ADE_SCORES+FDE_SCORES+PAST_FDE_SCORES+ALL_ADE_SCORES+OCCLUSION_MAP_SCORES
+        assert args.cfg is not None
+        experiment_names = args.cfg
+
+        boxplot_scores = ADE_SCORES+PAST_ADE_SCORES+FDE_SCORES+PAST_FDE_SCORES+OCCLUSION_MAP_SCORES
         figsize = (14, 10)
 
-        if SHOW:
-            fig, ax = plt.subplots(figsize=figsize)
-            make_box_plot_occlusion_lengths(
-                draw_ax=ax,
-                experiments=OCCLUSION_EXPERIMENTS,
-                plot_score='min_FDE'
-            )
-            plt.show()
+        boxplot_experiments_together = True
+        boxplot_experiments_individually = False
 
-        if SAVE:
-            boxplot_directory = os.path.join(PERFORMANCE_ANALYSIS_DIRECTORY, 'boxplots')
-            os.makedirs(boxplot_directory, exist_ok=True)
+        if boxplot_experiments_together:
+            for plot_score in boxplot_scores:
+                fig, ax = plt.subplots(figsize=figsize)
+                make_box_plot_occlusion_lengths(
+                    draw_ax=ax,
+                    experiments=experiment_names,
+                    plot_score=plot_score
+                )
+                ax.set_title(f"{plot_score} vs. Last Observed timestep")
 
-            for experiment_set, experiments in experiment_sets.items():
-                for score_name in boxplot_scores:
+        if boxplot_experiments_individually:
+            for experiment_name in experiment_names:
+                for plot_score in boxplot_scores:
                     fig, ax = plt.subplots(figsize=figsize)
                     make_box_plot_occlusion_lengths(
                         draw_ax=ax,
-                        experiments=experiments,
-                        plot_score=score_name
+                        experiments=[experiment_name],
+                        plot_score=plot_score
                     )
-                    ax.set_title(f"{score_name}: [{experiment_set}] experiments")
+                    ax.set_title(f"{plot_score} vs. Last Observed timestep")
 
-                    experiment_dir = os.path.join(boxplot_directory, experiment_set)
-                    os.makedirs(experiment_dir, exist_ok=True)
+        if SHOW:
+            plt.show()
 
-                    filename = f"{score_name}.png"
-                    filepath = os.path.join(experiment_dir, filename)
-                    print(f"saving boxplot to:\n{filepath}\n")
-                    plt.savefig(filepath, dpi=300, bbox_inches='tight')
-                    plt.close()
+        if SAVE:
+            print("BOXPLOTS: no saving implementation (yet)!")
 
-            for experiment in OCCLUSION_EXPERIMENTS+IMPUTED_EXPERIMENTS:
-                for score_name in boxplot_scores:
-                    fig, ax = plt.subplots(figsize=figsize)
-                    make_box_plot_occlusion_lengths(draw_ax=ax, experiments=[experiment], plot_score=score_name)
-                    ax.set_title(f"{score_name}: {experiment}")
-
-                    experiment_dir = os.path.join(boxplot_directory, experiment)
-                    os.makedirs(experiment_dir, exist_ok=True)
-
-                    filename = f"{score_name}.png"
-                    filepath = os.path.join(experiment_dir, filename)
-                    print(f"saving boxplot to:\n{filepath}\n")
-                    plt.savefig(filepath, dpi=300, bbox_inches='tight')
-                    plt.close()
+            # boxplot_directory = os.path.join(PERFORMANCE_ANALYSIS_DIRECTORY, 'boxplots')
+            # os.makedirs(boxplot_directory, exist_ok=True)
+            #
+            # experiment_dir = os.path.join(boxplot_directory, <EXPERIMENT_NAME>)
+            # os.makedirs(experiment_dir, exist_ok=True)
+            #
+            # filename = f"{<PLOT_SCORE>}.png"
+            # filepath = os.path.join(experiment_dir, filename)
+            # print(f"saving boxplot to:\n{filepath}\n")
+            # plt.savefig(filepath, dpi=300, bbox_inches='tight')
+            # plt.close()
 
         print(EXPERIMENT_SEPARATOR)
 
