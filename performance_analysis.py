@@ -256,7 +256,7 @@ if __name__ == '__main__':
     # OAC histograms ###################################################
     if args.oac_histograms:
         figsize = (16, 10)
-        plot_score = 'OAC'      # 'OAC', 'OAC_t0', 'OAO'
+        plot_score = 'OAC_t0'      # 'OAC', 'OAC_t0', 'OAO'
         as_percentage = False
 
         print(f"\n\n{plot_score} HISTOGRAMS:\n\n")
