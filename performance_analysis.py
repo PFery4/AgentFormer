@@ -125,6 +125,81 @@ if __name__ == '__main__':
 
         print(EXPERIMENT_SEPARATOR)
 
+    # qualitative display of predictions ##############################################################################
+    if args.qual_example:
+        print("\n\nQUALITATIVE EXAMPLE:\n\n")
+
+        experiment_names = args.cfg if args.cfg is not None else DEFAULT_CFG
+        assert args.instance_num is not None
+
+        instance_number, show_pred_ids = args.instance_num, args.identities     # int, List[int]
+
+        highlight_only_past_pred = True
+        figsize = (14, 10)
+
+        for experiment_name in experiment_names:
+            # preparing the dataloader for the experiment
+            # exp_df = get_perf_scores_df(experiment_name)
+            config_exp = Config(experiment_name)
+            dataloader_exp = HDF5DatasetSDD(config_exp, log=None, split='test')
+
+            # # investigating high OAO / OAC_t0 ratios
+            # print(f"{exp_df['OAO']=}")
+            # print(f"{exp_df['OAC_t0']=}")
+            # mask = exp_df['OAO'] > exp_df['OAC_t0']
+            # exp_df = exp_df[mask & exp_df['OAC_t0'] != 0.]
+            # exp_df['OAO_by_OAC_t0'] = exp_df['OAO'] / exp_df['OAC_t0']
+            # print(exp_df.sort_values('OAO_by_OAC_t0', ascending=False)[['OAO', 'OAC_t0', 'OAO_by_OAC_t0']])
+
+            # retrieve the corresponding entry name and dataset index
+            instance_name = f"{instance_number}".rjust(8, '0')
+            instance_index = dataloader_exp.get_instance_idx(instance_num=instance_number)
+
+            # mini_df = exp_df.loc[instance_number, instance_number, :]
+            # mini_df = remove_k_sample_columns(mini_df)
+            # print(f"Instance Dataframe:\n{mini_df}")
+            show_agent_pred = []
+
+            # preparing the figure
+            fig, ax = plt.subplots(figsize=figsize)
+            fig.canvas.manager.set_window_title(f"{experiment_name}: (instance nr {instance_name})")
+
+            checkpoint_name = config_exp.get_best_val_checkpoint_name()
+            saved_preds_dir = os.path.join(
+                config_exp.result_dir, dataloader_exp.dataset_name, checkpoint_name, 'test'
+            )
+
+            # retrieve the input data dict
+            input_dict = dataloader_exp.__getitem__(instance_index)
+            if 'map_homography' not in input_dict.keys():
+                input_dict['map_homography'] = dataloader_exp.map_homography
+
+            # retrieve the prediction data dict
+            pred_file = os.path.join(saved_preds_dir, instance_name)
+            print(f"{pred_file=}")
+            assert os.path.exists(pred_file)
+            with open(pred_file, 'rb') as f:
+                pred_dict = pickle.load(f)
+            pred_dict['map_homography'] = input_dict['map_homography']
+
+            visualize_input_and_predictions(
+                draw_ax=ax,
+                data_dict=input_dict,
+                pred_dict=pred_dict,
+                show_rgb_map=True,
+                show_gt_agent_ids=show_pred_ids,
+                show_obs_agent_ids=show_pred_ids,
+                show_pred_agent_ids=show_pred_ids,
+                past_pred_alpha=0.5,
+                future_pred_alpha=0.1 if highlight_only_past_pred else 0.5
+            )
+            ax.legend()
+            ax.set_title(experiment_name)
+            fig.subplots_adjust(wspace=0.10, hspace=0.0)
+        plt.show()
+
+        print(EXPERIMENT_SEPARATOR)
+
     # score boxplots vs last observed timesteps #######################################################################
     if args.boxplots:
 
@@ -432,81 +507,6 @@ if __name__ == '__main__':
                             print(f"saving comparison figure to:\n{filepath}\n")
                             plt.savefig(filepath, dpi=300, bbox_inches='tight')
                             plt.close()
-
-        print(EXPERIMENT_SEPARATOR)
-
-    # qualitative display of predictions: comparison of experiments ###################################################
-    if args.qual_example:
-        print("\n\nQUALITATIVE EXAMPLE:\n\n")
-
-        experiment_names = args.cfg if args.cfg is not None else DEFAULT_CFG
-        assert args.instance_num is not None
-
-        instance_number, show_pred_ids = args.instance_num, args.identities     # int, List[int]
-
-        highlight_only_past_pred = False
-        figsize = (14, 10)
-
-        for experiment_name in experiment_names:
-            # preparing the dataloader for the experiment
-            # exp_df = get_perf_scores_df(experiment_name)
-            config_exp = Config(experiment_name)
-            dataloader_exp = HDF5DatasetSDD(config_exp, log=None, split='test')
-
-            # # investigating high OAO / OAC_t0 ratios
-            # print(f"{exp_df['OAO']=}")
-            # print(f"{exp_df['OAC_t0']=}")
-            # mask = exp_df['OAO'] > exp_df['OAC_t0']
-            # exp_df = exp_df[mask & exp_df['OAC_t0'] != 0.]
-            # exp_df['OAO_by_OAC_t0'] = exp_df['OAO'] / exp_df['OAC_t0']
-            # print(exp_df.sort_values('OAO_by_OAC_t0', ascending=False)[['OAO', 'OAC_t0', 'OAO_by_OAC_t0']])
-
-            # retrieve the corresponding entry name and dataset index
-            instance_name = f"{instance_number}".rjust(8, '0')
-            instance_index = dataloader_exp.get_instance_idx(instance_num=instance_number)
-
-            # mini_df = exp_df.loc[instance_number, instance_number, :]
-            # mini_df = remove_k_sample_columns(mini_df)
-            # print(f"Instance Dataframe:\n{mini_df}")
-            show_agent_pred = []
-
-            # preparing the figure
-            fig, ax = plt.subplots(figsize=figsize)
-            fig.canvas.manager.set_window_title(f"{experiment_name}: (instance nr {instance_name})")
-
-            checkpoint_name = config_exp.get_best_val_checkpoint_name()
-            saved_preds_dir = os.path.join(
-                config_exp.result_dir, dataloader_exp.dataset_name, checkpoint_name, 'test'
-            )
-
-            # retrieve the input data dict
-            input_dict = dataloader_exp.__getitem__(instance_index)
-            if 'map_homography' not in input_dict.keys():
-                input_dict['map_homography'] = dataloader_exp.map_homography
-
-            # retrieve the prediction data dict
-            pred_file = os.path.join(saved_preds_dir, instance_name)
-            print(f"{pred_file=}")
-            assert os.path.exists(pred_file)
-            with open(pred_file, 'rb') as f:
-                pred_dict = pickle.load(f)
-            pred_dict['map_homography'] = input_dict['map_homography']
-
-            visualize_input_and_predictions(
-                draw_ax=ax,
-                data_dict=input_dict,
-                pred_dict=pred_dict,
-                show_rgb_map=True,
-                show_gt_agent_ids=show_pred_ids,
-                show_obs_agent_ids=show_pred_ids,
-                show_pred_agent_ids=show_pred_ids,
-                past_pred_alpha=0.5,
-                future_pred_alpha=0.1 if highlight_only_past_pred else 0.5
-            )
-            ax.legend()
-            ax.set_title(experiment_name)
-            fig.subplots_adjust(wspace=0.10, hspace=0.0)
-        plt.show()
 
         print(EXPERIMENT_SEPARATOR)
 
