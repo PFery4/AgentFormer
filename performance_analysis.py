@@ -43,6 +43,7 @@ if __name__ == '__main__':
     parser.add_argument('--identities', nargs='+', type=int, default=[])
     parser.add_argument('--qual_example', action='store_true', default=False)
     parser.add_argument('--comp_phase_1_2', action='store_true', default=False)
+    parser.add_argument('--cv_wrong_map_rate', action='store_true', default=False)
     parser.add_argument('--save', action='store_true', default=False)
     parser.add_argument('--show', action='store_true', default=False)
     args = parser.parse_args()
@@ -379,8 +380,7 @@ if __name__ == '__main__':
     if False:
         import copy
         # OAO / OAC / OAC_t0 correlation
-        experiment_name = OCCLUSIONFORMER_WITH_OCCL_MAP
-        experiment_name = OCCLUSIONFORMER_NO_MAP
+        experiment_name = 'v2_difficult_occlusions'
         mode = 'scatter'        # 'scatter' | 'heatmap'
 
         my_cmap = copy.copy(matplotlib.colormaps['rainbow'])  # copy the default cmap
@@ -429,9 +429,20 @@ if __name__ == '__main__':
         fig.suptitle(experiment_name)
         plt.show()
 
-    if True:
+    if args.cv_wrong_map_rate:
+        # evaluating the rate at which a Constant Velocity model fails to comply with the occlusion map
+        cv_model_name = 'const_vel_occlusion_simulation'
 
-        raise NotImplementedError
+        cv_perf_df = get_perf_scores_df(experiment_name=cv_model_name)
+        cv_perf_df = cv_perf_df[cv_perf_df['past_pred_length'] > 0]
+
+        failed_cv_oac_t0 = (cv_perf_df['OAC_t0'] == 0.)
+        print(f"Out of all {len(failed_cv_oac_t0)} occluded cases,\n"
+              f"the constant velocity model misplaced the current position of the agent as being "
+              f"outside the occluded zone "
+              f"{sum(failed_cv_oac_t0)} times ({sum(failed_cv_oac_t0)/len(failed_cv_oac_t0)*100:.2f}%)")
+
+    if False:
         # evaluating insightfulness of the occlusion map between
         #   - occlusionformer_no_map
         #   - occlusionformer_with_occl_map
@@ -440,9 +451,9 @@ if __name__ == '__main__':
         COMPARE_SCORES = OCCLUSION_MAP_SCORES
         COMPARE_SCORES = PAST_ADE_SCORES + PAST_FDE_SCORES
         COMPARE_SCORES = ADE_SCORES + FDE_SCORES
-        cv_model_name = CONST_VEL_OCCLUSION_SIMULATION
-        no_map_name = OCCLUSIONFORMER_NO_MAP
-        yes_map_name = OCCLUSIONFORMER_WITH_OCCL_MAP
+        cv_model_name = 'const_vel_occlusion_simulation'
+        no_map_name = 'v2_occluded_pre'
+        yes_map_name = 'v2_difficult_occlusions_dist_map_w50_pre'
         experiment_names = [yes_map_name, no_map_name, cv_model_name]
 
         perf_summary = generate_performance_summary_df(
@@ -460,8 +471,9 @@ if __name__ == '__main__':
         yes_map_perf_df = get_perf_scores_df(experiment_name=yes_map_name)
         yes_map_perf_df = yes_map_perf_df[yes_map_perf_df['past_pred_length'] > 0]
 
-        assert all(cv_perf_df.index == no_map_perf_df.index)
-        assert all(cv_perf_df.index == yes_map_perf_df.index)
+        print(len(cv_perf_df))
+        print(len(no_map_perf_df))
+        print(len(yes_map_perf_df))
 
         failed_cv_oac_t0 = (cv_perf_df['OAC_t0'] == 0.)
         print(f"Out of all {len(failed_cv_oac_t0)} occluded cases,\n"
@@ -472,6 +484,9 @@ if __name__ == '__main__':
         cv_perf_df = cv_perf_df[failed_cv_oac_t0]
         no_map_perf_df = no_map_perf_df[failed_cv_oac_t0]
         yes_map_perf_df = yes_map_perf_df[failed_cv_oac_t0]
+
+        assert all(cv_perf_df.index == no_map_perf_df.index)
+        assert all(cv_perf_df.index == yes_map_perf_df.index)
 
         # sample_rows = np.random.choice(cv_perf_df.index, 5, replace=False)
         # [print(sample) for sample in sample_rows]
