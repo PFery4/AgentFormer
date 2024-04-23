@@ -10,17 +10,48 @@ from typing import Any, Dict, List, Optional, Tuple
 from utils.config import REPO_ROOT
 
 
-def get_perf_scores_df(experiment_name: str, model_name: Optional[str] = None, split: str = 'test') -> pd.DataFrame:
+def get_results_directory(
+        experiment_name: str,
+        dataset_used: Optional[str] = None,
+        model_name: Optional[str] = None,
+        split: str = 'test'
+) -> str:
+    """
+    Will pick the first appropriate directory for <dataset_used> and <model_name> if they aren't provided.
+    """
 
-    target_path = os.path.join(REPO_ROOT, 'results', experiment_name, 'results')
+    root_results_path = os.path.join(REPO_ROOT, 'results', experiment_name, 'results')
 
-    dataset_used = os.listdir(target_path)[0]
-    target_path = os.path.join(target_path, dataset_used)
-    assert os.path.exists(target_path)
+    if dataset_used is None:
+        dataset_used = sorted(os.listdir(root_results_path))[0]
+    dataset_path = os.path.join(root_results_path, dataset_used)
+    assert os.path.exists(dataset_path)
 
     if model_name is None:
-        model_name = sorted(os.listdir(target_path))[-1]
-    target_path = os.path.join(target_path, model_name, split, 'prediction_scores.csv')
+        model_name = sorted(os.listdir(dataset_path))[-1]
+    model_path = os.path.join(dataset_path, model_name)
+    assert os.path.exists(model_path)
+
+    target_path = os.path.join(model_path, split)
+    assert os.path.exists(target_path)
+
+    return os.path.abspath(target_path)
+
+
+def get_perf_scores_df(
+        experiment_name: str,
+        dataset_used: Optional[str] = None,
+        model_name: Optional[str] = None,
+        split: str = 'test'
+) -> pd.DataFrame:
+
+    target_path = get_results_directory(
+        experiment_name=experiment_name,
+        dataset_used=dataset_used,
+        model_name=model_name,
+        split=split
+    )
+    target_path = os.path.join(target_path, 'prediction_scores.csv')
     assert os.path.exists(target_path)
 
     df = pd.read_csv(target_path)
@@ -31,17 +62,20 @@ def get_perf_scores_df(experiment_name: str, model_name: Optional[str] = None, s
     return df
 
 
-def get_perf_scores_dict(experiment_name: str, model_name: Optional[str] = None) -> Dict:
+def get_perf_scores_dict(
+        experiment_name: str,
+        dataset_used: Optional[str] = None,
+        model_name: Optional[str] = None,
+        split: str = 'test'
+) -> Dict:
 
-    target_path = os.path.join(REPO_ROOT, 'results', experiment_name, 'results')
-
-    dataset_used = os.listdir(target_path)[0]
-    target_path = os.path.join(target_path, dataset_used)
-    assert os.path.exists(target_path)
-
-    if model_name is None:
-        model_name = os.listdir(target_path)[0]
-    target_path = os.path.join(target_path, model_name, 'test', 'prediction_scores.yml')
+    target_path = get_results_directory(
+        experiment_name=experiment_name,
+        dataset_used=dataset_used,
+        model_name=model_name,
+        split=split
+    )
+    target_path = os.path.join(target_path, 'prediction_scores.yml')
     assert os.path.exists(target_path)
 
     with open(target_path, 'r') as f:
@@ -65,15 +99,23 @@ def generate_performance_summary_df(experiment_names: List, metric_names: List) 
 
     for experiment_name in experiment_names:
         run_results_path = os.path.join(REPO_ROOT, 'results', experiment_name, 'results')
-        dataset_used = os.listdir(run_results_path)[0]
-        model_name = sorted(os.listdir(os.path.join(run_results_path, dataset_used)))[-1]
+        for dataset_used in os.listdir(run_results_path):
+            dataset_path = os.path.join(run_results_path, dataset_used)
+            for model_name in os.listdir(dataset_path):
+                model_path = os.path.join(dataset_path, model_name)
+                for split in os.listdir(model_path):
 
-        scores_dict = get_perf_scores_dict(experiment_name=experiment_name, model_name=model_name)
-        scores_dict['experiment'] = experiment_name
-        scores_dict['dataset_used'] = dataset_used
-        scores_dict['model_name'] = model_name
+                    scores_dict = get_perf_scores_dict(
+                        experiment_name=experiment_name,
+                        dataset_used=str(dataset_used),
+                        model_name=str(model_name),
+                        split=str(split)
+                    )
+                    scores_dict['experiment'] = experiment_name
+                    scores_dict['dataset_used'] = dataset_used
+                    scores_dict['model_name'] = model_name
 
-        performance_df.loc[len(performance_df)] = scores_dict
+                    performance_df.loc[len(performance_df)] = scores_dict
 
     return performance_df
 
