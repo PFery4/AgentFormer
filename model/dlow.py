@@ -73,10 +73,53 @@ def recon_loss(data, cfg):
     return loss, loss_unweighted
 
 
+def compute_occlusion_map_loss(data, cfg):
+    points = data['infer_dec_motion']                       # [B * K, P, 2]
+    mask = data['infer_dec_past_mask']                      # [P]
+    loss_map = data['occlusion_loss_map']                   # [B, H, W]
+    homography_matrix = data['map_homography']              # [B, 3, 3]
+    H, W = loss_map.shape[-2:]
+
+    # transforming points to scene coordinate system
+    points = torch.cat([points, torch.ones((*points.shape[:-1], 1)).to(points.device)], dim=-1).transpose(-1, -2)
+    points = (homography_matrix @ points).transpose(-1, -2)[:, mask, :]     # [B * K, ⊆P, 3] <==> [B * K, p, 3]
+
+    x = points[..., 0]          # [B * K, p]
+    y = points[..., 1]          # [B * K, p]
+    x = x.clamp(1e-4, W - (1 + 1e-4))
+    y = y.clamp(1e-4, H - (1 + 1e-4))
+
+    x0 = torch.floor(x).long()
+    x1 = x0+1
+    y0 = torch.floor(y).long()
+    y1 = y0+1
+
+    Ia = loss_map[:, y0[-1], x0[-1]]
+    Ib = loss_map[:, y1[-1], x0[-1]]
+    Ic = loss_map[:, y0[-1], x1[-1]]
+    Id = loss_map[:, y1[-1], x1[-1]]
+
+    wa = (x1 - x) * (y1 - y)
+    wb = (x1 - x) * (y - y0)
+    wc = (x - x0) * (y1 - y)
+    wd = (x - x0) * (y - y0)
+
+    interp_vals = (wa * Ia + wb * Ib + wc * Ic + wd * Id)
+
+    print(f"{interp_vals.shape=}")
+
+    loss_unweighted = interp_vals.sum()
+    if cfg.get('normalize', True) and mask.sum() != 0:
+        loss_unweighted /= (mask.sum() * interp_vals.shape[0])
+    loss = loss_unweighted * cfg['weight']
+    return loss, loss_unweighted
+
+
 loss_func = {
     'kld': compute_z_kld,
     'diverse': diversity_loss,
     'recon': recon_loss,
+    'occl_map': compute_occlusion_map_loss
 }
 
 
