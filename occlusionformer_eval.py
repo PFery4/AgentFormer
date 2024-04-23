@@ -24,6 +24,7 @@ from model.model_lib import model_dict
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--cfg', default=None)
+    parser.add_argument('--dataset_cfg', default=None)
     parser.add_argument('--data_split', type=str, default='test')
     parser.add_argument('--checkpoint_name', default='best_val')        # can be 'best_val' / 'untrained' / <model_id>
     parser.add_argument('--tmp', action='store_true', default=False)
@@ -31,6 +32,7 @@ if __name__ == '__main__':
     parser.add_argument('--dataset_class', default='hdf5')          # [hdf5, pickle, torch_preprocess]
     args = parser.parse_args()
 
+    dataset_cfg = args.dataset_cfg
     split = args.data_split
     checkpoint_name = args.checkpoint_name
     args.gpu = int(args.gpu) if args.gpu is not None else args.gpu
@@ -46,10 +48,15 @@ if __name__ == '__main__':
     log = open(os.path.join(cfg.log_dir, 'log_test.txt'), 'w')
 
     # dataloader
-    assert cfg.dataset == 'sdd'
+    if dataset_cfg is not None:
+        dataset_cfg = Config(cfg_id=dataset_cfg, tmp=False, create_dirs=False)
+    else:
+        dataset_cfg = cfg
+
+    assert dataset_cfg.dataset == 'sdd'
     dataset_class = dataset_dict[args.dataset_class]
-    if cfg.dataset == 'sdd':
-        sdd_test_set = dataset_class(parser=cfg, log=log, split=split)
+    if dataset_cfg.dataset == 'sdd':
+        sdd_test_set = dataset_class(parser=dataset_cfg, log=log, split=split)
         test_loader = DataLoader(dataset=sdd_test_set, shuffle=False, num_workers=0)
     else:
         raise NotImplementedError
@@ -84,7 +91,7 @@ if __name__ == '__main__':
         'ADE_px',
         'FDE_px',
     ]
-    if cfg.occlusion_process == 'occlusion_simulation':
+    if dataset_cfg.occlusion_process == 'occlusion_simulation':
         metrics_to_compute.extend(
             [
                 'pred_length',
@@ -101,9 +108,6 @@ if __name__ == '__main__':
                 'occlusion_area'
             ]
         )
-    # if cfg.get('impute', False):
-    #     assert all([metric in metrics_to_compute for metric in ['past_ADE', 'past_FDE']])
-    #     metrics_to_compute.extend(['future_ADE', 'future_ADE_px'])
 
     metric_columns = {
         'ADE': [f'K{i}_ADE' for i in range(cfg.sample_k)],
@@ -156,7 +160,7 @@ if __name__ == '__main__':
         infer_pred_positions = pred_data['infer_dec_motion'].to(model.device)            # [K, P, 2]
         infer_pred_past_mask = pred_data['infer_dec_past_mask'].to(model.device)         # [P]
 
-        if cfg.get('impute', False):
+        if dataset_cfg.get('impute', False):
             true_gt_pred_mask = ~in_data['true_observation_mask'][0]         # [N, T_total]
             impute_mask = in_data['observation_mask'][0]                # [N, T_total]
             true_last_obs_indices = in_data['true_observation_mask'][0].shape[1] - torch.argmax(torch.flip(
