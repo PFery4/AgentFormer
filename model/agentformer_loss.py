@@ -1,5 +1,4 @@
 import torch
-from numpy import pi
 
 from typing import Dict
 
@@ -25,6 +24,10 @@ def compute_motion_mse(
         f"{data['train_dec_timesteps']=}\n\n{gt_timesteps=}"
 
     diff = gt_positions - data['train_dec_motion']
+
+    if cfg.get('weight_past', False):
+        past_mask = data['train_dec_past_mask']
+        diff[:, past_mask, :] *= cfg.weight_past
 
     loss_unweighted = diff.pow(2).sum()
     if cfg.get('normalize', True):
@@ -78,6 +81,10 @@ def compute_sample_loss(data: Dict, cfg: Dict):
 
     diff = data['infer_dec_motion'] - gt_positions
 
+    if cfg.get('weight_past', False):
+        past_mask = data['infer_dec_past_mask']
+        diff[:, past_mask, :] *= cfg.weight_past
+
     dist = diff.pow(2).sum(-1)
     dist = torch.stack(
         [dist[:, gt_identities.squeeze() == ag_id].sum(dim=-1)
@@ -93,11 +100,13 @@ def compute_sample_loss(data: Dict, cfg: Dict):
     return loss, loss_unweighted
 
 
-def compute_occlusion_map_loss(data: Dict, cfg: Dict):
-    points = data['train_dec_motion']                       # [B, P, 2]
-    mask = data['train_dec_past_mask']                      # [P]
-    loss_map = data['occlusion_loss_map']                   # [B, H, W]
-    homography_matrix = data['map_homography']              # [B, 3, 3]
+def compute_occlusion_map_loss(
+        points: torch.Tensor,               # [B, P, 2]
+        mask: torch.Tensor,                 # [P]
+        loss_map: torch.Tensor,             # [B, H, W]
+        homography_matrix: torch.Tensor,    # [B, 3, 3]
+        kernel_func=None
+):
     H, W = loss_map.shape[-2:]
 
     # transforming points to scene coordinate system
@@ -114,10 +123,10 @@ def compute_occlusion_map_loss(data: Dict, cfg: Dict):
     y0 = torch.floor(y).long()
     y1 = y0+1
 
-    Ia = loss_map[:, y0[-1], x0[-1]]
-    Ib = loss_map[:, y1[-1], x0[-1]]
-    Ic = loss_map[:, y0[-1], x1[-1]]
-    Id = loss_map[:, y1[-1], x1[-1]]
+    Ia = loss_map[:, y0, x0]
+    Ib = loss_map[:, y1, x0]
+    Ic = loss_map[:, y0, x1]
+    Id = loss_map[:, y1, x1]
 
     wa = (x1 - x) * (y1 - y)
     wb = (x1 - x) * (y - y0)
@@ -126,9 +135,45 @@ def compute_occlusion_map_loss(data: Dict, cfg: Dict):
 
     interp_vals = (wa * Ia + wb * Ib + wc * Ic + wd * Id)
 
+    if kernel_func is not None:
+        interp_vals = kernel_func(interp_vals)
+
     loss_unweighted = interp_vals.sum()
+
+    return loss_unweighted
+
+
+def compute_train_occlusion_map_loss(data: Dict, cfg: Dict):
+    points = data['train_dec_motion']                       # [B, P, 2]
+    mask = data['train_dec_past_mask']                      # [P]
+    loss_map = data['occlusion_loss_map']                   # [B, H, W]
+    homography_matrix = data['map_homography']              # [B, 3, 3]
+
+    loss_unweighted = compute_occlusion_map_loss(
+        points=points, mask=mask, loss_map=loss_map, homography_matrix=homography_matrix,
+        kernel_func=cfg.get('kernel', None)
+    )
+
     if cfg.get('normalize', True) and mask.sum() != 0:
         loss_unweighted /= mask.sum()
+    loss = loss_unweighted * cfg['weight']
+
+    return loss, loss_unweighted
+
+
+def compute_infer_occlusion_map_loss(data: Dict, cfg: Dict):
+    points = data['infer_dec_motion']                       # [B * K, P, 2]
+    mask = data['infer_dec_past_mask']                      # [P]
+    loss_map = data['occlusion_loss_map']                   # [B, H, W]
+    homography_matrix = data['map_homography']              # [B, 3, 3]
+
+    loss_unweighted = compute_occlusion_map_loss(
+        points=points, mask=mask, loss_map=loss_map, homography_matrix=homography_matrix,
+        kernel_func=cfg.get('kernel', None)
+    )
+
+    if cfg.get('normalize', True) and mask.sum() != 0:
+        loss_unweighted /= (mask.sum() * points.shape[0])
     loss = loss_unweighted * cfg['weight']
 
     return loss, loss_unweighted
@@ -138,7 +183,8 @@ loss_func = {
     'mse': compute_motion_mse,
     'kld': compute_z_kld,
     'sample': compute_sample_loss,
-    'occl_map': compute_occlusion_map_loss
+    'occl_map': compute_train_occlusion_map_loss,
+    'infer_occl_map': compute_train_occlusion_map_loss
 }
 
 if __name__ == '__main__':
