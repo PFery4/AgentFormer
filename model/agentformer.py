@@ -863,6 +863,13 @@ class AgentFormer(nn.Module):
         self.map_global_rot = cfg.get('map_global_rot', False)
         self.ar_train = cfg.get('ar_train', True)
         self.loss_cfg = cfg.get('loss_cfg')
+        for map_key in ('occl_map', 'infer_occl_map'):
+            if map_key in self.loss_cfg.keys():
+                if self.loss_cfg[map_key].get('kernel', None) == 'squared':
+                    self.loss_cfg[map_key]['kernel'] = lambda x: torch.pow(x, 2)
+                elif self.loss_cfg[map_key].get('kernel', None) is not None:
+                    raise NotImplementedError
+
         self.loss_names = list(self.loss_cfg.keys())
         self.compute_sample = 'sample' in self.loss_names
         self.param_annealers = nn.ModuleList()
