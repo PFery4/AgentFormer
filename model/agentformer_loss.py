@@ -184,7 +184,7 @@ loss_func = {
     'kld': compute_z_kld,
     'sample': compute_sample_loss,
     'occl_map': compute_train_occlusion_map_loss,
-    'infer_occl_map': compute_train_occlusion_map_loss
+    'infer_occl_map': compute_infer_occlusion_map_loss
 }
 
 if __name__ == '__main__':
