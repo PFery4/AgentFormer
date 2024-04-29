@@ -117,6 +117,11 @@ class DLow(nn.Module):
         self.train_w_mean = cfg.get('train_w_mean', False)
         self.loss_cfg = self.cfg.loss_cfg
         self.loss_names = list(self.loss_cfg.keys())
+        if 'infer_occl_map' in self.loss_cfg.keys():
+            if self.loss_cfg['infer_occl_map'].get('kernel', None) == 'squared':
+                self.loss_cfg['infer_occl_map']['kernel'] = lambda x: torch.pow(x, 2)
+            elif self.loss_cfg['infer_occl_map'].get('kernel', None) is not None:
+                raise NotImplementedError
 
         pred_cfg = Config(cfg.pred_cfg, tmp=False, create_dirs=False)
         pred_model = model_lib.model_dict[pred_cfg.model_id](pred_cfg)
