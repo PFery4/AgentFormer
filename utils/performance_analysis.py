@@ -93,8 +93,11 @@ def print_occlusion_length_counts():
     print(f"total\t\t\t| {len(dataframe)}")
 
 
-def generate_performance_summary_df(experiment_names: List, metric_names: List) -> pd.DataFrame:
-    df_columns = ['experiment', 'dataset_used', 'model_name'] + metric_names
+def generate_performance_summary_df(
+        experiment_names: List,
+        metric_names: List
+) -> pd.DataFrame:
+    df_columns = ['experiment', 'dataset_used', 'n_measurements', 'model_name'] + metric_names
     performance_df = pd.DataFrame(columns=df_columns)
 
     for experiment_name in experiment_names:
@@ -105,14 +108,26 @@ def generate_performance_summary_df(experiment_names: List, metric_names: List) 
                 model_path = os.path.join(dataset_path, model_name)
                 for split in os.listdir(model_path):
 
-                    scores_dict = get_perf_scores_dict(
+                    # scores_dict = get_perf_scores_dict(
+                    #     experiment_name=experiment_name,
+                    #     dataset_used=str(dataset_used),
+                    #     model_name=str(model_name),
+                    #     split=str(split)
+                    # )
+
+                    scores_df = get_perf_scores_df(
                         experiment_name=experiment_name,
                         dataset_used=str(dataset_used),
                         model_name=str(model_name),
                         split=str(split)
                     )
+
+                    scores_dict = {name: float(scores_df[name].mean()) if name in scores_df.columns else pd.NA
+                                   for name in metric_names}
+
                     scores_dict['experiment'] = experiment_name
                     scores_dict['dataset_used'] = dataset_used
+                    scores_dict['n_measurements'] = len(scores_df)
                     scores_dict['model_name'] = model_name
 
                     performance_df.loc[len(performance_df)] = scores_dict
@@ -426,3 +441,27 @@ def make_oac_histograms_figure(
     ax_list[-1].set_xlabel(plot_score)
     fig.suptitle(f"{plot_score} histograms: {experiment_name}")
 
+
+def get_occlusion_indices(split: str):
+    cv_perf_df = get_perf_scores_df(
+        experiment_name='const_vel_occlusion_simulation',
+        dataset_used='occlusion_simulation',
+        model_name='untrained',
+        split=split
+    )
+
+    cv_perf_df = cv_perf_df[cv_perf_df['past_pred_length'] > 0]
+    return cv_perf_df.index
+
+
+def get_difficult_occlusion_indices(split: str):
+    cv_perf_df = get_perf_scores_df(
+        experiment_name='const_vel_occlusion_simulation',
+        dataset_used='occlusion_simulation',
+        model_name='untrained',
+        split=split
+    )
+
+    cv_perf_df = cv_perf_df[cv_perf_df['past_pred_length'] > 0]
+    cv_perf_df = cv_perf_df[cv_perf_df['OAC_t0'] == 0.]
+    return cv_perf_df.index
