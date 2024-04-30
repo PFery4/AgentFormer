@@ -316,7 +316,7 @@ def make_box_plot_occlusion_lengths(
         draw_ax: matplotlib.axes.Axes,
         experiments: List[str],
         plot_score: str,
-        categorization: Tuple[str, List[int]] = ('past_pred_length', range(1, 7)),
+        categorization: Tuple[str, List[int]] = ('past_pred_length', range(0, 7)),
 ) -> None:
     category_name, category_values = categorization
     colors = [plt.cm.Pastel1(i) for i in range(len(experiments))]
@@ -367,8 +367,6 @@ def make_box_plot_occlusion_lengths(
     draw_ax.legend([bplot["boxes"][i] for i in range(len(experiments))], experiments, loc='upper left')
     draw_ax.set_ylabel(f'{plot_score}', loc='bottom')
     draw_ax.set_xlabel('last observation timestep', loc='left')
-
-    # draw_ax.set_title(f"{plot_score} vs. last observed timestep")
 
 
 def oac_histogram(
