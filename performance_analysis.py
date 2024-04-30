@@ -28,7 +28,9 @@ from utils.performance_analysis import \
     oac_histograms_versus_lastobs, \
     get_perf_scores_df, \
     get_comparable_rows, \
-    remove_k_sample_columns
+    remove_k_sample_columns, \
+    get_occlusion_indices, \
+    get_difficult_occlusion_indices
 
 
 if __name__ == '__main__':
@@ -36,6 +38,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--cfg', nargs='+', default=None)
     parser.add_argument('--perf_summary', action='store_true', default=False)
+    parser.add_argument('--split_perf_summary', action='store_true', default=False)
     parser.add_argument('--boxplots', action='store_true', default=False)
     parser.add_argument('--oac_histograms', action='store_true', default=False)
     parser.add_argument('--qual_compare', action='store_true', default=False)
@@ -164,7 +167,7 @@ if __name__ == '__main__':
 
             # preparing the figure
             fig, ax = plt.subplots(figsize=figsize)
-            fig.canvas.manager.set_window_title(f"{experiment_name}: (instance nr {instance_name})")
+            fig.canvas.manager.set_window_title(f"{experiment_name}_{instance_name}")
 
             checkpoint_name = config_exp.get_best_val_checkpoint_name()
             saved_preds_dir = os.path.join(
@@ -190,7 +193,7 @@ if __name__ == '__main__':
                 pred_dict=pred_dict,
                 show_rgb_map=True,
                 show_gt_agent_ids=show_pred_ids,
-                show_obs_agent_ids=show_pred_ids,
+                show_obs_agent_ids=None,
                 show_pred_agent_ids=show_pred_ids,
                 past_pred_alpha=0.5,
                 future_pred_alpha=0.1 if highlight_only_past_pred else 0.5
@@ -252,6 +255,36 @@ if __name__ == '__main__':
             # print(f"saving boxplot to:\n{filepath}\n")
             # plt.savefig(filepath, dpi=300, bbox_inches='tight')
             # plt.close()
+
+        print(EXPERIMENT_SEPARATOR)
+
+    # performance summary split between occluded and fully observed agents ############################################
+    if args.split_perf_summary:
+        print("\n\nPERFORMANCE SUMMARY vs LAST OBSERVED TIMESTEP:\n\n")
+
+        experiment_names = args.cfg
+        assert experiment_names is not None
+
+        metric_names = ADE_SCORES + FDE_SCORES + OCCLUSION_MAP_SCORES
+
+        df_filter = lambda df: df[df['past_pred_length'] == 0]
+        observed_perf_df = generate_performance_summary_df(
+            experiment_names=experiment_names, metric_names=metric_names, df_filter=df_filter
+        )
+        observed_perf_df.sort_values(by='min_FDE', inplace=True)
+
+        df_filter = lambda df: df[df['past_pred_length'] != 0]
+        occluded_perf_df = generate_performance_summary_df(
+            experiment_names=experiment_names, metric_names=metric_names, df_filter=df_filter
+        )
+        occluded_perf_df.sort_values(by='min_FDE', inplace=True)
+
+        if SHOW:
+            print("Experiments Performance Summary - Fully Observed Agents:")
+            print(observed_perf_df)
+            print("\n\n")
+            print("Experiments Performance Summary - Occluded Agents:")
+            print(occluded_perf_df)
 
         print(EXPERIMENT_SEPARATOR)
 
