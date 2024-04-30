@@ -95,7 +95,8 @@ def print_occlusion_length_counts():
 
 def generate_performance_summary_df(
         experiment_names: List,
-        metric_names: List
+        metric_names: List,
+        df_filter = None
 ) -> pd.DataFrame:
     df_columns = ['experiment', 'dataset_used', 'n_measurements', 'model_name'] + metric_names
     performance_df = pd.DataFrame(columns=df_columns)
@@ -121,6 +122,9 @@ def generate_performance_summary_df(
                         model_name=str(model_name),
                         split=str(split)
                     )
+
+                    if df_filter is not None:
+                        scores_df = df_filter(scores_df)
 
                     scores_dict = {name: float(scores_df[name].mean()) if name in scores_df.columns else pd.NA
                                    for name in metric_names}
