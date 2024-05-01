@@ -109,7 +109,7 @@ if __name__ == '__main__':
         all_perf_df.sort_values(by='min_FDE', inplace=True)
 
         if SHOW:
-            print("Experiments Performance Summary:")
+            print(f"Experiments Performance Summary ({operation}):")
             print(all_perf_df)
 
         if SAVE:
@@ -265,26 +265,27 @@ if __name__ == '__main__':
 
         experiment_names = args.cfg
         assert experiment_names is not None
+        operation = 'mean'      # 'mean' | 'median' | 'IQR'
 
         metric_names = ADE_SCORES + FDE_SCORES + OCCLUSION_MAP_SCORES
 
         df_filter = lambda df: df[df['past_pred_length'] == 0]
         observed_perf_df = generate_performance_summary_df(
-            experiment_names=experiment_names, metric_names=metric_names, df_filter=df_filter
+            experiment_names=experiment_names, metric_names=metric_names, df_filter=df_filter, operation=operation
         )
         observed_perf_df.sort_values(by='min_FDE', inplace=True)
 
         df_filter = lambda df: df[df['past_pred_length'] != 0]
         occluded_perf_df = generate_performance_summary_df(
-            experiment_names=experiment_names, metric_names=metric_names, df_filter=df_filter
+            experiment_names=experiment_names, metric_names=metric_names, df_filter=df_filter, operation=operation
         )
         occluded_perf_df.sort_values(by='min_FDE', inplace=True)
 
         if SHOW:
-            print("Experiments Performance Summary - Fully Observed Agents:")
+            print(f"Experiments Performance Summary - Fully Observed Agents ({operation}):")
             print(observed_perf_df)
             print("\n\n")
-            print("Experiments Performance Summary - Occluded Agents:")
+            print(f"Experiments Performance Summary - Occluded Agents ({operation}):")
             print(occluded_perf_df)
 
         print(EXPERIMENT_SEPARATOR)
