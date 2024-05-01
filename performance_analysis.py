@@ -98,12 +98,13 @@ if __name__ == '__main__':
         print("\n\nPERFORMANCE SUMMARY:\n\n")
 
         experiment_names = args.cfg if args.cfg is not None else DEFAULT_CFG
+        operation = 'mean'          # 'mean' | 'median' | 'IQR'
 
         # metric_names = DISTANCE_METRICS+PRED_LENGTHS+OCCLUSION_MAP_SCORES
         metric_names = ADE_SCORES + FDE_SCORES + OCCLUSION_MAP_SCORES
 
         all_perf_df = generate_performance_summary_df(
-            experiment_names=experiment_names, metric_names=metric_names
+            experiment_names=experiment_names, metric_names=metric_names, operation=operation
         )
         all_perf_df.sort_values(by='min_FDE', inplace=True)
 
@@ -288,7 +289,7 @@ if __name__ == '__main__':
 
         print(EXPERIMENT_SEPARATOR)
 
-    # OAC histograms ###################################################
+    # OAC histograms ##################################################################################################
     if args.oac_histograms:
         figsize = (16, 10)
         plot_score = 'OAC_t0'      # 'OAC', 'OAC_t0', 'OAO'
