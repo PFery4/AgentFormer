@@ -10,6 +10,13 @@ from typing import Any, Dict, List, Optional, Tuple
 from utils.config import REPO_ROOT
 
 
+STATISTICAL_OPERATIONS = {
+    'mean': lambda column: float(column.mean()),
+    'median': lambda column: float(column.median()),
+    'IQR': lambda column: float(column.quantile(0.75) - column.quantile(0.25))
+}
+
+
 def get_results_directory(
         experiment_name: str,
         dataset_used: Optional[str] = None,
@@ -96,8 +103,11 @@ def print_occlusion_length_counts():
 def generate_performance_summary_df(
         experiment_names: List,
         metric_names: List,
-        df_filter = None
+        df_filter=None,
+        operation: str = 'mean'
 ) -> pd.DataFrame:
+    assert operation in STATISTICAL_OPERATIONS.keys()
+
     df_columns = ['experiment', 'dataset_used', 'n_measurements', 'model_name'] + metric_names
     performance_df = pd.DataFrame(columns=df_columns)
 
@@ -126,8 +136,10 @@ def generate_performance_summary_df(
                     if df_filter is not None:
                         scores_df = df_filter(scores_df)
 
-                    scores_dict = {name: float(scores_df[name].mean()) if name in scores_df.columns else pd.NA
-                                   for name in metric_names}
+                    scores_dict = {
+                        name: STATISTICAL_OPERATIONS[operation](scores_df[name])
+                        if name in scores_df.columns else pd.NA for name in metric_names
+                    }
 
                     scores_dict['experiment'] = experiment_name
                     scores_dict['dataset_used'] = dataset_used
