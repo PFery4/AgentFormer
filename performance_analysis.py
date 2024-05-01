@@ -140,6 +140,7 @@ if __name__ == '__main__':
 
         instance_number, show_pred_ids = args.instance_num, args.identities     # int, List[int]
 
+        imputed = False
         highlight_only_past_pred = True
         figsize = (14, 10)
 
@@ -147,7 +148,8 @@ if __name__ == '__main__':
             # preparing the dataloader for the experiment
             # exp_df = get_perf_scores_df(experiment_name)
             config_exp = Config(experiment_name)
-            dataloader_exp = HDF5DatasetSDD(config_exp, log=None, split='test')
+            dataloader_exp = HDF5DatasetSDD(config_exp, log=None, split='test') if not imputed else \
+                HDF5DatasetSDD(Config('const_vel_occlusion_simulation_imputed'), log=None, split='test')
 
             # # investigating high OAO / OAC_t0 ratios
             # print(f"{exp_df['OAO']=}")
