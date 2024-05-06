@@ -38,6 +38,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--cfg', nargs='+', default=None)
     parser.add_argument('--perf_summary', action='store_true', default=False)
+    parser.add_argument('--filter', default=None)
     parser.add_argument('--split_perf_summary', action='store_true', default=False)
     parser.add_argument('--boxplots', action='store_true', default=False)
     parser.add_argument('--oac_histograms', action='store_true', default=False)
@@ -103,8 +104,29 @@ if __name__ == '__main__':
         # metric_names = DISTANCE_METRICS+PRED_LENGTHS+OCCLUSION_MAP_SCORES
         metric_names = ADE_SCORES + FDE_SCORES + OCCLUSION_MAP_SCORES
 
+        df_filter = None
+        if args.filter is not None:
+            reference_df = get_perf_scores_df(
+                experiment_name='const_vel_occlusion_simulation',
+                dataset_used='occlusion_simulation',
+                model_name='untrained',
+                split='test'
+            )
+            filter_dict = {
+                'occlusion_dataset': (lambda df: df, ['idx']),
+                'occluded_ids': (lambda df: df[df['past_pred_length'] != 0], ['idx']),
+                'fully_observed_ids': (lambda df: df[df['past_pred_length'] == 0], ['idx']),
+                'difficult_dataset': (lambda df: df[df['OAC_t0'] == 0.], ['idx', 'agent_id']),
+                'difficult_occluded_ids': (lambda df: df[df['OAC_t0'] == 0.], ['idx']),
+            }
+            assert args.filter in filter_dict.keys()
+            filter_func, drop_indices = filter_dict[args.filter]
+            filter_index = filter_func(reference_df).index.droplevel(level=drop_indices)
+
+            df_filter = lambda df: df.iloc[df.index.droplevel(level=drop_indices).isin(filter_index)]
+
         all_perf_df = generate_performance_summary_df(
-            experiment_names=experiment_names, metric_names=metric_names, operation=operation
+            experiment_names=experiment_names, metric_names=metric_names, operation=operation, df_filter=df_filter
         )
         all_perf_df.sort_values(by='min_FDE', inplace=True)
 
@@ -271,13 +293,19 @@ if __name__ == '__main__':
 
         metric_names = ADE_SCORES + FDE_SCORES + OCCLUSION_MAP_SCORES
 
-        df_filter = lambda df: df[df['past_pred_length'] == 0]
+        filter_base_df = get_perf_scores_df('const_vel_occlusion_simulation')
+        filter_base_df = filter_base_df[filter_base_df['past_pred_length'] != 0]
+        occluded_indices = filter_base_df.index.droplevel(level='idx')
+
+        # df_filter = lambda df: df[df['past_pred_length'] == 0]
+        df_filter = lambda df: df.iloc[~df.index.droplevel(level='idx').isin(occluded_indices)]
         observed_perf_df = generate_performance_summary_df(
             experiment_names=experiment_names, metric_names=metric_names, df_filter=df_filter, operation=operation
         )
         observed_perf_df.sort_values(by='min_FDE', inplace=True)
 
-        df_filter = lambda df: df[df['past_pred_length'] != 0]
+        # df_filter = lambda df: df[df['past_pred_length'] != 0]
+        df_filter = lambda df: df.iloc[df.index.droplevel(level='idx').isin(occluded_indices)]
         occluded_perf_df = generate_performance_summary_df(
             experiment_names=experiment_names, metric_names=metric_names, df_filter=df_filter, operation=operation
         )
