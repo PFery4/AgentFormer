@@ -39,7 +39,6 @@ if __name__ == '__main__':
     parser.add_argument('--cfg', nargs='+', default=None)
     parser.add_argument('--perf_summary', action='store_true', default=False)
     parser.add_argument('--filter', default=None)
-    parser.add_argument('--split_perf_summary', action='store_true', default=False)
     parser.add_argument('--boxplots', action='store_true', default=False)
     parser.add_argument('--oac_histograms', action='store_true', default=False)
     parser.add_argument('--qual_compare', action='store_true', default=False)
@@ -296,43 +295,6 @@ if __name__ == '__main__':
             # print(f"saving boxplot to:\n{filepath}\n")
             # plt.savefig(filepath, dpi=300, bbox_inches='tight')
             # plt.close()
-
-        print(EXPERIMENT_SEPARATOR)
-
-    # performance summary split between occluded and fully observed agents ############################################
-    if args.split_perf_summary:
-        print("\n\nPERFORMANCE SUMMARY vs LAST OBSERVED TIMESTEP:\n\n")
-
-        experiment_names = args.cfg
-        assert experiment_names is not None
-        operation = 'mean'      # 'mean' | 'median' | 'IQR'
-
-        metric_names = ADE_SCORES + FDE_SCORES + OCCLUSION_MAP_SCORES
-
-        filter_base_df = get_perf_scores_df('const_vel_occlusion_simulation')
-        filter_base_df = filter_base_df[filter_base_df['past_pred_length'] != 0]
-        occluded_indices = filter_base_df.index.droplevel(level='idx')
-
-        # df_filter = lambda df: df[df['past_pred_length'] == 0]
-        df_filter = lambda df: df.iloc[~df.index.droplevel(level='idx').isin(occluded_indices)]
-        observed_perf_df = generate_performance_summary_df(
-            experiment_names=experiment_names, metric_names=metric_names, df_filter=df_filter, operation=operation
-        )
-        observed_perf_df.sort_values(by='min_FDE', inplace=True)
-
-        # df_filter = lambda df: df[df['past_pred_length'] != 0]
-        df_filter = lambda df: df.iloc[df.index.droplevel(level='idx').isin(occluded_indices)]
-        occluded_perf_df = generate_performance_summary_df(
-            experiment_names=experiment_names, metric_names=metric_names, df_filter=df_filter, operation=operation
-        )
-        occluded_perf_df.sort_values(by='min_FDE', inplace=True)
-
-        if SHOW:
-            print(f"Experiments Performance Summary - Fully Observed Agents ({operation}):")
-            print(observed_perf_df)
-            print("\n\n")
-            print(f"Experiments Performance Summary - Occluded Agents ({operation}):")
-            print(occluded_perf_df)
 
         print(EXPERIMENT_SEPARATOR)
 
