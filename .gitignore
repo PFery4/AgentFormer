@@ -20,3 +20,6 @@ agentformer_models.zip
 
 # ignoring the contents of the test_configs directory inside cfg/sdd
 cfg/sdd/test_configs/*
+
+# contents of the performance_analysis directory
+performance_analysis/*
