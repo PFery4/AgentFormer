@@ -243,6 +243,9 @@ if __name__ == '__main__':
         assert args.cfg is not None
         experiment_names = args.cfg
 
+        exp_dicts = get_all_results_directories()
+        exp_dicts = [exp_dict for exp_dict in exp_dicts if exp_dict['experiment_name'] in experiment_names]
+
         boxplot_scores = ADE_SCORES+FDE_SCORES
         # boxplot_scores = ADE_SCORES+PAST_ADE_SCORES+FDE_SCORES+PAST_FDE_SCORES+OCCLUSION_MAP_SCORES
         figsize = (14, 10)
@@ -265,19 +268,19 @@ if __name__ == '__main__':
                 fig, ax = plt.subplots(figsize=figsize)
                 make_box_plot_occlusion_lengths(
                     draw_ax=ax,
-                    experiments=experiment_names,
+                    experiments=exp_dicts,
                     plot_score=plot_score,
                     categorization=ref_past_pred_lengths
                 )
                 ax.set_title(f"{plot_score} vs. Last Observed timestep")
 
         if boxplot_experiments_individually:
-            for experiment_name in experiment_names:
+            for exp_dict in exp_dicts:
                 for plot_score in boxplot_scores:
                     fig, ax = plt.subplots(figsize=figsize)
                     make_box_plot_occlusion_lengths(
                         draw_ax=ax,
-                        experiments=[experiment_name],
+                        experiments=[exp_dict],
                         plot_score=plot_score,
                         categorization=ref_past_pred_lengths
                     )
