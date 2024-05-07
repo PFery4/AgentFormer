@@ -355,17 +355,24 @@ def get_comparable_rows(
 
 def make_box_plot_occlusion_lengths(
         draw_ax: matplotlib.axes.Axes,
-        experiments: List[str],
+        experiments: List[Dict],
         plot_score: str,
         categorization: pandas.core.series.Series
 ) -> None:
     category_name, category_values = categorization.name, sorted(categorization.unique())
     colors = [plt.cm.Pastel1(i) for i in range(len(experiments))]
 
-    box_plot_dict = {experiment_name: None for experiment_name in experiments}
-    for i, experiment in enumerate(experiments):
+    boxplot_dict_key = lambda exp_dict: f"{exp_dict['experiment_name']}_{exp_dict['dataset_used']}"
 
-        experiment_df = get_perf_scores_df(experiment_name=experiment)
+    box_plot_dict = {boxplot_dict_key(exp_dict): None for exp_dict in experiments}
+    for i, exp_dict in enumerate(experiments):
+
+        experiment_df = get_perf_scores_df(
+            experiment_name=exp_dict['experiment_name'],
+            dataset_used=exp_dict['dataset_used'],
+            model_name=exp_dict['model_name'],
+            split=exp_dict['split']
+        )
         experiment_df = remove_k_sample_columns(df=experiment_df)
 
         experiment_df = experiment_df.iloc[experiment_df.index.isin(categorization.index)]
@@ -387,15 +394,15 @@ def make_box_plot_occlusion_lengths(
             scores = mini_df[plot_score].to_numpy()
             experiment_data_dict[int(pred_length)] = scores
 
-        box_plot_dict[experiment] = experiment_data_dict
+        box_plot_dict[boxplot_dict_key(exp_dict)] = experiment_data_dict
 
     box_plot_xs = []
     box_plot_ys = []
     box_plot_colors = []
     for length in category_values:
-        for i, experiment in enumerate(experiments):
-            box_plot_xs.append(f"{length} - {experiment}")
-            box_plot_ys.append(box_plot_dict[experiment][length])
+        for i, exp_dict in enumerate(experiments):
+            box_plot_xs.append(f"{length} - {boxplot_dict_key(exp_dict)}")
+            box_plot_ys.append(box_plot_dict[boxplot_dict_key(exp_dict)][length])
             box_plot_colors.append(colors[i])
 
     bplot = draw_ax.boxplot(box_plot_ys, positions=range(len(box_plot_ys)), patch_artist=True)
@@ -410,7 +417,10 @@ def make_box_plot_occlusion_lengths(
     draw_ax.set_xticks(np.arange(x_tick_start, x_tick_end, x_tick_gap / 2), minor=True)
     draw_ax.grid(which='minor', axis='x')
 
-    draw_ax.legend([bplot["boxes"][i] for i in range(len(experiments))], experiments, loc='upper left')
+    draw_ax.legend(
+        [bplot["boxes"][i] for i in range(len(experiments))],
+        [boxplot_dict_key(exp_dict) for exp_dict in experiments], loc='upper left'
+    )
     draw_ax.set_ylabel(f'{plot_score}', loc='bottom')
     draw_ax.set_xlabel('last observation timestep', loc='left')
 
