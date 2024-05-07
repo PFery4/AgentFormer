@@ -1,8 +1,7 @@
 import os
-
-import pandas.core.series
 import yaml
 import pandas as pd
+import pandas.core.series
 import matplotlib.axes
 import matplotlib.pyplot as plt
 import numpy as np
