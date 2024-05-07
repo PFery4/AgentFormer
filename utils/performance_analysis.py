@@ -47,6 +47,37 @@ def get_results_directory(
     return os.path.abspath(target_path)
 
 
+def get_all_results_directories() -> List[Dict]:
+    root_results_path = os.path.join(REPO_ROOT, 'results')
+    assert os.path.exists(root_results_path)
+    experiment_names = sorted(os.listdir(root_results_path))
+
+    experiment_dicts = []
+    for experiment_name in experiment_names:
+        run_results_path = os.path.join(root_results_path, experiment_name, 'results')
+        assert os.path.exists(run_results_path)
+        for dataset_used in os.listdir(run_results_path):
+            dataset_path = os.path.join(run_results_path, dataset_used)
+            assert os.path.exists(dataset_path)
+            for model_name in os.listdir(dataset_path):
+                model_path = os.path.join(dataset_path, model_name)
+                assert os.path.exists(model_path)
+                for split in os.listdir(model_path):
+                    split_path = os.path.join(model_path, split)
+                    assert os.path.exists(split_path)
+
+                    exp_dict = {
+                        'experiment_name': experiment_name,
+                        'dataset_used': dataset_used,
+                        'model_name': model_name,
+                        'split': split
+                    }
+
+                    experiment_dicts.append(exp_dict)
+
+    return experiment_dicts
+
+
 def get_perf_scores_df(
         experiment_name: str,
         dataset_used: Optional[str] = None,
