@@ -139,7 +139,7 @@ def print_occlusion_length_counts():
 
 
 def generate_performance_summary_df(
-        experiment_names: List,
+        experiments: List[Dict],
         metric_names: List,
         df_filter=None,
         operation: str = 'mean'
@@ -149,42 +149,29 @@ def generate_performance_summary_df(
     df_columns = ['experiment', 'dataset_used', 'n_measurements', 'model_name'] + metric_names
     performance_df = pd.DataFrame(columns=df_columns)
 
-    for experiment_name in experiment_names:
-        run_results_path = os.path.join(REPO_ROOT, 'results', experiment_name, 'results')
-        for dataset_used in os.listdir(run_results_path):
-            dataset_path = os.path.join(run_results_path, dataset_used)
-            for model_name in os.listdir(dataset_path):
-                model_path = os.path.join(dataset_path, model_name)
-                for split in os.listdir(model_path):
+    for exp_dict in experiments:
 
-                    # scores_dict = get_perf_scores_dict(
-                    #     experiment_name=experiment_name,
-                    #     dataset_used=str(dataset_used),
-                    #     model_name=str(model_name),
-                    #     split=str(split)
-                    # )
+        scores_df = get_perf_scores_df(
+            experiment_name=exp_dict['experiment_name'],
+            dataset_used=exp_dict['dataset_used'],
+            model_name=exp_dict['model_name'],
+            split=exp_dict['split']
+        )
 
-                    scores_df = get_perf_scores_df(
-                        experiment_name=experiment_name,
-                        dataset_used=str(dataset_used),
-                        model_name=str(model_name),
-                        split=str(split)
-                    )
+        if df_filter is not None:
+            scores_df = df_filter(scores_df)
 
-                    if df_filter is not None:
-                        scores_df = df_filter(scores_df)
+        scores_dict = {
+            name: STATISTICAL_OPERATIONS[operation](scores_df[name])
+            if name in scores_df.columns else pd.NA for name in metric_names
+        }
 
-                    scores_dict = {
-                        name: STATISTICAL_OPERATIONS[operation](scores_df[name])
-                        if name in scores_df.columns else pd.NA for name in metric_names
-                    }
+        scores_dict['experiment'] = exp_dict['experiment_name']
+        scores_dict['dataset_used'] = exp_dict['dataset_used']
+        scores_dict['n_measurements'] = len(scores_df)
+        scores_dict['model_name'] = exp_dict['model_name']
 
-                    scores_dict['experiment'] = experiment_name
-                    scores_dict['dataset_used'] = dataset_used
-                    scores_dict['n_measurements'] = len(scores_df)
-                    scores_dict['model_name'] = model_name
-
-                    performance_df.loc[len(performance_df)] = scores_dict
+        performance_df.loc[len(performance_df)] = scores_dict
 
     return performance_df
 
