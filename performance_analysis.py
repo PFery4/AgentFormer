@@ -107,6 +107,9 @@ if __name__ == '__main__':
 
         ref_index = get_reference_indices()
 
+        exp_dicts = get_all_results_directories()
+        exp_dicts = [exp_dict for exp_dict in exp_dicts if exp_dict['experiment_name'] in experiment_names]
+
         def df_filter(df): return df.iloc[df.index.isin(ref_index)]
         if args.filter is not None:
             reference_df = get_perf_scores_df(
@@ -130,7 +133,7 @@ if __name__ == '__main__':
             ]
 
         all_perf_df = generate_performance_summary_df(
-            experiment_names=experiment_names, metric_names=metric_names, operation=operation, df_filter=df_filter
+            experiments=exp_dicts, metric_names=metric_names, operation=operation, df_filter=df_filter
         )
         all_perf_df.sort_values(by='min_FDE', inplace=True)
 
