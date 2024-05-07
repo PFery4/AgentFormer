@@ -239,6 +239,7 @@ if __name__ == '__main__':
         assert args.cfg is not None
         experiment_names = args.cfg
 
+        # boxplot_scores = ADE_SCORES+FDE_SCORES
         boxplot_scores = ADE_SCORES+PAST_ADE_SCORES+FDE_SCORES+PAST_FDE_SCORES+OCCLUSION_MAP_SCORES
         figsize = (14, 10)
 
