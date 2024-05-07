@@ -30,7 +30,8 @@ from utils.performance_analysis import \
     get_comparable_rows, \
     remove_k_sample_columns, \
     get_occlusion_indices, \
-    get_difficult_occlusion_indices
+    get_difficult_occlusion_indices, \
+    get_reference_indices
 
 
 if __name__ == '__main__':
@@ -103,22 +104,9 @@ if __name__ == '__main__':
         # metric_names = DISTANCE_METRICS+PRED_LENGTHS+OCCLUSION_MAP_SCORES
         metric_names = ADE_SCORES + FDE_SCORES + OCCLUSION_MAP_SCORES
 
-        reference_dfs = [
-            # <experiment_name>, <dataset_used>
-            {'experiment_name': 'const_vel_fully_observed', 'dataset_used': 'fully_observed',
-             'model_name': 'untrained'},
-            {'experiment_name': 'const_vel_occlusion_simulation', 'dataset_used': 'occlusion_simulation',
-             'model_name': 'untrained'},
-            {'experiment_name': 'const_vel_occlusion_simulation_imputed', 'dataset_used': 'occlusion_simulation_imputed',
-             'model_name': 'untrained'},
-        ]       # the performance dataframes will be filtered by the intersection of the indices of the reference_dfs
-        ref_indices = [
-            get_perf_scores_df(**exp_dict, split='test').index.droplevel('idx') for exp_dict in reference_dfs
-        ]
-        from functools import reduce
-        ref_index = reduce(lambda idx_a, idx_b: idx_a.intersection(idx_b), ref_indices)
+        ref_index = get_reference_indices()
 
-        def df_filter(df): return df.iloc[df.index.droplevel('idx').isin(ref_index)]
+        def df_filter(df): return df.iloc[df.index.isin(ref_index)]
         if args.filter is not None:
             reference_df = get_perf_scores_df(
                 experiment_name='const_vel_occlusion_simulation',
@@ -127,17 +115,17 @@ if __name__ == '__main__':
                 split='test'
             )
             filter_dict = {
-                'occluded_ids': (lambda df: df[df['past_pred_length'] != 0], ['idx']),
-                'fully_observed_ids': (lambda df: df[df['past_pred_length'] == 0], ['idx']),
-                'difficult_dataset': (lambda df: df[df['OAC_t0'] == 0.], ['idx', 'agent_id']),
-                'difficult_occluded_ids': (lambda df: df[df['OAC_t0'] == 0.], ['idx']),
+                'occluded_ids': (lambda df: df[df['past_pred_length'] != 0], []),
+                'fully_observed_ids': (lambda df: df[df['past_pred_length'] == 0], []),
+                'difficult_dataset': (lambda df: df[df['OAC_t0'] == 0.], ['agent_id']),
+                'difficult_occluded_ids': (lambda df: df[df['OAC_t0'] == 0.], []),
             }
             assert args.filter in filter_dict.keys()
             filter_func, drop_indices = filter_dict[args.filter]
             filter_index = filter_func(reference_df).index.droplevel(level=drop_indices)
 
             def df_filter(df): return df.iloc[
-                df.index.droplevel(level=drop_indices).isin(filter_index) & df.index.droplevel('idx').isin(ref_index)
+                df.index.droplevel(level=drop_indices).isin(filter_index) & df.index.isin(ref_index)
             ]
 
         all_perf_df = generate_performance_summary_df(
@@ -257,13 +245,24 @@ if __name__ == '__main__':
         boxplot_experiments_together = True
         boxplot_experiments_individually = False
 
+        ref_index = get_reference_indices()
+        ref_past_pred_lengths = get_perf_scores_df(
+            experiment_name='const_vel_occlusion_simulation',
+            dataset_used='occlusion_simulation',
+            model_name='untrained',
+            split='test'
+        )
+        ref_past_pred_lengths = ref_past_pred_lengths.iloc[ref_past_pred_lengths.index.isin(ref_index)]
+        ref_past_pred_lengths = ref_past_pred_lengths['past_pred_length']
+
         if boxplot_experiments_together:
             for plot_score in boxplot_scores:
                 fig, ax = plt.subplots(figsize=figsize)
                 make_box_plot_occlusion_lengths(
                     draw_ax=ax,
                     experiments=experiment_names,
-                    plot_score=plot_score
+                    plot_score=plot_score,
+                    categorization=ref_past_pred_lengths
                 )
                 ax.set_title(f"{plot_score} vs. Last Observed timestep")
 
@@ -274,7 +273,8 @@ if __name__ == '__main__':
                     make_box_plot_occlusion_lengths(
                         draw_ax=ax,
                         experiments=[experiment_name],
-                        plot_score=plot_score
+                        plot_score=plot_score,
+                        categorization=ref_past_pred_lengths
                     )
                     ax.set_title(f"{plot_score} vs. Last Observed timestep")
 
