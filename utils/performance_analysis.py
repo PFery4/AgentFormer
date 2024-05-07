@@ -1,9 +1,12 @@
 import os
+
+import pandas.core.series
 import yaml
 import pandas as pd
 import matplotlib.axes
 import matplotlib.pyplot as plt
 import numpy as np
+from functools import reduce
 
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -49,7 +52,8 @@ def get_perf_scores_df(
         experiment_name: str,
         dataset_used: Optional[str] = None,
         model_name: Optional[str] = None,
-        split: str = 'test'
+        split: str = 'test',
+        drop_idx: bool = True
 ) -> pd.DataFrame:
 
     target_path = get_results_directory(
@@ -65,6 +69,9 @@ def get_perf_scores_df(
 
     df_indices = ['idx', 'filename', 'agent_id']
     df.set_index(keys=df_indices, inplace=True)
+
+    if drop_idx:
+        df = df.droplevel('idx')
 
     return df
 
@@ -92,7 +99,7 @@ def get_perf_scores_dict(
 
 
 def print_occlusion_length_counts():
-    dataframe = get_perf_scores_df('occlusionformer_no_map')
+    dataframe = get_perf_scores_df('const_vel_occlusion_simulation', 'occlusion_simulation', 'untrained', 'test')
     print("last observed timestep\t| case count")
     for i in range(0, 7):
         mini_df = dataframe[dataframe['past_pred_length'] == i]
@@ -332,9 +339,9 @@ def make_box_plot_occlusion_lengths(
         draw_ax: matplotlib.axes.Axes,
         experiments: List[str],
         plot_score: str,
-        categorization: Tuple[str, List[int]] = ('past_pred_length', range(0, 7)),
+        categorization: pandas.core.series.Series
 ) -> None:
-    category_name, category_values = categorization
+    category_name, category_values = categorization.name, sorted(categorization.unique())
     colors = [plt.cm.Pastel1(i) for i in range(len(experiments))]
 
     box_plot_dict = {experiment_name: None for experiment_name in experiments}
@@ -342,6 +349,11 @@ def make_box_plot_occlusion_lengths(
 
         experiment_df = get_perf_scores_df(experiment_name=experiment)
         experiment_df = remove_k_sample_columns(df=experiment_df)
+
+        experiment_df = experiment_df.iloc[experiment_df.index.isin(categorization.index)]
+
+        if category_name not in experiment_df.columns:
+            experiment_df[category_name] = categorization
 
         assert plot_score in experiment_df.columns
         assert category_name in experiment_df.columns
@@ -479,3 +491,20 @@ def get_difficult_occlusion_indices(split: str):
     cv_perf_df = cv_perf_df[cv_perf_df['past_pred_length'] > 0]
     cv_perf_df = cv_perf_df[cv_perf_df['OAC_t0'] == 0.]
     return cv_perf_df.index
+
+
+def get_reference_indices():
+    reference_dfs = [
+        # <experiment_name>, <dataset_used>
+        {'experiment_name': 'const_vel_fully_observed', 'dataset_used': 'fully_observed',
+         'model_name': 'untrained'},
+        {'experiment_name': 'const_vel_occlusion_simulation', 'dataset_used': 'occlusion_simulation',
+         'model_name': 'untrained'},
+        {'experiment_name': 'const_vel_occlusion_simulation_imputed', 'dataset_used': 'occlusion_simulation_imputed',
+         'model_name': 'untrained'},
+    ]  # the performance dataframes will be filtered by the intersection of the indices of the reference_dfs
+    ref_indices = [
+        get_perf_scores_df(**exp_dict, split='test').index for exp_dict in reference_dfs
+    ]
+    ref_index = reduce(lambda idx_a, idx_b: idx_a.intersection(idx_b), ref_indices)
+    return ref_index
