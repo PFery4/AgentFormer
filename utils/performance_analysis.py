@@ -66,14 +66,15 @@ def get_all_results_directories() -> List[Dict]:
                     split_path = os.path.join(model_path, split)
                     assert os.path.exists(split_path)
 
-                    exp_dict = {
-                        'experiment_name': experiment_name,
-                        'dataset_used': dataset_used,
-                        'model_name': model_name,
-                        'split': split
-                    }
-
-                    experiment_dicts.append(exp_dict)
+                    scores_file = os.path.join(split_path, 'prediction_scores.yml')
+                    if os.path.exists(scores_file) and os.path.isfile(scores_file):
+                        exp_dict = {
+                            'experiment_name': experiment_name,
+                            'dataset_used': dataset_used,
+                            'model_name': model_name,
+                            'split': split
+                        }
+                        experiment_dicts.append(exp_dict)
 
     return experiment_dicts
 
