@@ -31,7 +31,8 @@ from utils.performance_analysis import \
     remove_k_sample_columns, \
     get_occlusion_indices, \
     get_difficult_occlusion_indices, \
-    get_reference_indices
+    get_reference_indices, \
+    get_all_results_directories
 
 
 if __name__ == '__main__':
@@ -63,7 +64,7 @@ if __name__ == '__main__':
     pd.set_option('display.width', 200)
     pd.set_option('display.max_colwidth', 75)
 
-    PERFORMANCE_ANALYSIS_DIRECTORY = os.path.join(REPO_ROOT, 'results', 'performance_analysis')
+    PERFORMANCE_ANALYSIS_DIRECTORY = os.path.join(REPO_ROOT, 'performance_analysis')
     os.makedirs(PERFORMANCE_ANALYSIS_DIRECTORY, exist_ok=True)
 
     MEASURE = 'm'       # 'm' | 'px'
@@ -239,8 +240,8 @@ if __name__ == '__main__':
         assert args.cfg is not None
         experiment_names = args.cfg
 
-        # boxplot_scores = ADE_SCORES+FDE_SCORES
-        boxplot_scores = ADE_SCORES+PAST_ADE_SCORES+FDE_SCORES+PAST_FDE_SCORES+OCCLUSION_MAP_SCORES
+        boxplot_scores = ADE_SCORES+FDE_SCORES
+        # boxplot_scores = ADE_SCORES+PAST_ADE_SCORES+FDE_SCORES+PAST_FDE_SCORES+OCCLUSION_MAP_SCORES
         figsize = (14, 10)
 
         boxplot_experiments_together = True

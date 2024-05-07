@@ -102,13 +102,13 @@ if __name__ == '__main__':
             print(f"saving loss graph under:\n{save_path}")
             plt.savefig(save_path, bbox_inches='tight', transparent=True, dpi=100)
 
-            save_dir = os.path.join(REPO_ROOT, 'results', 'performance_analysis', 'loss_graphs', cfg_str)
+            save_dir = os.path.join(REPO_ROOT, 'performance_analysis', 'loss_graphs', cfg_str)
             os.makedirs(save_dir, exist_ok=True)
             save_path = os.path.join(save_dir, f"{'_'.join(args.split)}_losses.png")
             print(f"saving loss graph under:\n{save_path}")
             plt.savefig(save_path, bbox_inches='tight', transparent=True, dpi=100)
 
-            save_dir = os.path.join(REPO_ROOT, 'results', 'performance_analysis', 'loss_graphs')
+            save_dir = os.path.join(REPO_ROOT, 'performance_analysis', 'loss_graphs')
             save_path = os.path.join(save_dir, f"{cfg_str}___{'_'.join(args.split)}_losses.png")
             print(f"saving loss graph under:\n{save_path}")
             plt.savefig(save_path, bbox_inches='tight', transparent=True, dpi=100)
