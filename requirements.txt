@@ -1,7 +1,19 @@
+# Note: install pytorch first (preferably with CUDA)
+# Note: install scikit-geometry (either through the conda-forge channel):
+# 	$: conda install -c conda-forge scikit-geometry
+# (or by building from source, with CGAL 5.0 installed preemptively)
+# 	$: python -m pip install -e . -v
+# then, the requirements can be installed:
+# 	$: pip install -r requirements.txt
+
 tensorboard
 opencv-python
 glob2
-six
 pyyaml
 easydict
-nuscenes-devkit
+pandas
+tqdm
+matplotlib
+psutil
+h5py
+scipy
