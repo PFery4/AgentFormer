@@ -357,8 +357,10 @@ def make_box_plot_occlusion_lengths(
         draw_ax: matplotlib.axes.Axes,
         experiments: List[Dict],
         plot_score: str,
-        categorization: pandas.core.series.Series
+        categorization: pandas.core.series.Series,
+        df_filter=None
 ) -> None:
+    print(f"categorization counts (total: {len(categorization)}):\n{categorization.value_counts()}")
     category_name, category_values = categorization.name, sorted(categorization.unique())
     colors = [plt.cm.Pastel1(i) for i in range(len(experiments))]
 
@@ -373,6 +375,9 @@ def make_box_plot_occlusion_lengths(
             model_name=exp_dict['model_name'],
             split=exp_dict['split']
         )
+        if df_filter is not None:
+            experiment_df = df_filter(experiment_df)
+
         experiment_df = remove_k_sample_columns(df=experiment_df)
 
         experiment_df = experiment_df.iloc[experiment_df.index.isin(categorization.index)]
