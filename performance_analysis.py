@@ -108,6 +108,7 @@ if __name__ == '__main__':
         ref_index = get_reference_indices()
 
         exp_dicts = get_all_results_directories()
+        exp_dicts = [exp_dict for exp_dict in exp_dicts if exp_dict['split'] in 'test']
         exp_dicts = [exp_dict for exp_dict in exp_dicts if exp_dict['experiment_name'] in experiment_names]
 
         def df_filter(df): return df.iloc[df.index.isin(ref_index)]
@@ -244,6 +245,7 @@ if __name__ == '__main__':
         experiment_names = args.cfg
 
         exp_dicts = get_all_results_directories()
+        exp_dicts = [exp_dict for exp_dict in exp_dicts if exp_dict['split'] in 'test']
         exp_dicts = [exp_dict for exp_dict in exp_dicts if exp_dict['experiment_name'] in experiment_names]
         # exp_dicts = [exp_dict for exp_dict in exp_dicts if exp_dict['dataset_used'] not in ['fully_observed']]
 
