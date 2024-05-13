@@ -264,6 +264,30 @@ if __name__ == '__main__':
         ref_past_pred_lengths = ref_past_pred_lengths.iloc[ref_past_pred_lengths.index.isin(ref_index)]
         ref_past_pred_lengths = ref_past_pred_lengths['past_pred_length']
 
+        def df_filter(df): return df.iloc[df.index.isin(ref_index)]
+        if args.filter is not None:
+            reference_df = get_perf_scores_df(
+                experiment_name='const_vel_occlusion_simulation',
+                dataset_used='occlusion_simulation',
+                model_name='untrained',
+                split='test'
+            )
+            filter_dict = {
+                'occluded_ids': (lambda df: df[df['past_pred_length'] != 0], []),
+                'fully_observed_ids': (lambda df: df[df['past_pred_length'] == 0], []),
+                'difficult_dataset': (lambda df: df[df['OAC_t0'] == 0.], ['agent_id']),
+                'difficult_occluded_ids': (lambda df: df[df['OAC_t0'] == 0.], []),
+            }
+            assert args.filter in filter_dict.keys()
+            filter_func, drop_indices = filter_dict[args.filter]
+            filter_index = filter_func(reference_df).index.droplevel(level=drop_indices)
+
+            def df_filter(df): return df.iloc[
+                df.index.droplevel(level=drop_indices).isin(filter_index) & df.index.isin(ref_index)
+            ]
+
+            ref_past_pred_lengths = df_filter(ref_past_pred_lengths)
+
         if boxplot_experiments_together:
             for plot_score in boxplot_scores:
                 fig, ax = plt.subplots(figsize=figsize)
@@ -271,7 +295,8 @@ if __name__ == '__main__':
                     draw_ax=ax,
                     experiments=exp_dicts,
                     plot_score=plot_score,
-                    categorization=ref_past_pred_lengths
+                    categorization=ref_past_pred_lengths,
+                    df_filter=df_filter
                 )
                 ax.set_title(f"{plot_score} vs. Last Observed timestep")
 
