@@ -1,38 +1,20 @@
 import argparse
 import os.path
 import pickle
-
-import matplotlib.axes
 import matplotlib.pyplot as plt
-import mpl_toolkits.axes_grid1
-import numpy as np
-import yaml
 import pandas as pd
-import torch
-
-from typing import Dict, List, Optional, Tuple, Any
-
-from data.sdd_dataloader import PresavedDatasetSDD
-from utils.utils import prepare_seed
 from utils.config import Config, REPO_ROOT
 from data.sdd_dataloader import HDF5DatasetSDD
-from utils.sdd_visualize import visualize_input_and_predictions, write_scores_per_mode
-from utils.performance_metrics import compute_samples_ADE, compute_samples_FDE
-from model.agentformer_loss import index_mapping_gt_seq_pred_seq
+from utils.sdd_visualize import visualize_input_and_predictions
 from utils.performance_analysis import \
     generate_performance_summary_df, \
     pretty_print_difference_summary_df, \
     make_box_plot_occlusion_lengths, \
     make_oac_histograms_figure, \
-    oac_histogram, \
-    oac_histograms_versus_lastobs, \
     get_perf_scores_df, \
-    get_comparable_rows, \
-    remove_k_sample_columns, \
-    get_occlusion_indices, \
-    get_difficult_occlusion_indices, \
     get_reference_indices, \
-    get_all_results_directories
+    get_all_results_directories, \
+    get_df_filter
 
 
 if __name__ == '__main__':
@@ -111,27 +93,7 @@ if __name__ == '__main__':
         exp_dicts = [exp_dict for exp_dict in exp_dicts if exp_dict['split'] in 'test']
         exp_dicts = [exp_dict for exp_dict in exp_dicts if exp_dict['experiment_name'] in experiment_names]
 
-        def df_filter(df): return df.iloc[df.index.isin(ref_index)]
-        if args.filter is not None:
-            reference_df = get_perf_scores_df(
-                experiment_name='const_vel_occlusion_simulation',
-                dataset_used='occlusion_simulation',
-                model_name='untrained',
-                split='test'
-            )
-            filter_dict = {
-                'occluded_ids': (lambda df: df[df['past_pred_length'] != 0], []),
-                'fully_observed_ids': (lambda df: df[df['past_pred_length'] == 0], []),
-                'difficult_dataset': (lambda df: df[df['OAC_t0'] == 0.], ['agent_id']),
-                'difficult_occluded_ids': (lambda df: df[df['OAC_t0'] == 0.], []),
-            }
-            assert args.filter in filter_dict.keys()
-            filter_func, drop_indices = filter_dict[args.filter]
-            filter_index = filter_func(reference_df).index.droplevel(level=drop_indices)
-
-            def df_filter(df): return df.iloc[
-                df.index.droplevel(level=drop_indices).isin(filter_index) & df.index.isin(ref_index)
-            ]
+        df_filter = get_df_filter(ref_index=ref_index, filter=args.filter)
 
         all_perf_df = generate_performance_summary_df(
             experiments=exp_dicts, metric_names=metric_names, operation=operation, df_filter=df_filter
@@ -266,29 +228,8 @@ if __name__ == '__main__':
         ref_past_pred_lengths = ref_past_pred_lengths.iloc[ref_past_pred_lengths.index.isin(ref_index)]
         ref_past_pred_lengths = ref_past_pred_lengths['past_pred_length']
 
-        def df_filter(df): return df.iloc[df.index.isin(ref_index)]
-        if args.filter is not None:
-            reference_df = get_perf_scores_df(
-                experiment_name='const_vel_occlusion_simulation',
-                dataset_used='occlusion_simulation',
-                model_name='untrained',
-                split='test'
-            )
-            filter_dict = {
-                'occluded_ids': (lambda df: df[df['past_pred_length'] != 0], []),
-                'fully_observed_ids': (lambda df: df[df['past_pred_length'] == 0], []),
-                'difficult_dataset': (lambda df: df[df['OAC_t0'] == 0.], ['agent_id']),
-                'difficult_occluded_ids': (lambda df: df[df['OAC_t0'] == 0.], []),
-            }
-            assert args.filter in filter_dict.keys()
-            filter_func, drop_indices = filter_dict[args.filter]
-            filter_index = filter_func(reference_df).index.droplevel(level=drop_indices)
-
-            def df_filter(df): return df.iloc[
-                df.index.droplevel(level=drop_indices).isin(filter_index) & df.index.isin(ref_index)
-            ]
-
-            ref_past_pred_lengths = df_filter(ref_past_pred_lengths)
+        df_filter = get_df_filter(ref_index=ref_index, filter=args.filter)
+        ref_past_pred_lengths = df_filter(ref_past_pred_lengths)
 
         if boxplot_experiments_together:
             for plot_score in boxplot_scores:
