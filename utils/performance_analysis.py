@@ -541,3 +541,47 @@ def get_reference_indices():
     ]
     ref_index = reduce(lambda idx_a, idx_b: idx_a.intersection(idx_b), ref_indices)
     return ref_index
+
+
+def get_df_filter(ref_index: pd.Index, filter: Optional[str] = None):
+    def df_filter(df): return df.iloc[df.index.isin(ref_index)]
+
+    if filter is not None:
+        ref_df_1 = get_perf_scores_df(
+            experiment_name='const_vel_occlusion_simulation',
+            dataset_used='occlusion_simulation',
+            model_name='untrained',
+            split='test'
+        )
+        ref_df_2 = get_perf_scores_df(
+            experiment_name='const_vel_occlusion_simulation_imputed',
+            dataset_used='occlusion_simulation_imputed',
+            model_name='untrained',
+            split='test'
+        )
+        ref_df = pd.DataFrame(None)
+        ref_df['occl_OAC_t0'] = ref_df_1['OAC_t0']
+        ref_df['occl_past_pred_length'] = ref_df_1['past_pred_length']
+        ref_df['imp_OAC_t0'] = ref_df_2['OAC_t0']
+        ref_df['imp_past_pred_length'] = ref_df_2['past_pred_length']
+
+        ref_df = ref_df[ref_df['occl_past_pred_length'] == ref_df['imp_past_pred_length']]
+
+        assert all(ref_df['occl_past_pred_length'] == ref_df['imp_past_pred_length'])
+
+        filter_dict = {
+            'occluded_ids': (lambda df: df[df['occl_past_pred_length'] != 0], []),
+            'fully_observed_ids': (lambda df: df[df['occl_past_pred_length'] == 0], []),
+            'difficult_dataset': (lambda df: df[(df['occl_OAC_t0'] == 0.) & (df['imp_OAC_t0'] == 0.)], ['agent_id']),
+            'difficult_occluded_ids': (lambda df: df[(df['occl_OAC_t0'] == 0.) & (df['imp_OAC_t0'] == 0.)], []),
+        }
+        assert filter in filter_dict.keys()
+        filter_func, drop_indices = filter_dict[filter]
+        filter_index = filter_func(ref_df).index.droplevel(level=drop_indices)
+
+        def df_filter(df): return df.iloc[
+            df.index.droplevel(level=drop_indices).isin(filter_index) & df.index.isin(ref_index)
+            ]
+
+    return df_filter
+
