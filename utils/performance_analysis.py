@@ -5,6 +5,7 @@ import pandas.core.series
 import matplotlib.axes
 import matplotlib.pyplot as plt
 import numpy as np
+import scipy.stats
 from functools import reduce
 
 from typing import Any, Dict, List, Optional, Tuple
@@ -390,13 +391,22 @@ def make_box_plot_occlusion_lengths(
 
         pred_lengths = sorted(experiment_df[category_name].unique())
 
+        # print(f"{experiment_df['min_ADE'].mean(), experiment_df['min_FDE'].mean()=}")
+
         experiment_data_dict = {int(pred_length): None for pred_length in pred_lengths}
         for pred_length in pred_lengths:
             mini_df = experiment_df[
                 (experiment_df[category_name] == pred_length) & (pd.notna(experiment_df[plot_score]))
             ]
 
+            # print(f"{len(mini_df)=}")
+            # print(f"{mini_df['min_ADE'].mean(), mini_df['min_FDE'].mean()=}")
+            # print(f"{mini_df['mean_ADE'].mean(), mini_df['mean_FDE'].mean()=}")
+            # mini_df = mini_df.sample(495)
+            # print(f"{len(mini_df)=}")
+
             scores = mini_df[plot_score].to_numpy()
+            # print(f"{scores.shape=}")
             experiment_data_dict[int(pred_length)] = scores
 
         box_plot_dict[boxplot_dict_key(exp_dict)] = experiment_data_dict
@@ -585,3 +595,27 @@ def get_df_filter(ref_index: pd.Index, filter: Optional[str] = None):
 
     return df_filter
 
+
+def perform_ttest(array_a: np.array, array_b: np.array, alpha=0.05):
+    # https://en.wikipedia.org/wiki/Welch%27s_t-test
+    # corrected sample stdev
+    def c_std(a): return a.std(ddof=1)
+
+    # standard error
+    def s_x(a): return c_std(a) / np.sqrt(len(a))
+
+    # degrees of freedom
+    def dof(a, b): return (s_x(a) ** 2 + s_x(b) ** 2) ** 2 / \
+                          (s_x(a) ** 4 / (len(a) - 1) + s_x(b) ** 4 / (len(b) - 1))
+
+    # https://www.geeksforgeeks.org/how-to-find-the-t-critical-value-in-python/
+    # two-tailed T-critical value
+    def twotailed_t_critical(alpha, df): return scipy.stats.t.ppf(q=1 - alpha / 2, df=df)
+
+    t_test = scipy.stats.ttest_ind(a=array_a, b=array_b, equal_var=False)
+    df = dof(array_a, array_b)
+    t_crit = twotailed_t_critical(alpha=alpha, df=df)
+
+    is_significant = np.abs(t_test.statistic) > np.abs(t_crit)
+
+    return is_significant, t_test.statistic, t_test.pvalue, df, t_crit
