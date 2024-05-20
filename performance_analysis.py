@@ -212,8 +212,9 @@ if __name__ == '__main__':
         exp_dicts = get_all_results_directories()
         exp_dicts = [exp_dict for exp_dict in exp_dicts if exp_dict['split'] in ['test']]
         exp_dicts = [exp_dict for exp_dict in exp_dicts if exp_dict['experiment_name'] in experiment_names]
+        # exp_dicts = [exp_dict for exp_dict in exp_dicts if exp_dict['dataset_used'] in ['fully_observed']]
 
-        test_scores = ['min_ADE', 'min_FDE']
+        test_scores = ADE_SCORES + FDE_SCORES
         category_1, category_2 = args.ttest
         out_df_columns = [
             'experiment', 'dataset_used', 'test_score', 'n_1', 'mean_1', 's^2_1', 'n_2', 'mean_2', 's^2_2',
@@ -317,7 +318,7 @@ if __name__ == '__main__':
         exp_dicts = [exp_dict for exp_dict in exp_dicts if exp_dict['split'] in ['test']]
         exp_dicts = [exp_dict for exp_dict in exp_dicts if exp_dict['experiment_name'] in experiment_names]
         # exp_dicts = [exp_dict for exp_dict in exp_dicts if exp_dict['dataset_used'] not in ['fully_observed']]
-        # exp_dicts = [exp_dict for exp_dict in exp_dicts if exp_dict['dataset_used'] in ['fully_observed']]
+        exp_dicts = [exp_dict for exp_dict in exp_dicts if exp_dict['dataset_used'] in ['fully_observed']]
 
         boxplot_scores = ADE_SCORES+FDE_SCORES
         # boxplot_scores = ADE_SCORES+PAST_ADE_SCORES+FDE_SCORES+PAST_FDE_SCORES+OCCLUSION_MAP_SCORES
