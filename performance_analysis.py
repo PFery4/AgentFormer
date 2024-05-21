@@ -25,7 +25,7 @@ if __name__ == '__main__':
     parser.add_argument('--perf_summary', action='store_true', default=False)
     parser.add_argument('--filter', default=None)
     parser.add_argument('--boxplots', action='store_true', default=False)
-    parser.add_argument('--ttest', nargs='+', type=int, default=None)
+    parser.add_argument('--ttest', nargs='*', help='specify 0 or 2 arguments', type=int, default=None)
     parser.add_argument('--oac_histograms', action='store_true', default=False)
     parser.add_argument('--qual_compare', action='store_true', default=False)
     parser.add_argument('--instance_num', type=int, default=None)
@@ -205,7 +205,7 @@ if __name__ == '__main__':
     # t-tests of score diff dependent on last observed timestep categories ############################################
     if args.ttest is not None:
         print("\n\nT-TESTS:\n\n")
-        assert len(args.ttest) == 2
+        assert len(args.ttest) in {0, 2}
         assert args.cfg is not None
         experiment_names = args.cfg
 
@@ -215,11 +215,6 @@ if __name__ == '__main__':
         # exp_dicts = [exp_dict for exp_dict in exp_dicts if exp_dict['dataset_used'] in ['fully_observed']]
 
         test_scores = ADE_SCORES + FDE_SCORES
-        category_1, category_2 = args.ttest
-        out_df_columns = [
-            'experiment', 'dataset_used', 'test_score', 'n_1', 'mean_1', 's^2_1', 'n_2', 'mean_2', 's^2_2',
-            't_stat', 'df', 'p_value', 't_critical', 'significant'
-        ]
 
         ref_index = get_reference_indices()
         ref_past_pred_lengths = get_perf_scores_df(
@@ -234,77 +229,132 @@ if __name__ == '__main__':
         df_filter = get_df_filter(ref_index=ref_index, filter=args.filter)
         ref_past_pred_lengths = df_filter(ref_past_pred_lengths)
 
-        category_1_index = ref_past_pred_lengths[ref_past_pred_lengths == category_1].index
-        category_2_index = ref_past_pred_lengths[ref_past_pred_lengths == category_2].index
+        if len(args.ttest) == 2:
 
-        out_df = pd.DataFrame(columns=out_df_columns)
+            category_1, category_2 = args.ttest
+            out_df_columns = [
+                'experiment', 'dataset_used', 'test_score', 'n_1', 'mean_1', 's^2_1', 'n_2', 'mean_2', 's^2_2',
+                't_stat', 'df', 'p_value', 't_critical', 'significant'
+            ]
 
-        for exp_dict in exp_dicts:
+            category_1_index = ref_past_pred_lengths[ref_past_pred_lengths == category_1].index
+            category_2_index = ref_past_pred_lengths[ref_past_pred_lengths == category_2].index
 
-            exp_name = exp_dict['experiment_name']
-            dataset_used = exp_dict['dataset_used']
-            model_name = exp_dict['model_name']
-            split = exp_dict['split']
+            out_df = pd.DataFrame(columns=out_df_columns)
 
-            experiment_df = get_perf_scores_df(
-                experiment_name=exp_name,
-                dataset_used=dataset_used,
-                model_name=model_name,
-                split=split
-            )
-            if df_filter is not None:
-                experiment_df = df_filter(experiment_df)
+            for exp_dict in exp_dicts:
+
+                exp_name = exp_dict['experiment_name']
+                dataset_used = exp_dict['dataset_used']
+                model_name = exp_dict['model_name']
+                split = exp_dict['split']
+
+                experiment_df = get_perf_scores_df(
+                    experiment_name=exp_name,
+                    dataset_used=dataset_used,
+                    model_name=model_name,
+                    split=split
+                )
+                if df_filter is not None:
+                    experiment_df = df_filter(experiment_df)
+
+                for test_score in test_scores:
+
+                    scores_1 = experiment_df.iloc[experiment_df.index.isin(category_1_index)][test_score]
+                    scores_2 = experiment_df.iloc[experiment_df.index.isin(category_2_index)][test_score]
+                    assert all(scores_1.index == category_1_index)
+                    assert all(scores_2.index == category_2_index)
+
+                    scores_1 = scores_1.values
+                    scores_2 = scores_2.values
+
+                    # import numpy as np
+                    # example A:
+                    # scores_1 = np.array([27.5, 21.0, 19.0, 23.6, 17.0, 17.9, 16.9, 20.1, 21.9, 22.6, 23.1, 19.6, 19.0, 21.7, 21.4])
+                    # scores_2 = np.array([27.1, 22.0, 20.8, 23.4, 23.4, 23.5, 25.8, 22.0, 24.8, 20.2, 21.9, 22.1, 22.9, 20.5, 24.4])
+                    # example B:
+                    # scores_1 = np.array([17.2, 20.9, 22.6, 18.1, 21.7, 21.4, 23.5, 24.2, 14.7, 21.8])
+                    # scores_2 = np.array([21.5, 22.8, 21.0, 23.0, 21.6, 23.6, 22.5, 20.7, 23.4, 21.8, 20.7, 21.7, 21.5, 22.5, 23.6, 21.5, 22.5, 23.5, 21.5, 21.8])
+                    # example C:
+                    # scores_1 = np.array([19.8, 20.4, 19.6, 17.8, 18.5, 18.9, 18.3, 18.9, 19.5, 22.0])
+                    # scores_2 = np.array([28.2, 26.6, 20.1, 23.3, 25.2, 22.1, 17.7, 27.6, 20.6, 13.7, 23.2, 17.5, 20.6, 18.0, 23.9, 21.6, 24.3, 20.4, 24.0, 13.2])
+
+                    is_significant, t_stat, p_val, df, t_crit = perform_ttest(array_a=scores_1, array_b=scores_2)
+
+                    row_dict = {
+                        'experiment': exp_name,
+                        'dataset_used': dataset_used,
+                        'n_1': len(scores_1),
+                        'mean_1': scores_1.mean(),
+                        's^2_1': scores_1.std(ddof=1)**2,
+                        'n_2': len(scores_2),
+                        'mean_2': scores_2.mean(),
+                        's^2_2': scores_2.std(ddof=1)**2,
+                        'test_score': test_score,
+                        't_stat': t_stat,
+                        'p_value': p_val,
+                        'df': df,
+                        't_critical': t_crit,
+                        'significant': is_significant
+                    }
+
+                    out_df.loc[len(out_df)] = row_dict
+
+            print(f"The goal of the t-tests is to evaluate whether performance metric scores differ significantly between "
+                  f"different last-observation timestep categories.\nThe chosen last observation timestep categories for "
+                  f"the following set of t-tests are ({category_1}, {category_2}):\n")
 
             for test_score in test_scores:
+                print(f"{test_score}:")
+                print(out_df[out_df['test_score'] == test_score])
+                print("")
 
-                scores_1 = experiment_df.iloc[experiment_df.index.isin(category_1_index)][test_score]
-                scores_2 = experiment_df.iloc[experiment_df.index.isin(category_2_index)][test_score]
-                assert all(scores_1.index == category_1_index)
-                assert all(scores_2.index == category_2_index)
+        else:
 
-                scores_1 = scores_1.values
-                scores_2 = scores_2.values
+            categories = list(range(2, 6))
+            row_index_tuples = [(exp_dict['experiment_name'], exp_dict['dataset_used']) for exp_dict in exp_dicts]
+            row_df_index = pd.MultiIndex.from_tuples(row_index_tuples, names=['experiment', 'dataset_used'])
+            col_index_tuples = [(test_score, f'1-{cat}') for test_score in test_scores for cat in categories]
+            col_df_index = pd.MultiIndex.from_tuples(col_index_tuples, names=['categories', 'test_score'])
 
-                # import numpy as np
-                # example A:
-                # scores_1 = np.array([27.5, 21.0, 19.0, 23.6, 17.0, 17.9, 16.9, 20.1, 21.9, 22.6, 23.1, 19.6, 19.0, 21.7, 21.4])
-                # scores_2 = np.array([27.1, 22.0, 20.8, 23.4, 23.4, 23.5, 25.8, 22.0, 24.8, 20.2, 21.9, 22.1, 22.9, 20.5, 24.4])
-                # example B:
-                # scores_1 = np.array([17.2, 20.9, 22.6, 18.1, 21.7, 21.4, 23.5, 24.2, 14.7, 21.8])
-                # scores_2 = np.array([21.5, 22.8, 21.0, 23.0, 21.6, 23.6, 22.5, 20.7, 23.4, 21.8, 20.7, 21.7, 21.5, 22.5, 23.6, 21.5, 22.5, 23.5, 21.5, 21.8])
-                # example C:
-                # scores_1 = np.array([19.8, 20.4, 19.6, 17.8, 18.5, 18.9, 18.3, 18.9, 19.5, 22.0])
-                # scores_2 = np.array([28.2, 26.6, 20.1, 23.3, 25.2, 22.1, 17.7, 27.6, 20.6, 13.7, 23.2, 17.5, 20.6, 18.0, 23.9, 21.6, 24.3, 20.4, 24.0, 13.2])
+            out_df = pd.DataFrame(index=row_df_index, columns=col_df_index)
 
-                is_significant, t_stat, p_val, df, t_crit = perform_ttest(array_a=scores_1, array_b=scores_2)
+            for exp_dict in exp_dicts:
+                exp_name = exp_dict['experiment_name']
+                dataset_used = exp_dict['dataset_used']
+                model_name = exp_dict['model_name']
+                split = exp_dict['split']
 
-                row_dict = {
-                    'experiment': exp_name,
-                    'dataset_used': dataset_used,
-                    'n_1': len(scores_1),
-                    'mean_1': scores_1.mean(),
-                    's^2_1': scores_1.std(ddof=1)**2,
-                    'n_2': len(scores_2),
-                    'mean_2': scores_2.mean(),
-                    's^2_2': scores_2.std(ddof=1)**2,
-                    'test_score': test_score,
-                    't_stat': t_stat,
-                    'p_value': p_val,
-                    'df': df,
-                    't_critical': t_crit,
-                    'significant': is_significant
-                }
+                experiment_df = get_perf_scores_df(
+                    experiment_name=exp_name,
+                    dataset_used=dataset_used,
+                    model_name=model_name,
+                    split=split
+                )
+                if df_filter is not None:
+                    experiment_df = df_filter(experiment_df)
 
-                out_df.loc[len(out_df)] = row_dict
+                for test_score in test_scores:
 
-        print(f"The goal of the t-tests is to evaluate whether performance metric scores differ significantly between "              
-              f"different last-observation timestep categories.\nThe chosen last observation timestep categories for "
-              f"the following set of t-tests are ({category_1}, {category_2}):\n")
+                    for category in categories:
+                        category_1, category_2 = 1, category
 
-        for test_score in test_scores:
-            print(f"{test_score}:")
-            print(out_df[out_df['test_score'] == test_score])
-            print("")
+                        category_1_index = ref_past_pred_lengths[ref_past_pred_lengths == category_1].index
+                        category_2_index = ref_past_pred_lengths[ref_past_pred_lengths == category_2].index
+
+                        scores_1 = experiment_df.iloc[experiment_df.index.isin(category_1_index)][test_score]
+                        scores_2 = experiment_df.iloc[experiment_df.index.isin(category_2_index)][test_score]
+                        assert all(scores_1.index == category_1_index)
+                        assert all(scores_2.index == category_2_index)
+
+                        scores_1 = scores_1.values
+                        scores_2 = scores_2.values
+
+                        is_significant, t_stat, p_val, df, t_crit = perform_ttest(array_a=scores_1, array_b=scores_2)
+
+                        out_df.loc[(exp_name, dataset_used), (test_score, f'1-{category_2}')] = is_significant
+
+            print(out_df)
 
         print(EXPERIMENT_SEPARATOR)
 
@@ -318,7 +368,7 @@ if __name__ == '__main__':
         exp_dicts = [exp_dict for exp_dict in exp_dicts if exp_dict['split'] in ['test']]
         exp_dicts = [exp_dict for exp_dict in exp_dicts if exp_dict['experiment_name'] in experiment_names]
         # exp_dicts = [exp_dict for exp_dict in exp_dicts if exp_dict['dataset_used'] not in ['fully_observed']]
-        exp_dicts = [exp_dict for exp_dict in exp_dicts if exp_dict['dataset_used'] in ['fully_observed']]
+        # exp_dicts = [exp_dict for exp_dict in exp_dicts if exp_dict['dataset_used'] in ['fully_observed']]
 
         boxplot_scores = ADE_SCORES+FDE_SCORES
         # boxplot_scores = ADE_SCORES+PAST_ADE_SCORES+FDE_SCORES+PAST_FDE_SCORES+OCCLUSION_MAP_SCORES
