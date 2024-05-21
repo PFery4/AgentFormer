@@ -315,7 +315,7 @@ if __name__ == '__main__':
             row_index_tuples = [(exp_dict['experiment_name'], exp_dict['dataset_used']) for exp_dict in exp_dicts]
             row_df_index = pd.MultiIndex.from_tuples(row_index_tuples, names=['experiment', 'dataset_used'])
             col_index_tuples = [(test_score, f'1-{cat}') for test_score in test_scores for cat in categories]
-            col_df_index = pd.MultiIndex.from_tuples(col_index_tuples, names=['categories', 'test_score'])
+            col_df_index = pd.MultiIndex.from_tuples(col_index_tuples, names=['test_score', 'categories'])
 
             out_df = pd.DataFrame(index=row_df_index, columns=col_df_index)
 
