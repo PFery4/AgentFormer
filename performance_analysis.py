@@ -311,10 +311,13 @@ if __name__ == '__main__':
 
         else:
 
-            categories = list(range(2, 6))
+            # comparisons = [(1, cat_2) for cat_2 in range(2, 6)]
+            comparisons = [(0, cat_2) for cat_2 in range(1, 7)]
+            def comp_name(comp): return f"-{comp[0]}/-{comp[1]}"
+
             row_index_tuples = [(exp_dict['experiment_name'], exp_dict['dataset_used']) for exp_dict in exp_dicts]
             row_df_index = pd.MultiIndex.from_tuples(row_index_tuples, names=['experiment', 'dataset_used'])
-            col_index_tuples = [(test_score, f'1-{cat}') for test_score in test_scores for cat in categories]
+            col_index_tuples = [(test_score, comp_name(comp)) for test_score in test_scores for comp in comparisons]
             col_df_index = pd.MultiIndex.from_tuples(col_index_tuples, names=['test_score', 'categories'])
 
             out_df = pd.DataFrame(index=row_df_index, columns=col_df_index)
@@ -336,8 +339,8 @@ if __name__ == '__main__':
 
                 for test_score in test_scores:
 
-                    for category in categories:
-                        category_1, category_2 = 1, category
+                    for comp in comparisons:
+                        category_1, category_2 = comp
 
                         category_1_index = ref_past_pred_lengths[ref_past_pred_lengths == category_1].index
                         category_2_index = ref_past_pred_lengths[ref_past_pred_lengths == category_2].index
@@ -352,7 +355,7 @@ if __name__ == '__main__':
 
                         is_significant, t_stat, p_val, df, t_crit = perform_ttest(array_a=scores_1, array_b=scores_2)
 
-                        out_df.loc[(exp_name, dataset_used), (test_score, f'1-{category_2}')] = is_significant
+                        out_df.loc[(exp_name, dataset_used), (test_score, comp_name(comp))] = is_significant
 
             print(out_df)
 
