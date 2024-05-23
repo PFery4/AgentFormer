@@ -20,6 +20,24 @@ STATISTICAL_OPERATIONS = {
 }
 
 
+def get_occlusion_traj_info_df(drop_idx: bool = True):
+    target_path = os.path.join(REPO_ROOT, 'results', 'dataset_occlusion_simulation', 'results', 'trajectories_info.csv')
+    assert os.path.exists(target_path)
+
+    df = pd.read_csv(target_path)
+
+    df_indices = ['idx', 'filename', 'agent_id']
+    df.set_index(keys=df_indices, inplace=True)
+
+    if drop_idx:
+        df = df.droplevel('idx')
+
+    df['idle'] = df['travelled_distance_Tobs_t0'] < 0.5
+    df['occlusion_pattern'] = df['occlusion_pattern'].astype(str).str.rjust(8, '0')
+
+    return df
+
+
 def get_results_directory(
         experiment_name: str,
         dataset_used: Optional[str] = None,
@@ -53,17 +71,19 @@ def get_all_results_directories() -> List[Dict]:
     assert os.path.exists(root_results_path)
     experiment_names = sorted(os.listdir(root_results_path))
 
+    def os_get_dirs(path): return [name for name in os.listdir(path) if os.path.isdir(os.path.join(path, name))]
+
     experiment_dicts = []
     for experiment_name in experiment_names:
         run_results_path = os.path.join(root_results_path, experiment_name, 'results')
         assert os.path.exists(run_results_path)
-        for dataset_used in os.listdir(run_results_path):
+        for dataset_used in os_get_dirs(run_results_path):
             dataset_path = os.path.join(run_results_path, dataset_used)
             assert os.path.exists(dataset_path)
-            for model_name in os.listdir(dataset_path):
+            for model_name in os_get_dirs(dataset_path):
                 model_path = os.path.join(dataset_path, model_name)
                 assert os.path.exists(model_path)
-                for split in os.listdir(model_path):
+                for split in os_get_dirs(model_path):
                     split_path = os.path.join(model_path, split)
                     assert os.path.exists(split_path)
 
