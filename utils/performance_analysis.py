@@ -573,10 +573,16 @@ def get_reference_indices():
     return ref_index
 
 
-def get_df_filter(ref_index: pd.Index, filter: Optional[str] = None):
-    def df_filter(df): return df.iloc[df.index.isin(ref_index)]
+def get_df_filter(ref_index: pd.Index, filters: Optional[List[str]] = None):
+    def ref_index_filter(df): return df.iloc[df.index.isin(ref_index)]
 
-    if filter is not None:
+    def filter_(df, filter_df, level):
+        return df.iloc[df.index.droplevel(level=level).isin(filter_df.index.droplevel(level=level))]
+
+    filter_funcs = [ref_index_filter]
+
+    if filters is not None:
+        traj_info_df = get_occlusion_traj_info_df()
         ref_df_1 = get_perf_scores_df(
             experiment_name='const_vel_occlusion_simulation',
             dataset_used='occlusion_simulation',
@@ -596,24 +602,26 @@ def get_df_filter(ref_index: pd.Index, filter: Optional[str] = None):
         ref_df['imp_past_pred_length'] = ref_df_2['past_pred_length']
 
         ref_df = ref_df[ref_df['occl_past_pred_length'] == ref_df['imp_past_pred_length']]
-
         assert all(ref_df['occl_past_pred_length'] == ref_df['imp_past_pred_length'])
 
         filter_dict = {
-            'occluded_ids': (lambda df: df[df['occl_past_pred_length'] != 0], []),
-            'fully_observed_ids': (lambda df: df[df['occl_past_pred_length'] == 0], []),
-            'difficult_dataset': (lambda df: df[(df['occl_OAC_t0'] == 0.) & (df['imp_OAC_t0'] == 0.)], ['agent_id']),
-            'difficult_occluded_ids': (lambda df: df[(df['occl_OAC_t0'] == 0.) & (df['imp_OAC_t0'] == 0.)], []),
+            'occluded_ids': lambda df: filter_(df, ref_df[ref_df['occl_past_pred_length'] != 0], []),
+            'fully_observed_ids': lambda df: filter_(df, ref_df[ref_df['occl_past_pred_length'] == 0], []),
+            'difficult_dataset': lambda df: filter_(
+                df, ref_df[(ref_df['occl_OAC_t0'] == 0.) & (ref_df['imp_OAC_t0'] == 0.)], ['agent_id']
+            ),
+            'difficult_occluded_ids': lambda df: filter_(
+                df, ref_df[(ref_df['occl_OAC_t0'] == 0.) & (ref_df['imp_OAC_t0'] == 0.)], []
+            ),
+            'moving': lambda df: filter_(df, traj_info_df[~traj_info_df['idle']], []),
+            'idle': lambda df: filter_(df, traj_info_df[traj_info_df['idle']], []),
         }
-        assert filter in filter_dict.keys()
-        filter_func, drop_indices = filter_dict[filter]
-        filter_index = filter_func(ref_df).index.droplevel(level=drop_indices)
 
-        def df_filter(df): return df.iloc[
-            df.index.droplevel(level=drop_indices).isin(filter_index) & df.index.isin(ref_index)
-            ]
+        assert all([filter_name in filter_dict.keys() for filter_name in filters])
 
-    return df_filter
+        [filter_funcs.append(filter_dict[filter_name]) for filter_name in filters]
+
+    return lambda df: reduce(lambda o, func: func(o), filter_funcs, df)
 
 
 def perform_ttest(array_a: np.array, array_b: np.array, alpha=0.05):
