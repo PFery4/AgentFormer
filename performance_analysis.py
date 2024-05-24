@@ -95,7 +95,7 @@ if __name__ == '__main__':
         exp_dicts = [exp_dict for exp_dict in exp_dicts if exp_dict['split'] in 'test']
         exp_dicts = [exp_dict for exp_dict in exp_dicts if exp_dict['experiment_name'] in experiment_names]
 
-        df_filter = get_df_filter(ref_index=ref_index, filter=args.filter)
+        df_filter = get_df_filter(ref_index=ref_index, filters=args.filter)
 
         all_perf_df = generate_performance_summary_df(
             experiments=exp_dicts, metric_names=metric_names, operation=operation, df_filter=df_filter
