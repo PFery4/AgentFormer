@@ -23,7 +23,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--cfg', nargs='+', default=None)
     parser.add_argument('--perf_summary', action='store_true', default=False)
-    parser.add_argument('--filter', default=None)
+    parser.add_argument('--filter', nargs='+', default=None)
     parser.add_argument('--boxplots', action='store_true', default=False)
     parser.add_argument('--ttest', nargs='*', help='specify 0 or 2 arguments', type=int, default=None)
     parser.add_argument('--oac_histograms', action='store_true', default=False)
@@ -226,7 +226,7 @@ if __name__ == '__main__':
         ref_past_pred_lengths = ref_past_pred_lengths.iloc[ref_past_pred_lengths.index.isin(ref_index)]
         ref_past_pred_lengths = ref_past_pred_lengths['past_pred_length']
 
-        df_filter = get_df_filter(ref_index=ref_index, filter=args.filter)
+        df_filter = get_df_filter(ref_index=ref_index, filters=args.filter)
         ref_past_pred_lengths = df_filter(ref_past_pred_lengths)
 
         if len(args.ttest) == 2:
@@ -390,7 +390,7 @@ if __name__ == '__main__':
         ref_past_pred_lengths = ref_past_pred_lengths.iloc[ref_past_pred_lengths.index.isin(ref_index)]
         ref_past_pred_lengths = ref_past_pred_lengths['past_pred_length']
 
-        df_filter = get_df_filter(ref_index=ref_index, filter=args.filter)
+        df_filter = get_df_filter(ref_index=ref_index, filters=args.filter)
         ref_past_pred_lengths = df_filter(ref_past_pred_lengths)
 
         # print(f"{ref_past_pred_lengths[ref_past_pred_lengths==6]=}")
