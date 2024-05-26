@@ -738,7 +738,8 @@ class PickleDatasetSDD(PresavedDatasetSDD):
             cv_perf_df = get_perf_scores_df(
                 experiment_name='const_vel_occlusion_simulation',
                 model_name='untrained',
-                split=self.split
+                split=self.split,
+                drop_idx=False
             )
             cv_perf_df = cv_perf_df[cv_perf_df['past_pred_length'] > 0]
             cv_perf_df = cv_perf_df[cv_perf_df['OAC_t0'] == 0.]
@@ -838,7 +839,8 @@ class HDF5DatasetSDD(PresavedDatasetSDD):
             cv_perf_df = get_perf_scores_df(
                 experiment_name='const_vel_occlusion_simulation',
                 model_name='untrained',
-                split=self.split
+                split=self.split,
+                drop_idx=False
             )
             cv_perf_df = cv_perf_df[cv_perf_df['past_pred_length'] > 0]
             cv_perf_df = cv_perf_df[cv_perf_df['OAC_t0'] == 0.]
