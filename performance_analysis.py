@@ -103,6 +103,22 @@ if __name__ == '__main__':
         all_perf_df.sort_values(by='min_FDE', inplace=True)
 
         if SHOW:
+
+            if True:  # specify some dataset characteristics
+                example_df = get_perf_scores_df(
+                    experiment_name='const_vel_occlusion_simulation',
+                    dataset_used='occlusion_simulation',
+                    model_name='untrained',
+                    split='test'
+                )
+                example_df = df_filter(example_df)
+
+                print(f"Dataset Characteristics:")
+                print(f"# instances\t\t: {len(example_df.index.unique(level='filename'))}")
+                print(f"# trajectories\t\t: {len(example_df)}")
+                print(f"# occlusion cases\t: {(example_df['past_pred_length'] != 0).sum()}")
+                print("\n")
+
             print(f"Experiments Performance Summary ({operation}):")
             print(all_perf_df)
 
