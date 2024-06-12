@@ -23,6 +23,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--cfg', nargs='+', default=None)
     parser.add_argument('--perf_summary', action='store_true', default=False)
+    parser.add_argument('--unit', type=str, default='m')        # 'm' | 'px'
     parser.add_argument('--filter', nargs='+', default=None)
     parser.add_argument('--boxplots', action='store_true', default=False)
     parser.add_argument('--ttest', nargs='*', help='specify 0 or 2 arguments', type=int, default=None)
@@ -41,6 +42,7 @@ if __name__ == '__main__':
     SAVE = args.save
 
     assert SAVE or SHOW
+    assert args.unit in ['m', 'px']
 
     # Global Variables set up #########################################################################################
     pd.set_option('display.max_rows', 500)
@@ -51,7 +53,7 @@ if __name__ == '__main__':
     PERFORMANCE_ANALYSIS_DIRECTORY = os.path.join(REPO_ROOT, 'performance_analysis')
     os.makedirs(PERFORMANCE_ANALYSIS_DIRECTORY, exist_ok=True)
 
-    MEASURE = 'm'       # 'm' | 'px'
+    UNIT = args.unit       # 'm' | 'px'
     EXPERIMENT_SEPARATOR = "\n\n\n\n" + "#" * 200 + "\n\n\n\n"
 
     DEFAULT_CFG = [
@@ -69,15 +71,20 @@ if __name__ == '__main__':
 
     ADE_SCORES = ['min_ADE', 'mean_ADE']
     PAST_ADE_SCORES = ['min_past_ADE', 'mean_past_ADE']
-    ALL_ADE_SCORES = ['min_all_ADE', 'mean_all_ADE']
     FDE_SCORES = ['min_FDE', 'mean_FDE']
     PAST_FDE_SCORES = ['min_past_FDE', 'mean_past_FDE']
     PRED_LENGTHS = ['past_pred_length', 'pred_length']
     OCCLUSION_MAP_SCORES = ['OAO', 'OAC', 'OAC_t0']
-    if MEASURE == 'px':
-        for score_var in [ADE_SCORES, PAST_ADE_SCORES, ALL_ADE_SCORES, FDE_SCORES, PAST_FDE_SCORES]:
-            score_var = [f'{key}_px' for key in score_var]
-    DISTANCE_METRICS = ADE_SCORES + FDE_SCORES + PAST_ADE_SCORES + PAST_FDE_SCORES + ALL_ADE_SCORES
+
+    if UNIT == 'px':
+
+        px_name = lambda names_list: [f'{score_name}_px' for score_name in names_list]
+        ADE_SCORES = px_name(ADE_SCORES)
+        PAST_ADE_SCORES = px_name(PAST_ADE_SCORES)
+        FDE_SCORES = px_name(FDE_SCORES)
+        PAST_FDE_SCORES = px_name(PAST_FDE_SCORES)
+
+    DISTANCE_METRICS = ADE_SCORES + FDE_SCORES + PAST_ADE_SCORES + PAST_FDE_SCORES
 
     # Performance Summary #############################################################################################
     if args.perf_summary:
