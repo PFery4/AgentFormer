@@ -92,6 +92,7 @@ if __name__ == '__main__':
 
         experiment_names = args.cfg if args.cfg is not None else DEFAULT_CFG
         operation = 'mean'          # 'mean' | 'median' | 'IQR'
+        sort_by = 'min_FDE' + ("" if UNIT == 'm' else '_px')
 
         # metric_names = DISTANCE_METRICS+PRED_LENGTHS+OCCLUSION_MAP_SCORES
         metric_names = ADE_SCORES + FDE_SCORES + OCCLUSION_MAP_SCORES
@@ -107,7 +108,7 @@ if __name__ == '__main__':
         all_perf_df = generate_performance_summary_df(
             experiments=exp_dicts, metric_names=metric_names, operation=operation, df_filter=df_filter
         )
-        all_perf_df.sort_values(by='min_FDE', inplace=True)
+        all_perf_df.sort_values(by=sort_by, inplace=True)
 
         if SHOW:
 
