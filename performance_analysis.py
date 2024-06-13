@@ -24,6 +24,7 @@ if __name__ == '__main__':
     parser.add_argument('--cfg', nargs='+', default=None)
     parser.add_argument('--perf_summary', action='store_true', default=False)
     parser.add_argument('--unit', type=str, default='m')        # 'm' | 'px'
+    parser.add_argument('--sort_by', type=str, default='experiment')
     parser.add_argument('--filter', nargs='+', default=None)
     parser.add_argument('--boxplots', action='store_true', default=False)
     parser.add_argument('--ttest', nargs='*', help='specify 0 or 2 arguments', type=int, default=None)
@@ -92,7 +93,7 @@ if __name__ == '__main__':
 
         experiment_names = args.cfg if args.cfg is not None else DEFAULT_CFG
         operation = 'mean'          # 'mean' | 'median' | 'IQR'
-        sort_by = 'min_FDE' + ("" if UNIT == 'm' else '_px')
+        sort_by = args.sort_by
 
         # metric_names = DISTANCE_METRICS+PRED_LENGTHS+OCCLUSION_MAP_SCORES
         metric_names = ADE_SCORES + FDE_SCORES + OCCLUSION_MAP_SCORES
