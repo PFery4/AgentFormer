@@ -70,22 +70,21 @@ if __name__ == '__main__':
         'occlusionformer_basis_bias_5',
     ]
 
-    ADE_SCORES = ['min_ADE', 'mean_ADE']
-    PAST_ADE_SCORES = ['min_past_ADE', 'mean_past_ADE']
-    FDE_SCORES = ['min_FDE', 'mean_FDE']
-    PAST_FDE_SCORES = ['min_past_FDE', 'mean_past_FDE']
+    MIN_SCORES = ['min_ADE', 'min_FDE']
+    MEAN_SCORES = ['mean_ADE', 'mean_FDE']
+    PAST_MIN_SCORES = ['min_past_ADE', 'min_past_FDE']
+    PAST_MEAN_SCORES = ['mean_past_ADE', 'mean_past_FDE']
+
     PRED_LENGTHS = ['past_pred_length', 'pred_length']
     OCCLUSION_MAP_SCORES = ['OAO', 'OAC', 'OAC_t0']
 
     if UNIT == 'px':
 
         px_name = lambda names_list: [f'{score_name}_px' for score_name in names_list]
-        ADE_SCORES = px_name(ADE_SCORES)
-        PAST_ADE_SCORES = px_name(PAST_ADE_SCORES)
-        FDE_SCORES = px_name(FDE_SCORES)
-        PAST_FDE_SCORES = px_name(PAST_FDE_SCORES)
-
-    DISTANCE_METRICS = ADE_SCORES + FDE_SCORES + PAST_ADE_SCORES + PAST_FDE_SCORES
+        MIN_SCORES = px_name(MIN_SCORES)
+        MEAN_SCORES = px_name(MEAN_SCORES)
+        PAST_MIN_SCORES = px_name(PAST_MIN_SCORES)
+        PAST_MEAN_SCORES = px_name(PAST_MEAN_SCORES)
 
     # Performance Summary #############################################################################################
     if args.perf_summary:
@@ -95,8 +94,9 @@ if __name__ == '__main__':
         operation = 'mean'          # 'mean' | 'median' | 'IQR'
         sort_by = args.sort_by
 
-        # metric_names = DISTANCE_METRICS+PRED_LENGTHS+OCCLUSION_MAP_SCORES
-        metric_names = ADE_SCORES + FDE_SCORES + OCCLUSION_MAP_SCORES
+        metric_names = (MIN_SCORES + MEAN_SCORES +
+                        PAST_MIN_SCORES + PAST_MEAN_SCORES +
+                        PRED_LENGTHS + OCCLUSION_MAP_SCORES)
 
         ref_index = get_reference_indices()
 
