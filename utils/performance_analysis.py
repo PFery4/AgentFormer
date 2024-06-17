@@ -380,7 +380,7 @@ def make_box_plot_occlusion_lengths(
         plot_score: str,
         categorization: pandas.core.series.Series,
         df_filter=None,
-        ylim=None
+        ylim=(None, None)
 ) -> None:
     print(f"categorization counts (total: {len(categorization)}):\n{categorization.value_counts()}")
     category_name, category_values = categorization.name, sorted(categorization.unique())
