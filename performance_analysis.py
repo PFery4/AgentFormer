@@ -398,8 +398,9 @@ if __name__ == '__main__':
         # exp_dicts = [exp_dict for exp_dict in exp_dicts if exp_dict['dataset_used'] not in ['fully_observed']]
         # exp_dicts = [exp_dict for exp_dict in exp_dicts if exp_dict['dataset_used'] in ['fully_observed']]
 
-        boxplot_scores = MIN_SCORES + MEAN_SCORES
-        
+        boxplot_scores = ['min_ADE', 'min_FDE', 'mean_ADE', 'mean_FDE']
+        ylims = [(0.0, 11), (0.0, 9), (0.0, 25), (0.0, 37)]
+
         figsize = (14, 10)
 
         boxplot_experiments_together = True
@@ -420,14 +421,15 @@ if __name__ == '__main__':
 
         # print(f"{ref_past_pred_lengths[ref_past_pred_lengths==6]=}")
         if boxplot_experiments_together:
-            for plot_score in boxplot_scores:
+            for plot_score, ylim in zip(boxplot_scores, ylims):
                 fig, ax = plt.subplots(figsize=figsize)
                 make_box_plot_occlusion_lengths(
                     draw_ax=ax,
                     experiments=exp_dicts,
                     plot_score=plot_score,
                     categorization=ref_past_pred_lengths,
-                    df_filter=df_filter
+                    df_filter=df_filter,
+                    ylim=ylim
                 )
                 ax.set_title(f"{plot_score} vs. Last Observed timestep")
 

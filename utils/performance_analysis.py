@@ -379,7 +379,8 @@ def make_box_plot_occlusion_lengths(
         experiments: List[Dict],
         plot_score: str,
         categorization: pandas.core.series.Series,
-        df_filter=None
+        df_filter=None,
+        ylim=None
 ) -> None:
     print(f"categorization counts (total: {len(categorization)}):\n{categorization.value_counts()}")
     category_name, category_values = categorization.name, sorted(categorization.unique())
@@ -458,6 +459,8 @@ def make_box_plot_occlusion_lengths(
     )
     draw_ax.set_ylabel(f'{plot_score}', loc='bottom')
     draw_ax.set_xlabel('last observation timestep', loc='left')
+
+    draw_ax.set_ylim(*ylim)
 
 
 def oac_histogram(
