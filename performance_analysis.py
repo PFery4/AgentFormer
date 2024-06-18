@@ -401,7 +401,7 @@ if __name__ == '__main__':
         boxplot_scores = ['min_ADE', 'min_FDE', 'mean_ADE', 'mean_FDE']
         ylims = [(0.0, 11), (0.0, 9), (0.0, 25), (0.0, 37)]
 
-        figsize = (14, 10)
+        figsize = (12, 8)
 
         boxplot_experiments_together = True
         boxplot_experiments_individually = False
@@ -429,9 +429,19 @@ if __name__ == '__main__':
                     plot_score=plot_score,
                     categorization=ref_past_pred_lengths,
                     df_filter=df_filter,
-                    ylim=ylim
+                    ylim=ylim,
+                    legend=True
                 )
                 ax.set_title(f"{plot_score} vs. Last Observed timestep")
+
+                if SAVE:
+                    boxplot_directory = os.path.join(PERFORMANCE_ANALYSIS_DIRECTORY, 'boxplots')
+                    os.makedirs(boxplot_directory, exist_ok=True)
+
+                    filename = f"{plot_score}.png"
+                    filepath = os.path.join(boxplot_directory, filename)
+                    print(f"saving boxplot to:\n{filepath}\n")
+                    plt.savefig(filepath, dpi=300, bbox_inches='tight')
 
         if boxplot_experiments_individually:
             for exp_dict in exp_dicts:
