@@ -374,6 +374,32 @@ def get_comparable_rows(
     return compare_rows
 
 
+def get_scores_dict_by_categories(
+        exp_df: pd.DataFrame,
+        score: str,
+        categorization: str
+):
+    assert score in exp_df.columns
+    assert categorization in exp_df.columns
+
+    experiment_data_dict = {int(category): None for category in exp_df[categorization].unique()}
+    for category in sorted(exp_df[categorization].unique()):
+        mini_df = exp_df[
+            (exp_df[categorization] == category) & (pd.notna(exp_df[score]))
+            ]
+
+        # print(f"{len(mini_df)=}")
+        # print(f"{mini_df['min_ADE'].mean(), mini_df['min_FDE'].mean()=}")
+        # print(f"{mini_df['mean_ADE'].mean(), mini_df['mean_FDE'].mean()=}")
+        # mini_df = mini_df.sample(495)
+        # print(f"{len(mini_df)=}")
+
+        scores = mini_df[score].to_numpy()
+        experiment_data_dict[int(category)] = scores
+
+    return experiment_data_dict
+
+
 def make_box_plot_occlusion_lengths(
         draw_ax: matplotlib.axes.Axes,
         experiments: List[Dict],
@@ -411,27 +437,11 @@ def make_box_plot_occlusion_lengths(
         assert plot_score in experiment_df.columns
         assert category_name in experiment_df.columns
 
-        pred_lengths = sorted(experiment_df[category_name].unique())
-
-        # print(f"{experiment_df['min_ADE'].mean(), experiment_df['min_FDE'].mean()=}")
-
-        experiment_data_dict = {int(pred_length): None for pred_length in pred_lengths}
-        for pred_length in pred_lengths:
-            mini_df = experiment_df[
-                (experiment_df[category_name] == pred_length) & (pd.notna(experiment_df[plot_score]))
-            ]
-
-            # print(f"{len(mini_df)=}")
-            # print(f"{mini_df['min_ADE'].mean(), mini_df['min_FDE'].mean()=}")
-            # print(f"{mini_df['mean_ADE'].mean(), mini_df['mean_FDE'].mean()=}")
-            # mini_df = mini_df.sample(495)
-            # print(f"{len(mini_df)=}")
-
-            scores = mini_df[plot_score].to_numpy()
-            # print(f"{scores.shape=}")
-            experiment_data_dict[int(pred_length)] = scores
-
-        box_plot_dict[boxplot_dict_key(exp_dict)] = experiment_data_dict
+        box_plot_dict[boxplot_dict_key(exp_dict)] = get_scores_dict_by_categories(
+            exp_df=experiment_df,
+            score=plot_score,
+            categorization=category_name
+        )
 
     box_plot_xs = []
     box_plot_ys = []
