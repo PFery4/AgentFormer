@@ -380,7 +380,8 @@ def make_box_plot_occlusion_lengths(
         plot_score: str,
         categorization: pandas.core.series.Series,
         df_filter=None,
-        ylim=(None, None)
+        ylim=(None, None),
+        legend=True
 ) -> None:
     print(f"categorization counts (total: {len(categorization)}):\n{categorization.value_counts()}")
     category_name, category_values = categorization.name, sorted(categorization.unique())
@@ -453,10 +454,11 @@ def make_box_plot_occlusion_lengths(
     draw_ax.set_xticks(np.arange(x_tick_start, x_tick_end, x_tick_gap / 2), minor=True)
     draw_ax.grid(which='minor', axis='x')
 
-    draw_ax.legend(
-        [bplot["boxes"][i] for i in range(len(experiments))],
-        [boxplot_dict_key(exp_dict) for exp_dict in experiments], loc='upper left'
-    )
+    if legend:
+        draw_ax.legend(
+            [bplot["boxes"][i] for i in range(len(experiments))],
+            [boxplot_dict_key(exp_dict) for exp_dict in experiments], loc='upper left'
+        )
     draw_ax.set_ylabel(f'{plot_score}', loc='bottom')
     draw_ax.set_xlabel('last observation timestep', loc='left')
 
