@@ -515,6 +515,8 @@ if __name__ == '__main__':
 
         for exp_dict in exp_dicts:
 
+            print(f"{exp_dict['experiment_name']}:\n")
+
             summary_df = scores_stats_df_per_occlusion_lengths(
                 exp_dict=exp_dict,
                 scores=scores,
@@ -523,6 +525,7 @@ if __name__ == '__main__':
                 df_filter=df_filter
             )
             print(summary_df)
+            print("\n\n")
 
     # OAC histograms ##################################################################################################
     if args.oac_histograms:
