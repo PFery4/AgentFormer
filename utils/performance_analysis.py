@@ -431,7 +431,7 @@ def scores_stats_df_per_occlusion_lengths(
     assert all([score in experiment_df.columns for score in scores])
     assert category_name in experiment_df.columns
 
-    df_index = pd.MultiIndex.from_product([scores, operations], names=['score', 'operation'])
+    df_index = pd.MultiIndex.from_product([operations, scores], names=['operation', 'score'])
     out_df = pd.DataFrame(index=df_index, columns=category_values)
 
     for score in scores:
@@ -442,7 +442,7 @@ def scores_stats_df_per_occlusion_lengths(
         )
         for operation in operations:
             row_dict = {key: STATISTICAL_OPERATIONS[operation](value) for key, value in scores_dict.items()}
-            out_df.loc[(score, operation)] = row_dict
+            out_df.loc[(operation, score)] = row_dict
 
     return out_df
 
