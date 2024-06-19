@@ -14,9 +14,9 @@ from utils.config import REPO_ROOT
 
 
 STATISTICAL_OPERATIONS = {
-    'mean': lambda column: float(column.mean()),
-    'median': lambda column: float(column.median()),
-    'IQR': lambda column: float(column.quantile(0.75) - column.quantile(0.25))
+    'mean': lambda array: float(np.mean(array)),
+    'median': lambda array: float(np.median(array)),
+    'IQR': lambda array: float(np.quantile(array, 0.75) - np.quantile(array, 0.25))
 }
 
 
@@ -398,6 +398,53 @@ def get_scores_dict_by_categories(
         experiment_data_dict[int(category)] = scores
 
     return experiment_data_dict
+
+
+def scores_stats_df_per_occlusion_lengths(
+        exp_dict: Dict,
+        scores: List[str],
+        operations: List[str],
+        categorization: pandas.core.series.Series,
+        df_filter=None
+) -> pd.DataFrame:
+    assert all([operation in STATISTICAL_OPERATIONS.keys() for operation in operations])
+
+    print(f"categorization counts (total: {len(categorization)}):\n{categorization.value_counts()}")
+    category_name, category_values = categorization.name, sorted(categorization.unique())
+
+    experiment_df = get_perf_scores_df(
+        experiment_name=exp_dict['experiment_name'],
+        dataset_used=exp_dict['dataset_used'],
+        model_name=exp_dict['model_name'],
+        split=exp_dict['split']
+    )
+    if df_filter is not None:
+        experiment_df = df_filter(experiment_df)
+
+    experiment_df = remove_k_sample_columns(df=experiment_df)
+
+    experiment_df = experiment_df.iloc[experiment_df.index.isin(categorization.index)]
+
+    if category_name not in experiment_df.columns:
+        experiment_df[category_name] = categorization
+
+    assert all([score in experiment_df.columns for score in scores])
+    assert category_name in experiment_df.columns
+
+    df_index = pd.MultiIndex.from_product([scores, operations], names=['score', 'operation'])
+    out_df = pd.DataFrame(index=df_index, columns=category_values)
+
+    for score in scores:
+        scores_dict = get_scores_dict_by_categories(
+            exp_df=experiment_df,
+            score=score,
+            categorization=category_name
+        )
+        for operation in operations:
+            row_dict = {key: STATISTICAL_OPERATIONS[operation](value) for key, value in scores_dict.items()}
+            out_df.loc[(score, operation)] = row_dict
+
+    return out_df
 
 
 def make_box_plot_occlusion_lengths(
