@@ -15,7 +15,9 @@ from utils.performance_analysis import \
     get_reference_indices, \
     get_all_results_directories, \
     get_df_filter, \
-    perform_ttest
+    perform_ttest, \
+    remove_k_sample_columns, \
+    scores_stats_df_per_occlusion_lengths
 
 
 if __name__ == '__main__':
@@ -27,6 +29,7 @@ if __name__ == '__main__':
     parser.add_argument('--sort_by', type=str, default='experiment')
     parser.add_argument('--filter', nargs='+', default=None)
     parser.add_argument('--boxplots', action='store_true', default=False)
+    parser.add_argument('--stats_per_last_obs', action='store_true', default=False)
     parser.add_argument('--ttest', nargs='*', help='specify 0 or 2 arguments', type=int, default=None)
     parser.add_argument('--oac_histograms', action='store_true', default=False)
     parser.add_argument('--qual_compare', action='store_true', default=False)
@@ -484,6 +487,42 @@ if __name__ == '__main__':
             # plt.close()
 
         print(EXPERIMENT_SEPARATOR)
+
+    if args.stats_per_last_obs:
+        print("\n\nPERFORMANCE STATISTICS BY LAST OBSERVED TIMESTEP GROUPS\n\n")
+        assert args.cfg is not None
+        experiment_names = args.cfg
+
+        exp_dicts = get_all_results_directories()
+        exp_dicts = [exp_dict for exp_dict in exp_dicts if exp_dict['split'] in ['test']]
+        exp_dicts = [exp_dict for exp_dict in exp_dicts if exp_dict['experiment_name'] in experiment_names]
+
+        scores = ['min_ADE', 'min_FDE']
+        operations = ['mean', 'median', 'IQR']
+
+        ref_index = get_reference_indices()
+        ref_past_pred_lengths = get_perf_scores_df(
+            experiment_name='const_vel_occlusion_simulation',
+            dataset_used='occlusion_simulation',
+            model_name='untrained',
+            split='test'
+        )
+        ref_past_pred_lengths = ref_past_pred_lengths.iloc[ref_past_pred_lengths.index.isin(ref_index)]
+        ref_past_pred_lengths = ref_past_pred_lengths['past_pred_length']
+
+        df_filter = get_df_filter(ref_index=ref_index, filters=args.filter)
+        ref_past_pred_lengths = df_filter(ref_past_pred_lengths)
+
+        for exp_dict in exp_dicts:
+
+            summary_df = scores_stats_df_per_occlusion_lengths(
+                exp_dict=exp_dict,
+                scores=scores,
+                operations=operations,
+                categorization=ref_past_pred_lengths,
+                df_filter=df_filter
+            )
+            print(summary_df)
 
     # OAC histograms ##################################################################################################
     if args.oac_histograms:
