@@ -14,9 +14,9 @@ from utils.config import REPO_ROOT
 
 
 STATISTICAL_OPERATIONS = {
-    'mean': lambda array: float(np.mean(array)),
-    'median': lambda array: float(np.median(array)),
-    'IQR': lambda array: float(np.quantile(array, 0.75) - np.quantile(array, 0.25))
+    'mean': lambda array: float(np.nanmean(array)),
+    'median': lambda array: float(np.nanmedian(array)),
+    'IQR': lambda array: float(np.nanquantile(array, 0.75) - np.nanquantile(array, 0.25))
 }
 
 
