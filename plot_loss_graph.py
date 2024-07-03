@@ -14,6 +14,7 @@ if __name__ == '__main__':
     parser.add_argument('--save', action='store_true', default=False)
     parser.add_argument('--show', action='store_true', default=False)
     parser.add_argument('--weighted_losses', type=bool, default=True)
+    parser.add_argument('--loss_names', nargs='+', default=None)
     args = parser.parse_args()
 
     print(args.cfg)
@@ -80,6 +81,10 @@ if __name__ == '__main__':
             seq_indices = np.append(seq_indices, overwritten_rows.nonzero()[0].shape[0])
             overwritten_rows = overwritten_rows.nonzero()[0]
             overwritten_sequences = [overwritten_rows[start:end] for start, end in zip(seq_indices[:-1], seq_indices[1:])]
+
+            if args.loss_names is not None:
+                assert all([loss_name in df.columns.tolist() for loss_name in args.loss_names])
+                loss_names = args.loss_names
 
             colors = iter(mpl.colormaps[color_maps[split]](np.linspace(0, 1, len(loss_names))))
 
