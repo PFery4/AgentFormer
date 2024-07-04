@@ -2,6 +2,8 @@ import argparse
 import os.path
 import pickle
 import matplotlib.pyplot as plt
+import numpy as np
+import scipy.stats
 import pandas as pd
 from utils.config import Config, REPO_ROOT
 from data.sdd_dataloader import HDF5DatasetSDD
@@ -105,6 +107,7 @@ if __name__ == '__main__':
 
         exp_dicts = get_all_results_directories()
         exp_dicts = [exp_dict for exp_dict in exp_dicts if exp_dict['split'] in 'test']
+        exp_dicts = [exp_dict for exp_dict in exp_dicts if exp_dict['dataset_used'] not in ['occlusion_simulation_difficult']]
         exp_dicts = [exp_dict for exp_dict in exp_dicts if exp_dict['experiment_name'] in experiment_names]
 
         df_filter = get_df_filter(ref_index=ref_index, filters=args.filter)
@@ -163,9 +166,11 @@ if __name__ == '__main__':
         instance_number, show_pred_ids = args.instance_num, args.identities     # int, List[int]
 
         imputed = False
-        highlight_only_past_pred = True
+        highlight_only_past_pred = False
         figsize = (14, 10)
+        figdpi = 300
 
+        # TODO: SWITCH TO EXPERIMENT DICTS INSTEAD
         for experiment_name in experiment_names:
             # preparing the dataloader for the experiment
             # exp_df = get_perf_scores_df(experiment_name)
@@ -192,6 +197,7 @@ if __name__ == '__main__':
 
             # preparing the figure
             fig, ax = plt.subplots(figsize=figsize)
+            fig.set_dpi(figdpi)
             fig.canvas.manager.set_window_title(f"{experiment_name}_{instance_name}")
 
             checkpoint_name = config_exp.get_best_val_checkpoint_name()
@@ -223,7 +229,7 @@ if __name__ == '__main__':
                 past_pred_alpha=0.5,
                 future_pred_alpha=0.1 if highlight_only_past_pred else 0.5
             )
-            ax.legend()
+            # ax.legend()
             ax.set_title(experiment_name)
             fig.subplots_adjust(wspace=0.10, hspace=0.0)
         plt.show()
@@ -408,10 +414,10 @@ if __name__ == '__main__':
             'mean_past_ADE', 'mean_past_FDE'
         ]
         ylims = [
-            (0.0, 11), (0.0, 9),
-            (0.0, 25), (0.0, 37),
-            (0.0, None), (0.0, None),
-            (0.0, None), (0.0, None),
+            (0.0, 11), (0.0, 11),
+            (0.0, 37), (0.0, 37),
+            (0.0, 5), (0.0, 5),
+            (0.0, 9), (0.0, 9),
         ]
 
         figsize = (9, 6)
@@ -497,8 +503,17 @@ if __name__ == '__main__':
         exp_dicts = [exp_dict for exp_dict in exp_dicts if exp_dict['split'] in ['test']]
         exp_dicts = [exp_dict for exp_dict in exp_dicts if exp_dict['experiment_name'] in experiment_names]
 
-        scores = ['min_ADE', 'min_FDE']
-        operations = ['mean', 'median', 'IQR']
+        scores = [
+            'min_ADE', 'min_FDE',
+            'mean_ADE', 'mean_FDE',
+            'min_past_ADE', 'min_past_FDE',
+            'mean_past_ADE', 'mean_past_FDE',
+        ]
+        operations = [
+            'mean',
+            # 'median',
+            'IQR',
+        ]
 
         ref_index = get_reference_indices()
         ref_past_pred_lengths = get_perf_scores_df(
@@ -524,8 +539,41 @@ if __name__ == '__main__':
                 categorization=ref_past_pred_lengths,
                 df_filter=df_filter
             )
+            summary_df.drop([0, 6], axis=1, inplace=True)
             print(summary_df)
             print("\n\n")
+
+            fig, ax = plt.subplots()
+            keep_op = 'mean'
+            mini_df = summary_df.loc[([keep_op], slice(None)), :]
+
+            lin_df = pd.DataFrame(index=mini_df.index, columns=['a', 'b', 'R^2', '@0', '@6', '@12'])
+
+            for index, row in mini_df.iterrows():
+                xs, ys = row.index.values.astype(float), row.values.astype(float)
+
+                a, b, r_value, p_value, std_err = scipy.stats.linregress(xs, ys)
+
+                lin_func = np.poly1d([a, b])
+                lin_xs = np.array([0, 12])
+
+                ax.plot(xs, ys, 'x', label=' '.join(index))
+                ax.plot(lin_xs, lin_func(lin_xs), 'k--', alpha=0.5)
+
+                lin_dict = {
+                    'a': a,
+                    'b': b,
+                    'R^2': r_value**2,
+                    '@0': lin_func(0),
+                    '@6': lin_func(6),
+                    '@12': lin_func(12)
+                }
+                lin_df.loc[index] = lin_dict
+
+            print(lin_df)
+
+            ax.legend()
+            plt.show()
 
     # OAC histograms ##################################################################################################
     if args.oac_histograms:
