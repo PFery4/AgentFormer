@@ -22,4 +22,4 @@ agentformer_models.zip
 cfg/sdd/test_configs/*
 
 # contents of the performance_analysis directory
-performance_analysis/*
+performance_analysis/outputs/*
