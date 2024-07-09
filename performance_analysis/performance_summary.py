@@ -2,7 +2,6 @@ import argparse
 import os.path
 import pandas as pd
 
-from utils.config import REPO_ROOT
 from utils.performance_analysis import \
     get_reference_indices, \
     get_all_results_directories, \
