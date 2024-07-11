@@ -1,14 +1,38 @@
 import argparse
-import os.path
+import numpy as np
 import pandas as pd
+import scipy.stats
 
 from utils.performance_analysis import \
     get_reference_indices, \
     get_all_results_directories, \
     get_df_filter, \
-    generate_performance_summary_df, \
-    get_perf_scores_df, \
-    perform_ttest
+    get_perf_scores_df
+
+def perform_ttest(array_a: np.array, array_b: np.array, alpha=0.05):
+    # https://en.wikipedia.org/wiki/Welch%27s_t-test
+    # corrected sample stdev
+    def c_std(a): return a.std(ddof=1)
+
+    # standard error
+    def s_x(a): return c_std(a) / np.sqrt(len(a))
+
+    # degrees of freedom
+    def dof(a, b): return (s_x(a) ** 2 + s_x(b) ** 2) ** 2 / \
+                          (s_x(a) ** 4 / (len(a) - 1) + s_x(b) ** 4 / (len(b) - 1))
+
+    # https://www.geeksforgeeks.org/how-to-find-the-t-critical-value-in-python/
+    # two-tailed T-critical value
+    def twotailed_t_critical(alpha, df): return scipy.stats.t.ppf(q=1 - alpha / 2, df=df)
+
+    t_test = scipy.stats.ttest_ind(a=array_a, b=array_b, equal_var=False)
+    df = dof(array_a, array_b)
+    t_crit = twotailed_t_critical(alpha=alpha, df=df)
+
+    is_significant = np.abs(t_test.statistic) > np.abs(t_crit)
+
+    return is_significant, t_test.statistic, t_test.pvalue, df, t_crit
+
 
 # Global Variables set up #########################################################################################
 pd.set_option('display.max_rows', 500)
@@ -39,19 +63,23 @@ OCCLUSION_MAP_SCORES = ['OAO', 'OAC', 'OAC_t0']
 
 if __name__ == '__main__':
 
-    # TODO: WIP ON THIS ONE WIP WIP WIP WIP WIP
-
     # Script Controls #################################################################################################
     parser = argparse.ArgumentParser()
-    parser.add_argument('--ttest', nargs='*', help='specify 0 or 2 arguments', type=int, default=None)
     parser.add_argument('--cfg', nargs='+', default=None)
     parser.add_argument('--filter', nargs='+', default=None)
-    # parser.add_argument('--unit', type=str, default='m')        # 'm' | 'px'              TODO: implement
-    # parser.add_argument('--save_file', type=os.path.abspath, default=None)                TODO: implement
+    parser.add_argument('--comp_tlast', nargs=2,
+                        help='specify 2 last observed timestep categories to compare', type=int, default=None)
+    parser.add_argument('--unit', type=str, default='m')        # 'm' | 'px'
     args = parser.parse_args()
 
-    print("\n\nT-TESTS:\n\n")
-    assert len(args.ttest) in {0, 2}
+    if args.unit == 'px':
+        px_name = lambda names_list: [f'{score_name}_px' for score_name in names_list]
+        MIN_SCORES = px_name(MIN_SCORES)
+        MEAN_SCORES = px_name(MEAN_SCORES)
+        PAST_MIN_SCORES = px_name(PAST_MIN_SCORES)
+        PAST_MEAN_SCORES = px_name(PAST_MEAN_SCORES)
+
+    print("T-TESTS:\n\n")
     assert args.cfg is not None
     experiment_names = args.cfg
 
@@ -75,16 +103,16 @@ if __name__ == '__main__':
     df_filter = get_df_filter(ref_index=ref_index, filters=args.filter)
     ref_past_pred_lengths = df_filter(ref_past_pred_lengths)
 
-    if len(args.ttest) == 2:
+    if args.comp_tlast is not None:
 
-        category_1, category_2 = args.ttest
+        tlast_1, tlast_2 = args.comp_tlast
         out_df_columns = [
             'experiment', 'dataset_used', 'test_score', 'n_1', 'mean_1', 's^2_1', 'n_2', 'mean_2', 's^2_2',
             't_stat', 'df', 'p_value', 't_critical', 'significant'
         ]
 
-        category_1_index = ref_past_pred_lengths[ref_past_pred_lengths == category_1].index
-        category_2_index = ref_past_pred_lengths[ref_past_pred_lengths == category_2].index
+        category_1_index = ref_past_pred_lengths[ref_past_pred_lengths == tlast_1].index
+        category_2_index = ref_past_pred_lengths[ref_past_pred_lengths == tlast_2].index
 
         out_df = pd.DataFrame(columns=out_df_columns)
 
@@ -148,7 +176,7 @@ if __name__ == '__main__':
 
         print(f"The goal of the t-tests is to evaluate whether performance metric scores differ significantly between "
               f"different last-observation timestep categories.\nThe chosen last observation timestep categories for "
-              f"the following set of t-tests are ({category_1}, {category_2}):\n")
+              f"the following set of t-tests are ({tlast_1}, {tlast_2}):\n")
 
         for test_score in test_scores:
             print(f"{test_score}:")
