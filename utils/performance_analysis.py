@@ -5,7 +5,6 @@ import pandas.core.series
 import matplotlib.axes
 import matplotlib.pyplot as plt
 import numpy as np
-import scipy.stats
 from functools import reduce
 
 from typing import Any, Dict, List, Optional, Tuple
@@ -684,28 +683,3 @@ def get_df_filter(ref_index: pd.Index, filters: Optional[List[str]] = None):
         [filter_funcs.append(filter_dict[filter_name]) for filter_name in filters]
 
     return lambda df: reduce(lambda o, func: func(o), filter_funcs, df)
-
-
-def perform_ttest(array_a: np.array, array_b: np.array, alpha=0.05):
-    # https://en.wikipedia.org/wiki/Welch%27s_t-test
-    # corrected sample stdev
-    def c_std(a): return a.std(ddof=1)
-
-    # standard error
-    def s_x(a): return c_std(a) / np.sqrt(len(a))
-
-    # degrees of freedom
-    def dof(a, b): return (s_x(a) ** 2 + s_x(b) ** 2) ** 2 / \
-                          (s_x(a) ** 4 / (len(a) - 1) + s_x(b) ** 4 / (len(b) - 1))
-
-    # https://www.geeksforgeeks.org/how-to-find-the-t-critical-value-in-python/
-    # two-tailed T-critical value
-    def twotailed_t_critical(alpha, df): return scipy.stats.t.ppf(q=1 - alpha / 2, df=df)
-
-    t_test = scipy.stats.ttest_ind(a=array_a, b=array_b, equal_var=False)
-    df = dof(array_a, array_b)
-    t_crit = twotailed_t_critical(alpha=alpha, df=df)
-
-    is_significant = np.abs(t_test.statistic) > np.abs(t_crit)
-
-    return is_significant, t_test.statistic, t_test.pvalue, df, t_crit
