@@ -245,10 +245,6 @@ def pretty_print_difference_summary_df(
     return out_df
 
 
-# def top_score_dataframe(df: pd.DataFrame, column_name: str, ascending: bool = True, n: int = 5) -> pd.DataFrame:
-#     return df.sort_values(column_name, ascending=ascending).head(n)
-
-
 def reduce_by_unique_column_values(
         df: pd.DataFrame, column_name: str, operation: str = 'mean'
 ) -> pd.DataFrame:
@@ -444,81 +440,6 @@ def scores_stats_df_per_occlusion_lengths(
             out_df.loc[(operation, score)] = row_dict
 
     return out_df
-
-
-def make_box_plot_occlusion_lengths(
-        draw_ax: matplotlib.axes.Axes,
-        experiments: List[Dict],
-        plot_score: str,
-        categorization: pandas.core.series.Series,
-        df_filter=None,
-        ylim=(None, None),
-        legend=True
-) -> None:
-    print(f"categorization counts (total: {len(categorization)}):\n{categorization.value_counts()}")
-    category_name, category_values = categorization.name, sorted(categorization.unique())
-    colors = [plt.cm.Pastel1(i) for i in range(len(experiments))]
-
-    boxplot_dict_key = lambda exp_dict: f"{exp_dict['experiment_name']}_{exp_dict['dataset_used']}"
-
-    box_plot_dict = {boxplot_dict_key(exp_dict): None for exp_dict in experiments}
-    for i, exp_dict in enumerate(experiments):
-
-        experiment_df = get_perf_scores_df(
-            experiment_name=exp_dict['experiment_name'],
-            dataset_used=exp_dict['dataset_used'],
-            model_name=exp_dict['model_name'],
-            split=exp_dict['split']
-        )
-        if df_filter is not None:
-            experiment_df = df_filter(experiment_df)
-
-        experiment_df = remove_k_sample_columns(df=experiment_df)
-
-        experiment_df = experiment_df.iloc[experiment_df.index.isin(categorization.index)]
-
-        if category_name not in experiment_df.columns:
-            experiment_df[category_name] = categorization
-
-        assert plot_score in experiment_df.columns
-        assert category_name in experiment_df.columns
-
-        box_plot_dict[boxplot_dict_key(exp_dict)] = get_scores_dict_by_categories(
-            exp_df=experiment_df,
-            score=plot_score,
-            categorization=category_name
-        )
-
-    box_plot_xs = []
-    box_plot_ys = []
-    box_plot_colors = []
-    for length in category_values:
-        for i, exp_dict in enumerate(experiments):
-            box_plot_xs.append(f"{length} - {boxplot_dict_key(exp_dict)}")
-            box_plot_ys.append(box_plot_dict[boxplot_dict_key(exp_dict)][length])
-            box_plot_colors.append(colors[i])
-
-    bplot = draw_ax.boxplot(box_plot_ys, positions=range(len(box_plot_ys)), patch_artist=True)
-    for box_patch, median_line, color in zip(bplot['boxes'], bplot['medians'], box_plot_colors):
-        box_patch.set_facecolor(color)
-        median_line.set_color('red')
-
-    x_tick_gap = len(experiments)
-    x_tick_start = (len(experiments) - 1) / 2
-    x_tick_end = x_tick_start + x_tick_gap * len(category_values)
-    draw_ax.set_xticks(np.arange(x_tick_start, x_tick_end, x_tick_gap), labels=-np.array(category_values))
-    draw_ax.set_xticks(np.arange(x_tick_start, x_tick_end, x_tick_gap / 2), minor=True)
-    draw_ax.grid(which='minor', axis='x')
-
-    if legend:
-        draw_ax.legend(
-            [bplot["boxes"][i] for i in range(len(experiments))],
-            [boxplot_dict_key(exp_dict) for exp_dict in experiments], loc='upper left'
-        )
-    draw_ax.set_ylabel(f'{plot_score}', loc='bottom')
-    draw_ax.set_xlabel('last observation timestep', loc='left')
-
-    draw_ax.set_ylim(*ylim)
 
 
 def oac_histogram(
