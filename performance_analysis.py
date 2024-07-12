@@ -11,13 +11,11 @@ from utils.sdd_visualize import visualize_input_and_predictions
 from utils.performance_analysis import \
     generate_performance_summary_df, \
     pretty_print_difference_summary_df, \
-    make_box_plot_occlusion_lengths, \
     make_oac_histograms_figure, \
     get_perf_scores_df, \
     get_reference_indices, \
     get_all_results_directories, \
     get_df_filter, \
-    perform_ttest, \
     remove_k_sample_columns, \
     scores_stats_df_per_occlusion_lengths
 
@@ -93,6 +91,7 @@ if __name__ == '__main__':
 
     # Performance Summary #############################################################################################
     if args.perf_summary:
+        raise NotImplementedError
         print("\n\nPERFORMANCE SUMMARY:\n\n")
 
         experiment_names = args.cfg if args.cfg is not None else DEFAULT_CFG
@@ -158,6 +157,7 @@ if __name__ == '__main__':
 
     # qualitative display of predictions ##############################################################################
     if args.qual_example:
+        raise NotImplementedError
         print("\n\nQUALITATIVE EXAMPLE:\n\n")
 
         experiment_names = args.cfg if args.cfg is not None else DEFAULT_CFG
@@ -238,6 +238,7 @@ if __name__ == '__main__':
 
     # t-tests of score diff dependent on last observed timestep categories ############################################
     if args.ttest is not None:
+        raise NotImplementedError
         print("\n\nT-TESTS:\n\n")
         assert len(args.ttest) in {0, 2}
         assert args.cfg is not None
@@ -397,6 +398,7 @@ if __name__ == '__main__':
 
     # score boxplots vs last observed timesteps #######################################################################
     if args.boxplots:
+        raise NotImplementedError
         print("\n\nBOXPLOTS:\n\n")
         assert args.cfg is not None
         experiment_names = args.cfg
@@ -495,6 +497,7 @@ if __name__ == '__main__':
         print(EXPERIMENT_SEPARATOR)
 
     if args.stats_per_last_obs:
+        raise NotImplementedError
         print("\n\nPERFORMANCE STATISTICS BY LAST OBSERVED TIMESTEP GROUPS\n\n")
         assert args.cfg is not None
         experiment_names = args.cfg
@@ -596,281 +599,3 @@ if __name__ == '__main__':
             print("OAC_histograms: no saving implementation (yet)!")
 
         print(EXPERIMENT_SEPARATOR)
-
-    # map compliance vs generic performance ###########################################################################
-    if False:
-        # Learning with(out) the occlusion map: map compliance difference vs ADE/FDE scores difference
-        # uninteresting results, no matter the map score / trajectory score combination
-        # actually, maybe a (very slight trend)
-        base_experiment = 'v2_difficult_occlusions_pre'
-        compare_experiment = 'v2_difficult_occlusions_dist_map_w50_pre'
-        x_score = 'OAC_t0'
-        y_score = 'min_FDE'
-
-        base_df = get_perf_scores_df(base_experiment)
-        comp_df = get_perf_scores_df(compare_experiment)
-        base_df = base_df[base_df['past_pred_length'] != 0]
-        comp_df = comp_df[comp_df['past_pred_length'] != 0]
-
-        compare_rows = get_comparable_rows(base_df=base_df, compare_df=comp_df)
-        diff_df = comp_df.loc[compare_rows].sub(base_df.loc[compare_rows])
-
-        xs = diff_df[x_score].to_numpy()
-        ys = diff_df[y_score].to_numpy()
-
-        fig, ax = plt.subplots()
-        ax.scatter(xs, ys, marker='x', color='red', alpha=0.3)
-        ax.set_xlabel(f"Delta {x_score}")
-        ax.set_ylabel(f"Delta {y_score}")
-        ax.set_title(f"{compare_experiment} vs {base_experiment}")
-        plt.show()
-
-        fig, ax = plt.subplots(4, 3)
-        for i, y_score in enumerate(['min_FDE', 'min_ADE', 'mean_FDE', 'mean_ADE']):
-            for j, x_score in enumerate(['OAO', 'OAC', 'OAC_t0']):
-                xs = diff_df[x_score].to_numpy()
-                ys = diff_df[y_score].to_numpy()
-                ax[i, j].scatter(xs, ys, marker='x', color='red', alpha=0.3)
-                if j == 0:
-                    ax[i, j].set_ylabel(f"Delta {y_score}")
-                if i == 3:
-                    ax[i, j].set_xlabel(f"Delta {x_score}")
-                # ax[i, j].set_title(f"{compare_experiment} vs {base_experiment}")
-                ax[i, j].grid(axis='y')
-        fig.suptitle(f"{compare_experiment} vs {base_experiment}")
-        plt.show()
-
-    if False:
-        # Map compliance scores vs ADE/FDE scores heatmaps
-        experiment_name = 'v2_difficult_occlusions_pre'
-        experiment_name = 'v2_difficult_occlusions_dist_map_w50_pre'
-        x_score = 'OAC_t0'
-        y_score = 'min_FDE'
-
-        exp_df = get_perf_scores_df(experiment_name)
-        exp_df = exp_df[exp_df['past_pred_length'] != 0]
-        exp_df = remove_k_sample_columns(exp_df)
-
-        xs = exp_df[x_score].to_numpy()
-        ys = exp_df[y_score].to_numpy()
-
-        fig, ax = plt.subplots()
-        ax.scatter(xs, ys, marker='x', color='red', alpha=0.3)
-        ax.set_xlabel(f"{x_score}")
-        ax.set_ylabel(f"{y_score}")
-        ax.set_title(f"{experiment_name}")
-        plt.show()
-
-        fig, ax = plt.subplots(4, 3)
-        for i, (y_score, vmax_value) in enumerate(zip(
-                ['min_FDE', 'min_ADE', 'mean_FDE', 'mean_ADE'],
-                [80, 80, 80, 80]
-        )):
-            for j, x_score in enumerate(['OAO', 'OAC', 'OAC_t0']):
-
-                xs = exp_df[x_score].to_numpy()
-                ys = exp_df[y_score].to_numpy()
-
-                isnan_mask = np.isnan(xs)
-
-                xs = xs[~isnan_mask]
-                ys = ys[~isnan_mask]
-
-                if False:
-                    # scatter plot
-                    ax[i, j].scatter(xs, ys, marker='x', color='red', alpha=0.3)
-                else:
-                    H, yedges, xedges = np.histogram2d(ys, xs, bins=[50, 20])
-                    im = ax[i, j].pcolormesh(xedges, yedges, H, cmap='rainbow', vmin=0.0, vmax=vmax_value)
-
-                    divider = mpl_toolkits.axes_grid1.make_axes_locatable(ax[i, j])
-                    cax = divider.append_axes('right', size='2%', pad=0.02)
-
-                    fig.colorbar(im, cax=cax, orientation='vertical')
-
-                if j == 0:
-                    ax[i, j].set_ylabel(f"{y_score}")
-                if i == 3:
-                    ax[i, j].set_xlabel(f"{x_score}")
-                # ax[i, j].set_title(f"{compare_experiment} vs {base_experiment}")
-                ax[i, j].grid(axis='y')
-        fig.suptitle(f"{experiment_name}")
-        plt.show()
-
-    if False:
-        import copy
-        # OAO / OAC / OAC_t0 correlation
-        experiment_name = 'v2_difficult_occlusions'
-        mode = 'scatter'        # 'scatter' | 'heatmap'
-
-        my_cmap = copy.copy(matplotlib.colormaps['rainbow'])  # copy the default cmap
-        my_cmap.set_bad((0, 0, 0))
-
-        hist_bins = 20
-        d_bin = 1/(hist_bins-1)
-        hist_range = np.array([0-d_bin/2, 1+d_bin/2])
-        hist_range = [hist_range, hist_range]
-
-        scores = ['OAO', 'OAC', 'OAC_t0']
-
-        exp_df = get_perf_scores_df(experiment_name)
-        exp_df = exp_df[exp_df['past_pred_length'] != 0]
-        exp_df = remove_k_sample_columns(exp_df)
-
-        fig, ax = plt.subplots(len(scores), len(scores))
-
-        for i, x_score in enumerate(scores):
-            for j, y_score in enumerate(scores):
-                xs = exp_df[x_score].to_numpy()
-                ys = exp_df[y_score].to_numpy()
-
-                isnan_mask = np.logical_or(np.isnan(xs), np.isnan(ys))
-                is_perfect_mask = np.logical_and(xs == 1.0, ys == 1.0)
-                mask = np.logical_or(isnan_mask, is_perfect_mask)
-
-                xs = xs[~isnan_mask]
-                ys = ys[~isnan_mask]
-
-                if mode == 'scatter':
-                    ax[i, j].scatter(xs, ys, marker='x', color='red', alpha=0.1)
-                elif mode == 'heatmap':
-                    h, xedges, yedges, im = ax[i, j].hist2d(
-                        xs, ys,
-                        bins=hist_bins, range=hist_range, cmap=my_cmap, norm='log'
-                    )
-
-                    divider = mpl_toolkits.axes_grid1.make_axes_locatable(ax[i, j])
-                    cax = divider.append_axes('right', size='2%', pad=0.02)
-                    fig.colorbar(im, cax=cax, orientation='vertical')
-
-                ax[i, j].set_aspect('equal', 'box')
-                ax[i, j].set_xlabel(f"{x_score}")
-                ax[i, j].set_ylabel(f"{y_score}")
-        fig.suptitle(experiment_name)
-        plt.show()
-
-    if args.cv_wrong_map_rate:
-        # evaluating the rate at which a Constant Velocity model fails to comply with the occlusion map
-        cv_model_name = 'const_vel_occlusion_simulation'
-
-        cv_perf_df = get_perf_scores_df(experiment_name=cv_model_name)
-        cv_perf_df = cv_perf_df[cv_perf_df['past_pred_length'] > 0]
-
-        failed_cv_oac_t0 = (cv_perf_df['OAC_t0'] == 0.)
-        print(f"Out of all {len(failed_cv_oac_t0)} occluded cases,\n"
-              f"the constant velocity model misplaced the current position of the agent as being "
-              f"outside the occluded zone "
-              f"{sum(failed_cv_oac_t0)} times ({sum(failed_cv_oac_t0)/len(failed_cv_oac_t0)*100:.2f}%)")
-
-    if False:
-        # evaluating insightfulness of the occlusion map between
-        #   - occlusionformer_no_map
-        #   - occlusionformer_with_occl_map
-        # we are particularly interested in instances where a CV model performs poorly
-
-        COMPARE_SCORES = OCCLUSION_MAP_SCORES
-        COMPARE_SCORES = PAST_ADE_SCORES + PAST_FDE_SCORES
-        COMPARE_SCORES = ADE_SCORES + FDE_SCORES
-        cv_model_name = 'const_vel_occlusion_simulation'
-        no_map_name = 'v2_occluded_pre'
-        yes_map_name = 'v2_difficult_occlusions_dist_map_w50_pre'
-        experiment_names = [yes_map_name, no_map_name, cv_model_name]
-
-        perf_summary = generate_performance_summary_df(
-            experiment_names=experiment_names, metric_names=DISTANCE_METRICS+PRED_LENGTHS+OCCLUSION_MAP_SCORES
-        )
-        perf_summary.sort_values(by='min_FDE', inplace=True)
-
-        print(f"Performance summary:")
-        print(perf_summary)
-
-        cv_perf_df = get_perf_scores_df(experiment_name=cv_model_name)
-        cv_perf_df = cv_perf_df[cv_perf_df['past_pred_length'] > 0]
-        no_map_perf_df = get_perf_scores_df(experiment_name=no_map_name)
-        no_map_perf_df = no_map_perf_df[no_map_perf_df['past_pred_length'] > 0]
-        yes_map_perf_df = get_perf_scores_df(experiment_name=yes_map_name)
-        yes_map_perf_df = yes_map_perf_df[yes_map_perf_df['past_pred_length'] > 0]
-
-        print(len(cv_perf_df))
-        print(len(no_map_perf_df))
-        print(len(yes_map_perf_df))
-
-        failed_cv_oac_t0 = (cv_perf_df['OAC_t0'] == 0.)
-        print(f"Out of all {len(failed_cv_oac_t0)} occluded cases,\n"
-              f"the constant velocity model misplaced the current position of the agent as being "
-              f"outside the occluded zone "
-              f"{sum(failed_cv_oac_t0)} times ({sum(failed_cv_oac_t0)/len(failed_cv_oac_t0)*100:.2f}%)")
-
-        cv_perf_df = cv_perf_df[failed_cv_oac_t0]
-        no_map_perf_df = no_map_perf_df[failed_cv_oac_t0]
-        yes_map_perf_df = yes_map_perf_df[failed_cv_oac_t0]
-
-        assert all(cv_perf_df.index == no_map_perf_df.index)
-        assert all(cv_perf_df.index == yes_map_perf_df.index)
-
-        # sample_rows = np.random.choice(cv_perf_df.index, 5, replace=False)
-        # [print(sample) for sample in sample_rows]
-
-        fig, ax = plt.subplots()
-        boxplot_dict = {score_name: None for score_name in COMPARE_SCORES}
-        for score_name in COMPARE_SCORES:
-            diff = (yes_map_perf_df[score_name] - no_map_perf_df[score_name]).to_numpy()
-            boxplot_dict[score_name] = diff
-
-        ax.axhline(0, linestyle='--', color='k', alpha=0.1)  # horizontal line through y=0
-
-        box_plot_xs = []
-        box_plot_ys = []
-        for k, v in boxplot_dict.items():
-            box_plot_xs.append(k)
-            box_plot_ys.append(v)
-
-        bplot = ax.boxplot(box_plot_ys, positions=(range(len(box_plot_ys))))
-        ax.set_xticklabels(box_plot_xs)
-
-        plt.show()
-
-    if args.comp_phase_1_2:
-
-        raise NotImplementedError
-
-        # checking the performance difference between phase 1 (model) and phase 2 (model + Dlow for diversity sampling)
-        experiment_list = [
-            OCCLUSIONFORMER_CAUSAL_ATTENTION_FULLY_OBSERVED_314,
-            BASELINE_NO_POS_CONCAT,
-            OCCLUSIONFORMER_CAUSAL_ATTENTION,
-            OCCLUSIONFORMER_MOMENTARY,
-            SDD_BASELINE_OCCLUSIONFORMER,
-            OCCLUSIONFORMER_WITH_OCCL_MAP,
-            OCCLUSIONFORMER_NO_MAP,
-            OCCLUSIONFORMER_WITH_OCCL_MAP_IMPUTED,
-            OCCLUSIONFORMER_IMPUTED,
-            OCCLUSIONFORMER_CAUSAL_ATTENTION_FULLY_OBSERVED_162,
-            OCCLUSIONFORMER_CAUSAL_ATTENTION_FULLY_OBSERVED,
-        ]
-
-        metric_names = ADE_SCORES + FDE_SCORES
-
-        # list of experiment names (phase 1 and phase 2)
-        phase_1_list = [f"{name}_pre" for name in experiment_list]
-        phase_2_list = experiment_list
-
-        # extracting the performance summaries
-        perf_df_1 = generate_performance_summary_df(experiment_names=phase_1_list, metric_names=metric_names)
-        perf_df_2 = generate_performance_summary_df(experiment_names=phase_2_list, metric_names=metric_names)
-
-        experiment_id_columns = ['experiment', 'dataset_used']
-
-        diff_df = perf_df_2[experiment_id_columns].copy()
-        for metric_name in metric_names:
-            diff_df[f"P1:{metric_name}"] = perf_df_1[metric_name]
-            diff_df[f"P2:{metric_name}"] = perf_df_2[metric_name]
-            diff_df[f"Delta:{metric_name}"] = perf_df_2[metric_name] - perf_df_1[metric_name]
-
-        if SHOW:
-            print(f"{diff_df}")
-        if SAVE:
-            print(f"Sorry, saving functionality not implemented for this performance evaluation...")
-            raise NotImplementedError
-
-    print(f"\n\nGoodbye!")
