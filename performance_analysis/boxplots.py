@@ -136,6 +136,7 @@ if __name__ == '__main__':
     parser.add_argument('--filter', nargs='+', default=None)
     parser.add_argument('--scores', nargs='+', type=str, default=DEFAULT_SCORES)
     parser.add_argument('--save_dir', type=os.path.abspath, default=None)
+    parser.add_argument('--legend', action='store_true', default=False)
     args = parser.parse_args()
 
     print(args.scores)
@@ -155,7 +156,7 @@ if __name__ == '__main__':
     exp_dicts = [exp_dict for exp_dict in exp_dicts if exp_dict['split'] in ['test']]
     exp_dicts = [exp_dict for exp_dict in exp_dicts if exp_dict['experiment_name'] in experiment_names]
     # exp_dicts = [exp_dict for exp_dict in exp_dicts if exp_dict['dataset_used'] not in ['fully_observed']]
-    # exp_dicts = [exp_dict for exp_dict in exp_dicts if exp_dict['dataset_used'] in ['fully_observed']]
+    exp_dicts = [exp_dict for exp_dict in exp_dicts if exp_dict['dataset_used'] in ['fully_observed']]
 
     ref_index = get_reference_indices()
     ref_past_pred_lengths = get_perf_scores_df(
@@ -179,7 +180,7 @@ if __name__ == '__main__':
             categorization=ref_past_pred_lengths,
             df_filter=df_filter,
             ylim=YLIMS_DICT.get(plot_score, (None, None)),
-            legend=False
+            legend=args.legend
         )
         ax.set_title(f"{plot_score} vs. Last Observed timestep")
 
