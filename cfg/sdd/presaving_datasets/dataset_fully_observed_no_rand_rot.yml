@@ -4,7 +4,7 @@ description                  : Fully Observed SDD Dataset
 results_root_dir             : results
 seed                         : 42
 dataset                      : sdd
-sdd_config_file_name         : config
+sdd_config_file_name         : config/dataset_config.yaml
 
 # ------------------- Feature Extractor -------------------------
 

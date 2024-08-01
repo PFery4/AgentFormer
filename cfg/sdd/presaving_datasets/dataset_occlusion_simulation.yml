@@ -4,9 +4,7 @@ description                  : OcclusionFormer (before Dlow)
 results_root_dir             : results
 seed                         : 42
 dataset                      : sdd
-sdd_config_file_name         : config
-# data_root_ethucy             : datasets/eth_ucy
-# data_root_nuscenes_pred      : datasets/nuscenes_pred
+sdd_config_file_name         : config/dataset_config.yaml
 
 # ------------------- Feature Extractor -------------------------
 
