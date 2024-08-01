@@ -45,7 +45,7 @@ class TorchDataGeneratorSDD(Dataset):
 
         prnt_str = "\n-------------------------- loading %s data --------------------------" % split
         print_log(prnt_str, log=log) if log is not None else print(prnt_str)
-        self.sdd_config = sdd_conf.get_config(parser.sdd_config_file_name)
+        self.sdd_config = sdd_conf.get_config(os.path.join(sdd_conf.REPO_ROOT, parser.sdd_config_file_name))
         dataset = StanfordDroneDatasetWithOcclusionSim(self.sdd_config, split=self.split)
         prnt_str = f"instantiating dataloader from {dataset.__class__} class"
         print_log(prnt_str, log=log) if log is not None else print(prnt_str)
@@ -55,7 +55,7 @@ class TorchDataGeneratorSDD(Dataset):
         self.frames = dataset.frames
         self.lookuptable = dataset.lookuptable
         self.occlusion_table = dataset.occlusion_table
-        self.image_path = os.path.join(dataset.root, 'annotations')
+        self.image_path = os.path.join(dataset.SDD_root, 'annotations')
         assert os.path.exists(self.image_path)
 
         self.rand_rot_scene = parser.get('rand_rot_scene', False)
@@ -112,8 +112,7 @@ class TorchDataGeneratorSDD(Dataset):
 
     def make_padded_scene_images(self):
         os.makedirs(self.padded_images_path, exist_ok=True)
-        orig_sdd_dataset_path = os.path.join(self.sdd_config['dataset']['path'], 'annotations')
-        for scene in os.scandir(orig_sdd_dataset_path):
+        for scene in os.scandir(self.image_path):
             for video in os.scandir(scene):
                 save_padded_img_path = os.path.join(self.padded_images_path,
                                                     f"{scene.name}_{video.name}_padded_img.jpg")
@@ -960,13 +959,15 @@ if __name__ == '__main__':
     # split = 'test'
     # split = 'train'
 
-    config_str, dataset_class, split = 'original_100_pre', 'pickle', 'train'
+    config_str, dataset_class, split = 'dataset_fully_observed', 'hdf5', 'train'
+    # config_str, dataset_class, split = 'dataset_fully_observed', 'torch_preprocess', 'train'
+    # config_str, dataset_class, split = 'dataset_occlusion_simulation', 'torch_preprocess', 'test'
     # config_str, dataset_class, split = 'dataset_occlusion_simulation', 'hdf5', 'test'
     # config_str, dataset_class, split = 'dataset_occlusion_simulation', 'pickle', 'train'
     # config_str, dataset_class, split = 'dataset_occlusion_simulation', 'pickle', 'val'
 
     cfg = Config(config_str)
-    prepare_seed(cfg.seed)
+    prepare_seed(24)
     torch_dataset = dataset_dict[dataset_class](parser=cfg, log=None, split=split)
 
     out_dict = torch_dataset.__getitem__(50)
