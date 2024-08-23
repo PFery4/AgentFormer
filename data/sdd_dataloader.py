@@ -292,6 +292,7 @@ class TorchDataGeneratorSDD(Dataset):
         process_dict['obs_mask'] = obs_mask
         process_dict['keep_agent_mask'] = keep_agent_mask
         process_dict['scene_map_image'] = scene_map.image
+        process_dict['center_point'] = center_point
 
         return process_dict
 
@@ -387,6 +388,9 @@ class TorchDataGeneratorSDD(Dataset):
         scaling = self.traj_scale * m_by_px
 
         trajs = (trajs - center_point) * scaling
+        ego = (ego - center_point) * scaling
+        occluder = (occluder - center_point) * scaling
+
         if self.impute:
             true_trajs = (true_trajs - center_point) * scaling
         ego_visipoly = sg.Polygon((torch.from_numpy(ego_visipoly.coords) - center_point) * scaling)
@@ -424,6 +428,11 @@ class TorchDataGeneratorSDD(Dataset):
         process_dict['probability_map'] = probability_map
         process_dict['nlog_probability_map'] = nlog_probability_map
         process_dict['scene_map_image'] = scene_map.image
+
+        # TODO: figure out whether this needs to be provided by process_dict in other processing functions
+        process_dict['center_point'] = center_point
+        process_dict['ego'] = ego
+        process_dict['occluder'] = occluder
         if self.impute:
             process_dict['true_trajs'] = true_trajs
             process_dict['true_obs_mask'] = true_obs_mask
@@ -518,13 +527,13 @@ class TorchDataGeneratorSDD(Dataset):
         # removing agent surplus
         ids = ids[process_dict['keep_agent_mask']]
         trajs = process_dict['trajs'][process_dict['keep_agent_mask']]
+        obs_mask = process_dict['obs_mask'][process_dict['keep_agent_mask']]
+        last_obs_indices = process_dict['last_obs_indices'][process_dict['keep_agent_mask']]
         if self.impute and 'true_trajs' in process_dict.keys():
             true_trajs = process_dict['true_trajs'][process_dict['keep_agent_mask']]
             true_obs_mask = process_dict['true_obs_mask'][process_dict['keep_agent_mask']].to(torch.bool)
         else:
             true_trajs, true_obs_mask = None, None
-        obs_mask = process_dict['obs_mask'][process_dict['keep_agent_mask']]
-        last_obs_indices = process_dict['last_obs_indices'][process_dict['keep_agent_mask']]
 
         obs_mask = obs_mask.to(torch.bool)
 
@@ -548,8 +557,9 @@ class TorchDataGeneratorSDD(Dataset):
 
         data_dict = {
             'trajectories': trajs,
-            # 'obs_velocities': obs_vel,
+            'velocities': pred_vel,
             'observation_mask': obs_mask,
+            'observed_velocities': obs_vel,
             # 'pred_velocities': pred_vel,
             # 'prediction_mask': pred_mask,
 
@@ -576,7 +586,13 @@ class TorchDataGeneratorSDD(Dataset):
             'nlog_probability_occlusion_map': process_dict['nlog_probability_map'],
             'scene_map': scene_map.image,
             'map_homography': self.map_homography,
+            'theta': theta_rot,
+            'center_point': process_dict['center_point'],
+            'ego': process_dict.get('ego', torch.full([1, 2], float('nan'))),
+            'occluder': process_dict.get('occluder', torch.full([2, 2], float('nan'))),
 
+            'scene': scene,
+            'video': video,
             'seq': f'{scene}_{video}',
             'frame': timestep,
 
@@ -959,7 +975,9 @@ if __name__ == '__main__':
     # split = 'test'
     # split = 'train'
 
-    config_str, dataset_class, split = 'dataset_fully_observed', 'hdf5', 'train'
+    # config_str, dataset_class, split = 'dataset_fully_observed', 'hdf5', 'train'
+    config_str, dataset_class, split = 'dataset_fully_observed', 'torch_preprocess', 'train'
+    config_str, dataset_class, split = 'dataset_fully_observed', 'pickle', 'train'
     # config_str, dataset_class, split = 'dataset_fully_observed', 'torch_preprocess', 'train'
     # config_str, dataset_class, split = 'dataset_occlusion_simulation', 'torch_preprocess', 'test'
     # config_str, dataset_class, split = 'dataset_occlusion_simulation', 'hdf5', 'test'
@@ -967,26 +985,35 @@ if __name__ == '__main__':
     # config_str, dataset_class, split = 'dataset_occlusion_simulation', 'pickle', 'val'
 
     cfg = Config(config_str)
-    prepare_seed(24)
+    prepare_seed(42)
     torch_dataset = dataset_dict[dataset_class](parser=cfg, log=None, split=split)
 
-    out_dict = torch_dataset.__getitem__(50)
-    if 'map_homography' not in out_dict.keys():
-        out_dict['map_homography'] = torch_dataset.map_homography
+    n_row, n_col = 4, 6
+    fig, ax = plt.subplots(n_row, n_col)
 
-    # print(f"{out_dict=}")
-    fig, ax = plt.subplots(1, 2)
-    utils.sdd_visualize.visualize(
-        data_dict=out_dict,
-        draw_ax=ax[0],
-        draw_ax_sequences=ax[1],
-        # draw_ax_dist_transformed_map=ax[2],
-        draw_ax_dist_transformed_map=None,
-        # draw_ax_probability_map=ax[3],
-        draw_ax_probability_map=None,
-        # draw_ax_nlog_probability_map=ax[4],
-        draw_ax_nlog_probability_map=None
-    )
+    start_idx = 100
+
+    for i in range(n_row * n_col):
+
+        row_i, col_i = i // n_col, i % n_col
+
+        out_dict = torch_dataset.__getitem__(i + start_idx)
+        if 'map_homography' not in out_dict.keys():
+            out_dict['map_homography'] = torch_dataset.map_homography
+
+        # print(f"{out_dict=}")
+        utils.sdd_visualize.visualize(
+            data_dict=out_dict,
+            draw_ax=ax[row_i, col_i],
+            # draw_ax_sequences=ax[1],
+            # draw_ax_dist_transformed_map=ax[2],
+            draw_ax_dist_transformed_map=None,
+            # draw_ax_probability_map=ax[3],
+            draw_ax_probability_map=None,
+            # draw_ax_nlog_probability_map=ax[4],
+            draw_ax_nlog_probability_map=None
+        )
+
     plt.show()
     ###################################################################################################################
     print("Goodbye!")
