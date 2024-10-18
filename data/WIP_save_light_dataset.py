@@ -31,27 +31,28 @@ def prepare_dataset_setup_dict(dataset: TorchDataGeneratorSDD, save_size: Option
     # prepare the setup dictionary for instantiation of the HDF5 dataset file
     basic_setup_dict = {
         # key, value <--> dataset name, dataset metadata dict
-        'frame': {'shape': save_size, 'dtype': 'i2'},
-        'scene': {'shape': save_size, 'dtype': h5py.string_dtype(encoding='utf-8')},
-        'video': {'shape': save_size, 'dtype': h5py.string_dtype(encoding='utf-8')},
-        'theta': {'shape': save_size, 'dtype': 'f8'},
-        'center_point': {'shape': (save_size, 2), 'dtype': 'f4'},
-        'lookup_indices': {'shape': (save_size, 2), 'dtype': 'i4'},
-        'identities': {'shape': (0,), 'maxshape': (None,), 'chunks': (1,), 'dtype': 'i2'},
-        'trajectories': {'shape': (0, t_len, 2), 'maxshape': (None, t_len, 2), 'chunks': (1, t_len, 2), 'dtype': 'f4'},
-        'observation_mask': {'shape': (0, t_len), 'maxshape': (None, t_len), 'chunks': (1, t_len), 'dtype': '?'},
+        'frame': {'shape': save_size, 'chunks': (512,), 'dtype': 'i2'},
+        'scene': {'shape': save_size, 'chunks': (64,), 'dtype': h5py.string_dtype(encoding='utf-8')},
+        'video': {'shape': save_size, 'chunks': (64,), 'dtype': h5py.string_dtype(encoding='utf-8')},
+        'theta': {'shape': save_size, 'chunks': (128,), 'dtype': 'f8'},
+        'center_point': {'shape': (save_size, 2), 'chunks': (128, 2), 'dtype': 'f4'},
+        'lookup_indices': {'shape': (save_size, 2), 'chunks': (128, 2), 'dtype': 'i4'},
+        'identities': {'shape': (0,), 'maxshape': (None,), 'chunks': (512,), 'dtype': 'i2'},
+        'trajectories': {'shape': (0, t_len, 2), 'maxshape': (None, t_len, 2), 'chunks': (16, t_len, 2), 'dtype': 'f4'},
+        'observation_mask': {'shape': (0, t_len), 'maxshape': (None, t_len), 'chunks': (64, t_len), 'dtype': '?'},
         'observed_velocities': {'shape': (0, t_len, 2), 'maxshape': (None, t_len, 2),
-                                'chunks': (1, t_len, 2), 'dtype': 'f4'},
-        'velocities': {'shape': (0, t_len, 2), 'maxshape': (None, t_len, 2), 'chunks': (1, t_len, 2), 'dtype': 'f4'},
+                                'chunks': (16, t_len, 2), 'dtype': 'f4'},
+        'velocities': {'shape': (0, t_len, 2), 'maxshape': (None, t_len, 2), 'chunks': (16, t_len, 2), 'dtype': 'f4'},
     }
     occlusion_setup_dict = {
-        'ego': {'shape': (save_size, 2), 'dtype': 'f4'}, 'occluder': {'shape': (save_size, 2, 2), 'dtype': 'f4'},
-        'occlusion_map': {'shape': save_size, 'dtype': f'V{int(map_res * map_res / 8)}'},
+        'ego': {'shape': (save_size, 2), 'chunks': (128, 2), 'dtype': 'f4'},
+        'occluder': {'shape': (save_size, 2, 2), 'chunks': (64, 2, 2), 'dtype': 'f4'},
+        'occlusion_map': {'shape': save_size, 'chunks': (1,), 'dtype': f'V{int(map_res * map_res / 8)}'},
     }
     impute_setup_dict = {
-        'true_observation_mask': {'shape': (0, t_len), 'maxshape': (None, t_len), 'chunks': (1, t_len), 'dtype': '?'},
+        'true_observation_mask': {'shape': (0, t_len), 'maxshape': (None, t_len), 'chunks': (64, t_len), 'dtype': '?'},
         'true_trajectories': {'shape': (0, t_len, 2), 'maxshape': (None, t_len, 2),
-                              'chunks': (1, t_len, 2), 'dtype': 'f4'},
+                              'chunks': (16, t_len, 2), 'dtype': 'f4'},
     }
 
     setup_dict = {**basic_setup_dict}
