@@ -1,301 +1,12 @@
-"""
-Code borrowed from Trajectron++: https://github.com/StanfordASL/Trajectron-plus-plus/blob/ef0165a93ee5ba8cdc14f9b999b3e00070cd8588/trajectron/environment/map.py
-"""
 import torch
 import numpy as np
-from numpy.typing import NDArray
+
 Tensor = torch.Tensor
 import torchvision.transforms.functional
+from PIL import Image
 import cv2
 import os
 from data.homography_warper import get_rotation_matrix2d, warp_affine_crop
-
-
-class Map(object):
-    def __init__(self, data, homography, description=None):
-        self.data = data
-        self.homography = homography
-        self.description = description
-
-    def as_image(self):
-        raise NotImplementedError
-
-    def get_cropped_maps(self, world_pts, patch_size, rotation=None, device='cpu'):
-        raise NotImplementedError
-
-    def to_map_points(self, scene_pts):
-        raise NotImplementedError
-
-
-class GeometricMap(Map):
-    """
-    A Geometric Map is a int tensor of shape [layers, x, y]. The homography must transform a point in scene
-    coordinates to the respective point in map coordinates.
-
-    :param data: Numpy array of shape [layers, x, y]
-    :param homography: Numpy array of shape [3, 3]
-    """
-    def __init__(self, data, homography, origin=None, description=None):
-        #assert isinstance(data.dtype, np.floating), "Geometric Maps must be float values."
-        super(GeometricMap, self).__init__(data, homography, description=description)
-
-        if origin is None:
-            self.origin = np.zeros(2)
-        else:
-            self.origin = origin
-        self._last_padding = None
-        self._last_padded_map = None
-        self._torch_map = None
-
-    def torch_map(self, device):
-        if self._torch_map is not None:
-            return self._torch_map
-        self._torch_map = torch.tensor(self.data, dtype=torch.uint8, device=device)
-        return self._torch_map
-
-    def as_image(self) -> NDArray:
-        # We have to transpose x and y to rows and columns. Assumes origin is lower left for image
-        # Also we move the channels to the last dimension
-        return (np.transpose(self.data, (2, 1, 0))).astype(np.uint8)
-
-    def get_map_dimensions(self):
-        return self.data.shape[1:]      # [W, H]
-
-    def set_homography(self, Matrix):
-        self.homography = Matrix
-
-    def translation(self, point: NDArray):
-        """
-        shifts the origin of self.homography by some coordinate vector
-        """
-        self.homography[:2, 2] += point
-
-    def scale(self, scaling: float):
-        """
-        warps self.homography by rescaling wrt a provided factor
-        """
-        self.homography[0, 0] *= scaling
-        self.homography[1, 1] *= scaling
-
-    def mirror_expand(self, factor: float = 1.0):
-        """
-        Mirror padding of the map by some given factor. if factor = 1, then the side of the image will be tripled
-        (this corresponds to padding the image with 1 complete mirror copy of itself on all sides)
-        """
-        (W, H) = self.get_map_dimensions()
-        W = int(W * factor)
-        H = int(H * factor)
-        self.translation(np.array([W, H]))
-        img = self.as_image()
-        img = cv2.copyMakeBorder(img, H, H, W, W, borderType=cv2.BORDER_REFLECT_101)
-        self.data = np.transpose(img, (2, 1, 0))
-
-    def square_crop(self, crop_coords: NDArray, side_length: float, resolution: int):
-        # assert np.all(crop_coords >= 0)
-        # assert np.all(crop_coords[1] <= self.get_map_dimensions())
-
-        min_x, min_y = np.round(crop_coords[0, ...].astype(int))
-        side = np.round(np.mean(crop_coords[1] - crop_coords[0])).astype(int)
-
-        self.data = cv2.resize(
-            src=self.data[..., min_x:min_x+side, min_y:min_y+side].transpose(2, 1, 0),
-            dsize=(resolution, resolution),
-            interpolation=cv2.INTER_LINEAR
-        ).transpose(2, 1, 0)
-
-        Matrix = np.array([[resolution/side_length, 0, resolution/2],
-                           [0, resolution/side_length, resolution/2],
-                           [0, 0, 1]])
-        self.homography = Matrix
-
-    def rotate_around_center(self, theta: float):
-        """
-        theta is in radians.
-        performs rotation of the map along the center. automatically expands map boundaries and applies reflect padding.
-        this process does not remove any croppings of the map.
-        """
-        (W, H) = self.get_map_dimensions()
-        (cX, cY) = (W/2, H/2)
-        cos = np.cos(theta)
-        sin = np.sin(theta)
-
-        nW = int((H * np.abs(sin)) + (W * np.abs(cos)))
-        nH = int((H * np.abs(cos)) + (W * np.abs(sin)))
-
-        Matrix = np.array([[cos, -sin, -cos*cX + sin*cY + nW/2],
-                           [sin, cos, -sin*cX - cos*cY + nH/2],
-                           [0, 0, 1]])
-        self.homography = Matrix @ self.homography      # perhaps needs to be matrix multiplied instead of assigned to
-
-        img = self.as_image()
-        img = cv2.warpAffine(img, Matrix[:-1, ...], (nW, nH), borderMode=cv2.BORDER_REFLECT_101)
-
-        self.data = np.transpose(img, (2, 1, 0))
-
-    def get_padded_map(self, padding_x, padding_y, device):
-        if self._last_padding == (padding_x, padding_y):
-            return self._last_padded_map
-        else:
-            self._last_padding = (padding_x, padding_y)
-            self._last_padded_map = torch.full((self.data.shape[0],
-                                                self.data.shape[1] + 2 * padding_x,
-                                                self.data.shape[2] + 2 * padding_y),
-                                               False, dtype=torch.uint8)
-            self._last_padded_map[..., padding_x:-padding_x, padding_y:-padding_y] = self.torch_map(device)
-            return self._last_padded_map
-
-    @staticmethod
-    def batch_rotate(map_batched, centers, angles, out_height, out_width):
-        """
-        As the input is a map and the warp_affine works on an image coordinate system we would have to
-        flip the y axis updown, negate the angles, and flip it back after transformation.
-        This, however, is the same as not flipping at and not negating the radian.
-
-        :param map_batched:
-        :param centers:
-        :param angles:
-        :param out_height:
-        :param out_width:
-        :return:
-        """
-        M = get_rotation_matrix2d(centers, angles, torch.ones_like(angles))
-        rotated_map_batched = warp_affine_crop(map_batched, centers, M,
-                                               dsize=(out_height, out_width), padding_mode='zeros')
-
-        return rotated_map_batched
-
-    @classmethod
-    def get_cropped_maps_from_scene_map_batch(cls, maps, scene_pts, patch_size, rotation=None, device='cpu'):
-        """
-        Returns rotated patches of each map around the transformed scene points.
-        ___________________
-        |       |          |
-        |       |ps[3]     |
-        |       |          |
-        |       |          |
-        |      o|__________|
-        |       |    ps[2] |
-        |       |          |
-        |_______|__________|
-        ps = patch_size
-
-        :param maps: List of GeometricMap objects [bs]
-        :param scene_pts: Scene points: [bs, 2]
-        :param patch_size: Extracted Patch size after rotation: [-x, -y, +x, +y]
-        :param rotation: Rotations in degrees: [bs]
-        :param device: Device on which the rotated tensors should be returned.
-        :return: Rotated and cropped tensor patches.
-        """
-        batch_size = scene_pts.shape[0]
-        lat_size = 2 * np.max((patch_size[0], patch_size[2]))
-        long_size = 2 * np.max((patch_size[1], patch_size[3]))
-        assert lat_size % 2 == 0, "Patch width must be divisible by 2"
-        assert long_size % 2 == 0, "Patch length must be divisible by 2"
-        lat_size_half = lat_size // 2
-        long_size_half = long_size // 2
-
-        context_padding_x = int(np.ceil(np.sqrt(2) * long_size))
-        context_padding_y = int(np.ceil(np.sqrt(2) * long_size))
-
-        centers = torch.tensor([s_map.to_map_points(scene_pts[np.newaxis, i]) for i, s_map in enumerate(maps)],
-                               dtype=torch.long, device=device).squeeze(dim=1) \
-                  + torch.tensor([context_padding_x, context_padding_y], device=device, dtype=torch.long)
-
-        padded_map = [s_map.get_padded_map(context_padding_x, context_padding_y, device=device) for s_map in maps]
-
-        padded_map_batched = torch.stack([padded_map[i][...,
-                                          centers[i, 0] - context_padding_x: centers[i, 0] + context_padding_x,
-                                          centers[i, 1] - context_padding_y: centers[i, 1] + context_padding_y]
-                                          for i in range(centers.shape[0])], dim=0)
-
-        center_patches = torch.tensor([[context_padding_y, context_padding_x]],
-                                      dtype=torch.int,
-                                      device=device).repeat(batch_size, 1)
-
-        if rotation is not None:
-            angles = torch.Tensor(rotation)
-        else:
-            angles = torch.zeros(batch_size)
-
-        rotated_map_batched = cls.batch_rotate(padded_map_batched/255.,
-                                               center_patches.float(),
-                                               angles,
-                                               long_size,
-                                               lat_size)
-
-        del padded_map_batched
-
-        return rotated_map_batched[...,
-               long_size_half - patch_size[1]:(long_size_half + patch_size[3]),
-               lat_size_half - patch_size[0]:(lat_size_half + patch_size[2])]
-
-    def get_cropped_maps(self, scene_pts, patch_size, rotation=None, device='cpu'):
-        """
-        Returns rotated patches of the map around the transformed scene points.
-        ___________________
-        |       |          |
-        |       |ps[3]     |
-        |       |          |
-        |       |          |
-        |      o|__________|
-        |       |    ps[2] |
-        |       |          |
-        |_______|__________|
-        ps = patch_size
-
-        :param scene_pts: Scene points: [bs, 2]
-        :param patch_size: Extracted Patch size after rotation: [-lat, -long, +lat, +long]
-        :param rotation: Rotations in degrees: [bs]
-        :param device: Device on which the rotated tensors should be returned.
-        :return: Rotated and cropped tensor patches.
-        """
-        return self.get_cropped_maps_from_scene_map_batch([self]*scene_pts.shape[0], scene_pts,
-                                                          patch_size, rotation=rotation, device=device)
-
-    def to_map_points(self, scene_pts: NDArray) -> NDArray:
-        org_shape = None
-        if len(scene_pts.shape) != 2:
-            org_shape = scene_pts.shape
-            scene_pts = scene_pts.reshape((-1, 2))
-        scene_pts = scene_pts - self.origin[None, :]
-        N, dims = scene_pts.shape
-        points_with_one = np.ones((dims + 1, N))
-        points_with_one[:dims] = scene_pts.T
-        map_points = (self.homography @ points_with_one).T[..., :dims]
-        if org_shape is not None:
-            map_points = map_points.reshape(org_shape)
-        return map_points
-
-    def visualize_data(self, data):
-        pre_motion = np.stack(data['pre_motion_3D']) * data['traj_scale']
-        fut_motion = np.stack(data['fut_motion_3D']) * data['traj_scale']
-        heading = data['heading']
-        img = np.transpose(self.data, (1, 2, 0))
-        for i in range(pre_motion.shape[0]):
-            cur_pos = pre_motion[i, -1]
-            # draw agent
-            cur_pos = np.round(self.to_map_points(cur_pos)).astype(int)
-            img = cv2.circle(img, (cur_pos[1], cur_pos[0]), 3, (0, 255, 0), -1)
-            prev_pos = cur_pos
-            # draw fut traj
-            for t in range(fut_motion.shape[0]):
-                pos = fut_motion[i, t]
-                pos = np.round(self.to_map_points(pos)).astype(int)
-                img = cv2.line(img, (prev_pos[1], prev_pos[0]), (pos[1], pos[0]), (0, 255, 0), 2)
-
-                # draw heading
-            theta = heading[i]
-            v= np.array([5.0, 0.0])
-            v_new = v.copy()
-            v_new[0] = v[0] * np.cos(theta) - v[1] * np.sin(theta)
-            v_new[1] = v[0] * np.sin(theta) + v[1] * np.cos(theta)
-            vend = pre_motion[i, -1] + v_new
-            vend = np.round(self.to_map_points(vend)).astype(int)
-            img = cv2.line(img, (cur_pos[1], cur_pos[0]), (vend[1], vend[0]), (0, 255, 255), 2)
-
-        fname = f'out/agent_maps/{data["seq"]}_{data["frame"]}_vis.png'
-        os.makedirs(os.path.dirname(fname), exist_ok=True)
-        cv2.imwrite(fname, img)
 
 
 class TorchGeometricMap:
@@ -357,3 +68,104 @@ class TorchGeometricMap:
 
     def set_homography(self, matrix: Tensor) -> None:
         self.homography = matrix
+
+
+class HomographyMatrix:
+
+    def __init__(self, homography: Tensor = torch.eye(3)):
+        self.homography = homography    # [3, 3]
+
+    def set_homography(self, homography: Tensor) -> None:
+        self.homography = homography
+
+    def translate(self, point: Tensor) -> None:
+        # point [2]
+        self.homography[:2, 2] += point
+
+    def scale(self, factor: float) -> None:
+        self.homography[0, 0] *= factor
+        self.homography[1, 1] *= factor
+
+    def rotate(self, theta: float) -> None:
+        # theta expressed in radians
+
+        cos = np.cos(theta)
+        sin = np.sin(theta)
+
+        rotation_matrix = torch.Tensor(
+            [[cos, -sin, 0.],
+             [sin, cos, 0.],
+             [0., 0., 1.]]
+        )
+        self.homography = rotation_matrix @ self.homography
+
+    def rotate_about(self, point: Tensor, theta: float) -> None:
+        # point [2]
+        # theta expressed in radians
+        p_x, p_y = point[...]
+
+        cos = np.cos(theta)
+        sin = np.sin(theta)
+
+        rotation_matrix = torch.Tensor(
+            [[cos, -sin, -cos * p_x + sin * p_y + p_x],
+             [sin, cos, -sin * p_x - cos * p_y + p_y],
+             [0., 0., 1.]]
+        )
+        self.homography = rotation_matrix @ self.homography
+
+    def transform_points(self, points: Tensor) -> Tensor:
+        # points [*, 2]
+        homogeneous_points = torch.cat((points, torch.ones([*points.shape[:-1], 1])), dim=-1).transpose(-1, -2)
+        mapped_points = (self.homography @ homogeneous_points).transpose(-1, -2)[..., :-1]
+        return mapped_points
+
+
+class BaseMap:
+    def get_resolution(self) -> Tensor:
+        raise NotImplementedError
+
+    def crop(self, crop_coords: Tensor, resolution: int) -> None:
+        raise NotImplementedError
+
+    def rotate_around_center(self, theta: float) -> None:
+        raise NotImplementedError
+
+
+class DummyMap(BaseMap):
+    def __init__(self, image_path: os.PathLike):
+        """
+        This implementation won't actually load the image contained within <image_path>,
+        but just operate based on the image's resolution.
+        """
+        self.map_resolution = Image.open(image_path).size[::-1]         # [H, W]
+
+    def get_resolution(self) -> Tensor:
+        return torch.Tensor(self.map_resolution)
+
+    def crop(self, crop_coords: Tensor, resolution: int) -> None:
+        self.map_resolution = (resolution, resolution)
+
+    def rotate_around_center(self, theta: float) -> None:
+        pass
+
+
+class TensorMap(BaseMap):
+    def __init__(self, map_tensor: Tensor):
+        self.map_data = map_tensor       # [C, H, W]
+
+    def get_resolution(self) -> Tensor:
+        return self.map_data.shape[1:]       # [H, W]
+
+    def crop(self, crop_coords: Tensor, resolution: int) -> None:
+        # crop_coords [2, 2]
+        top = torch.round(crop_coords[0, 1]).to(torch.int64)
+        left = torch.round(crop_coords[0, 0]).to(torch.int64)
+        side = torch.round(crop_coords[1, 0] - crop_coords[0, 0]).to(torch.int64)
+
+        self.map_data = torchvision.transforms.functional.resized_crop(
+            self.map_data, top=top, left=left, height=side, width=side, size=resolution
+        )
+
+    def rotate_around_center(self, theta: float) -> None:
+        self.map_data = torchvision.transforms.functional.rotate(self.map_data, angle=theta)
