@@ -122,6 +122,10 @@ class HomographyMatrix:
 
 
 class BaseMap:
+
+    def __init__(self, image_path: os.PathLike):
+        raise NotImplementedError
+
     def get_resolution(self) -> Tensor:
         raise NotImplementedError
 
@@ -132,7 +136,7 @@ class BaseMap:
         raise NotImplementedError
 
 
-class DummyMap(BaseMap):
+class PILMap(BaseMap):
     def __init__(self, image_path: os.PathLike):
         """
         This implementation won't actually load the image contained within <image_path>,
@@ -151,8 +155,14 @@ class DummyMap(BaseMap):
 
 
 class TensorMap(BaseMap):
-    def __init__(self, map_tensor: Tensor):
-        self._data = map_tensor       # [C, H, W]
+
+    convert_to_tensor = torchvision.transforms.ToTensor()
+
+    def __init__(self, image_path: os.PathLike):
+        image = cv2.imread(image_path)
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        image = self.convert_to_tensor(image)
+        self._data = image       # [C, H, W]
 
     def get_resolution(self) -> Tensor:
         return self._data.shape[1:]       # [H, W]
