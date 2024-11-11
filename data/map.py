@@ -202,3 +202,9 @@ class MapManager:
 
     def map_cropping(self, crop_coordinates: Tensor, resolution: int) -> None:
         self._map.crop(crop_coords=crop_coordinates, resolution=resolution)
+
+    def to_map_points(self, points: Tensor) -> Tensor:
+        return self._homography.transform_points(points=points)
+
+    def set_homography(self, matrix: Tensor) -> None:
+        self._homography.set_homography(matrix=matrix)
