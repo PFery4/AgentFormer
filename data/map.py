@@ -123,9 +123,6 @@ class HomographyMatrix:
 
 class BaseMap:
 
-    def __init__(self, image_path: os.PathLike):
-        raise NotImplementedError
-
     def get_resolution(self) -> Tensor:
         raise NotImplementedError
 
