@@ -138,13 +138,13 @@ class DummyMap(BaseMap):
         This implementation won't actually load the image contained within <image_path>,
         but just operate based on the image's resolution.
         """
-        self.map_resolution = Image.open(image_path).size[::-1]         # [H, W]
+        self._resolution = Image.open(image_path).size[::-1]         # [H, W]
 
     def get_resolution(self) -> Tensor:
-        return torch.Tensor(self.map_resolution)
+        return torch.Tensor(self._resolution)
 
     def crop(self, crop_coords: Tensor, resolution: int) -> None:
-        self.map_resolution = (resolution, resolution)
+        self._resolution = (resolution, resolution)
 
     def rotate_around_center(self, theta: float) -> None:
         pass
@@ -152,10 +152,10 @@ class DummyMap(BaseMap):
 
 class TensorMap(BaseMap):
     def __init__(self, map_tensor: Tensor):
-        self.map_data = map_tensor       # [C, H, W]
+        self._data = map_tensor       # [C, H, W]
 
     def get_resolution(self) -> Tensor:
-        return self.map_data.shape[1:]       # [H, W]
+        return self._data.shape[1:]       # [H, W]
 
     def crop(self, crop_coords: Tensor, resolution: int) -> None:
         # crop_coords [2, 2]
@@ -163,12 +163,12 @@ class TensorMap(BaseMap):
         left = torch.round(crop_coords[0, 0]).to(torch.int64)
         side = torch.round(crop_coords[1, 0] - crop_coords[0, 0]).to(torch.int64)
 
-        self.map_data = torchvision.transforms.functional.resized_crop(
-            self.map_data, top=top, left=left, height=side, width=side, size=resolution
+        self._data = torchvision.transforms.functional.resized_crop(
+            self._data, top=top, left=left, height=side, width=side, size=resolution
         )
 
     def rotate_around_center(self, theta: float) -> None:
-        self.map_data = torchvision.transforms.functional.rotate(self.map_data, angle=theta)
+        self._data = torchvision.transforms.functional.rotate(self._data, angle=theta)
 
 
 class MapManager:
