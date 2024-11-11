@@ -72,19 +72,19 @@ class TorchGeometricMap:
 
 class HomographyMatrix:
 
-    def __init__(self, homography: Tensor = torch.eye(3)):
-        self.homography = homography    # [3, 3]
+    def __init__(self, matrix: Tensor = torch.eye(3)):
+        self._frame = matrix    # [3, 3]
 
-    def set_homography(self, homography: Tensor) -> None:
-        self.homography = homography
+    def set_homography(self, matrix: Tensor) -> None:
+        self._frame = matrix
 
     def translate(self, point: Tensor) -> None:
         # point [2]
-        self.homography[:2, 2] += point
+        self._frame[:2, 2] += point
 
     def scale(self, factor: float) -> None:
-        self.homography[0, 0] *= factor
-        self.homography[1, 1] *= factor
+        self._frame[0, 0] *= factor
+        self._frame[1, 1] *= factor
 
     def rotate(self, theta: float) -> None:
         # theta expressed in radians
@@ -97,7 +97,7 @@ class HomographyMatrix:
              [sin, cos, 0.],
              [0., 0., 1.]]
         )
-        self.homography = rotation_matrix @ self.homography
+        self._frame = rotation_matrix @ self._frame
 
     def rotate_about(self, point: Tensor, theta: float) -> None:
         # point [2]
@@ -112,12 +112,12 @@ class HomographyMatrix:
              [sin, cos, -sin * p_x - cos * p_y + p_y],
              [0., 0., 1.]]
         )
-        self.homography = rotation_matrix @ self.homography
+        self._frame = rotation_matrix @ self._frame
 
     def transform_points(self, points: Tensor) -> Tensor:
         # points [*, 2]
         homogeneous_points = torch.cat((points, torch.ones([*points.shape[:-1], 1])), dim=-1).transpose(-1, -2)
-        mapped_points = (self.homography @ homogeneous_points).transpose(-1, -2)[..., :-1]
+        mapped_points = (self._frame @ homogeneous_points).transpose(-1, -2)[..., :-1]
         return mapped_points
 
 
@@ -169,3 +169,13 @@ class TensorMap(BaseMap):
 
     def rotate_around_center(self, theta: float) -> None:
         self.map_data = torchvision.transforms.functional.rotate(self.map_data, angle=theta)
+
+
+class MapManager:
+    """
+    This class is a map manager, whose purpose is to contain a map, and a homography matrix,
+    Transformations are applied simultaneously to both objects, such that they remain consistent with one another.
+    """
+    def __init__(self, map: BaseMap, homography: HomographyMatrix):
+        self.map = map
+        self.homography = homography
