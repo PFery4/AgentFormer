@@ -529,9 +529,14 @@ class TorchDataGeneratorSDD(Dataset):
         trajs = process_dict['trajs'][process_dict['keep_agent_mask']]
         obs_mask = process_dict['obs_mask'][process_dict['keep_agent_mask']]
         last_obs_indices = process_dict['last_obs_indices'][process_dict['keep_agent_mask']]
-        if self.impute and 'true_trajs' in process_dict.keys():
-            true_trajs = process_dict['true_trajs'][process_dict['keep_agent_mask']]
-            true_obs_mask = process_dict['true_obs_mask'][process_dict['keep_agent_mask']].to(torch.bool)
+
+        if self.impute:
+            if 'true_trajs' in process_dict.keys():
+                true_trajs = process_dict['true_trajs'][process_dict['keep_agent_mask']]
+                true_obs_mask = process_dict['true_obs_mask'][process_dict['keep_agent_mask']].to(torch.bool)
+            else:
+                true_trajs = process_dict['trajs'][process_dict['keep_agent_mask']]
+                true_obs_mask = process_dict['obs_mask'][process_dict['keep_agent_mask']].to(torch.bool)
         else:
             true_trajs, true_obs_mask = None, None
 
