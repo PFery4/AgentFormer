@@ -502,30 +502,33 @@ def show_example_instances_dataloader():
     import src.visualization.sdd_visualize as simulation_visualize
     import src.data.config as sdd_conf
 
-    config_str = 'sdd_baseline_copy_for_test_pre'
-    # dataset_type = TorchDataGeneratorSDD
-    dataset_type = PresavedDatasetSDD
+    # config_str = 'sdd_baseline_copy_for_test_pre'
+    config_str = 'dataset_occlusion_simulation_no_rand_rot'
+    dataset_type = TorchDataGeneratorSDD
+    # dataset_type = PresavedDatasetSDD
 
     compare = False
-    split = 'train'
+    split = 'test'
 
     config = Config(config_str)
     # config.occlusion_process = 'fully_observed'
-    prepare_seed(config.seed)
+    # prepare_seed(config.seed)
 
     generator = dataset_type(parser=config, log=None, split=split)
 
-    num_figures = 2
+    num_figures = 1
 
     if generator.occlusion_process == 'occlusion_simulation':
         num_figures += 3        # adding figures for the maps
+    num_figures = 2
 
     if compare:
         sdd_config = sdd_conf.get_config(config.sdd_config_file_name)
         compare_generator = StanfordDroneDatasetWithOcclusionSim(sdd_config, split=split)
         num_figures += 1        # adding an extra figure
 
-    for idx in range(len(generator)):
+    # for idx in range(len(generator)):
+    for idx in [1977]:
 
         # 225, 615, 735
         # (run this on the v3 simulators, with max_train_agent 16 to
@@ -534,6 +537,8 @@ def show_example_instances_dataloader():
         #     continue
 
         data_dict = generator.__getitem__(idx)
+
+        print(data_dict)
 
         fig, ax = plt.subplots(1, num_figures)
 
@@ -547,19 +552,19 @@ def show_example_instances_dataloader():
         draw_ax_probability_map = None
         draw_ax_nlog_probability_map = None
         if 'dist_transformed_occlusion_map' in data_dict.keys():
-            draw_ax_dist_transformed_map = ax[2]
-        if 'probability_occlusion_map' in data_dict.keys():
-            draw_ax_probability_map = ax[3]
-        if 'nlog_probability_occlusion_map' in data_dict.keys():
-            draw_ax_nlog_probability_map = ax[4]
+            draw_ax_dist_transformed_map = ax[1]
+        # if 'probability_occlusion_map' in data_dict.keys():
+        #     draw_ax_probability_map = ax[3]
+        # if 'nlog_probability_occlusion_map' in data_dict.keys():
+        #     draw_ax_nlog_probability_map = ax[4]
 
         visualize(
             data_dict=data_dict,
             draw_ax=ax[0],
-            draw_ax_sequences=ax[1],
+            draw_ax_sequences=None,
             draw_ax_dist_transformed_map=draw_ax_dist_transformed_map,
-            draw_ax_probability_map=draw_ax_probability_map,
-            draw_ax_nlog_probability_map=draw_ax_nlog_probability_map
+            draw_ax_probability_map=None,
+            draw_ax_nlog_probability_map=None
         )
 
         # print(f"{data_dict['identities']=}")
