@@ -72,6 +72,8 @@ class PresavedDataset(Dataset):
              [0., self.map_resolution / self.map_side, self.map_resolution / 2],
              [0., 0., 1.]]
         )
+        self.struct_format = f'{int(self.map_resolution * self.map_resolution / 8)}B'
+        assert self.map_resolution % 8 == 0
 
         # scene map parameters
         self.padding_px = 2075
@@ -85,14 +87,15 @@ class PresavedDataset(Dataset):
         self.timesteps = torch.arange(-self.T_obs, self.T_pred) + 1
 
         # dataset identification
-        self.dataset_dir = os.path.abspath(os.path.dirname(__file__))       # TODO: FIX
-        self.dataset_name = 'test_dataset.h5'                               # TODO: FIX
+        dataset_dir_name = f'{self.occlusion_process}_imputed' if self.impute else self.occlusion_process
+        self.dataset_dir = os.path.join(self.presaved_datasets_dir, dataset_dir_name, self.split)
+
         assert os.path.exists(self.dataset_dir)
         prnt_str = f"Dataset directory is:\n{self.dataset_dir}"
         print_log(prnt_str, log=log) if log is not None else print(prnt_str)
 
         ################################################################################################################
-        self.hdf5_file = os.path.join(self.dataset_dir, self.dataset_name)
+        self.hdf5_file = os.path.join(self.dataset_dir, 'dataset_v2.h5')    # TODO: maybe don't hard set filename
         assert os.path.exists(self.hdf5_file)
 
         # For integrating the hdf5 dataset into the Pytorch class,
@@ -240,10 +243,12 @@ class PresavedDataset(Dataset):
 
     def add_occlusion_map_data(self, data_dict: Dict, idx: int):
         retrieved_bytes = self.h5_dataset['occlusion_map'][idx]
-        retrieved_bytes = struct.unpack('80000B', retrieved_bytes)
+        retrieved_bytes = struct.unpack(self.struct_format, retrieved_bytes)
         retrieved_bytes = [f'{num:08b}' for num in retrieved_bytes]
         retrieved_bytes = "".join(retrieved_bytes)
-        processed_occl_map = torch.BoolTensor([int(num) for num in retrieved_bytes]).reshape(800, 800)
+        processed_occl_map = torch.BoolTensor(
+            [int(num) for num in retrieved_bytes]
+        ).reshape(self.map_resolution, self.map_resolution)
         data_dict['occlusion_map'] = processed_occl_map
 
         scaling = self.traj_scale * self.coord_conv_table.loc[data_dict['scene'], data_dict['video']]['m/px']
@@ -292,8 +297,6 @@ class PresavedDataset(Dataset):
         return self.lookup_indices.shape[0]
 
     def __getitem__(self, idx: int) -> Dict:
-        # TODO: CAST ALL TENSORS TO CORRECT TYPES
-
         idx_start, idx_end = self.lookup_indices[idx]
 
         if self.h5_dataset is None:
@@ -303,30 +306,25 @@ class PresavedDataset(Dataset):
 
         self.add_instance_identifiers(data_dict=data_dict, idx=idx)
         self.add_scene_map_transform_parameters(data_dict=data_dict, idx=idx)
-        self.add_occlusion_objects(data_dict=data_dict, idx=idx)
+        if self.occlusion_process == 'occlusion_simulation':
+            self.add_occlusion_objects(data_dict=data_dict, idx=idx)
 
         for dset_name in self.lookup_datasets:
             data_dict[dset_name] = torch.from_numpy(self.h5_dataset[dset_name][idx_start:idx_end])
         data_dict['identities'] = data_dict['identities'].to(torch.int64)
 
         self.add_trajectory_data(data_dict=data_dict)
-        self.add_occlusion_map_data(data_dict=data_dict, idx=idx)
-        self.add_scene_map_data(data_dict=data_dict)
+        if self.occlusion_process == 'occlusion_simulation':
+            self.add_occlusion_map_data(data_dict=data_dict, idx=idx)
+        # self.add_scene_map_data(data_dict=data_dict)
 
         data_dict['timesteps'] = self.timesteps
         data_dict['scene_orig'] = torch.zeros([2])
         data_dict['map_homography'] = self.map_homography
 
-        data_dict['true_trajectories'] = None
-        data_dict['true_observation_mask'] = None
         if self.impute:
-            raise NotImplementedError
-            # TODO: IMPLEMENT THIS PART TOO
-            # if 'true_trajectories' not in data_dict.keys():
-            #     data_dict['true_trajectories'] = data_dict['trajectories']
-            # if 'true_observation_mask' not in data_dict.keys():
-            #     data_dict['true_observation_mask'] = data_dict['observation_mask']
-            # data_dict['imputation_mask'] = data_dict['true_observation_mask'][data_dict['observation_mask']]
+            assert 'true_trajectories' in data_dict.keys()
+            data_dict['imputation_mask'] = data_dict['true_observation_mask'][data_dict['observation_mask']]
 
         # Quick Fix
         if self.quick_fix:
@@ -370,76 +368,6 @@ class PresavedDataset(Dataset):
 
 
 ########################################################################################################################
-
-def instantiate_hdf5_dataset(save_path, setup_dict: Dict):
-    assert os.path.exists(os.path.dirname(save_path))
-
-    print(f"\nthe setup dictionary for the hdf5 dataset is:")
-    [print(f"{k}: {v}") for k, v in setup_dict.items()]
-    print()
-
-    with h5py.File(save_path, 'w') as hdf5_file:
-
-        # creating separate datasets for instance elements which do not change shapes
-        for k, v in setup_dict.items():
-            hdf5_file.create_dataset(k, **v)
-
-
-def write_instance_to_hdf5_dataset(
-        hdf5_file: h5py.File,
-        instance_idx: int,
-        # instance_name: str,
-        setup_dict: Dict,
-        instance_dict: Dict
-):
-    # # creating a separate group for the instance, where all shape changing instance elements will be stored
-    # group = hdf5_file.create_group(name=instance_name)
-    #
-    # for key in instance_dict.keys():
-    #     # processing instance elements which do not change shapes into their respective datasets
-    #     if key in [
-    #         'scene_map', 'occlusion_map', 'dist_transformed_occlusion_map', 'probability_occlusion_map',
-    #         'nlog_probability_occlusion_map', 'map_homography'
-    #     ]:
-    #         hdf5_file[key][instance_idx, ...] = instance_dict[key]
-    #     elif key in ['seq', 'frame']:
-    #         hdf5_file[key][instance_idx] = instance_dict[key]
-    #
-    #     # processing the remaining instance elements into separate datasets within the group
-    #     elif instance_dict[key] is not None:
-    #         group.create_dataset(name=key, data=instance_dict[key])
-    #     else:
-    #         print(f"{instance_name}: {key} is None! passing this one")
-
-    n_agents = instance_dict['identities'].shape[0]
-    orig_index = hdf5_file['identities'].shape[0]
-
-    hdf5_file['lookup_indices'][instance_idx, ...] = (orig_index, orig_index + n_agents)
-
-    for key, value in setup_dict.items():
-
-        dset = hdf5_file[key]
-        data = instance_dict.get(key, None)
-
-        if key == 'occlusion_map':
-            bytes_occl_map = data.clone().detach().to(torch.int64)
-            bytes_occl_map *= 2 ** torch.arange(7, -1, -1, dtype=torch.int64).repeat(100)
-            bytes_occl_map = bytes_occl_map.reshape(800, 100, 8).sum(dim=-1)
-            bytes_occl_map = struct.pack('80000B', *bytes_occl_map.flatten().tolist())
-
-            dset[instance_idx] = np.void(bytes_occl_map)
-
-        elif data is not None:
-            print(f"Writing to hdf5 dataset: {key}")
-            if None in dset.maxshape:
-                dset.resize(dset.shape[0] + n_agents, axis=0)
-                dset[orig_index:orig_index + n_agents, ...] = data
-            else:
-                dset[instance_idx, ...] = data
-        else:
-            print(f"Skipped:                 {key}")
-
-    print()
 
 
 def write_instance_to_hdf5_dataset_from_pickle(
@@ -538,75 +466,6 @@ def load_old_data():
             out_str += f" ({v.shape}, {v.dtype})"
         print(out_str)
     print()
-
-
-def save_new_hdf5():
-    ###################################################################################################################
-    # Saving new hdf5 dataset
-    save_start_idx = 0
-    save_split = SPLIT
-    save_end_idx = N_COMPARISON
-    save_temp_len = save_end_idx - save_start_idx
-    save_method = write_instance_to_hdf5_dataset
-
-    save_config = Config(cfg_id=CONFIG_STR)
-
-    save_temp_dir = os.path.abspath(os.path.dirname(__file__))
-    save_temp_name = 'test_dataset'
-    save_temp_path = os.path.join(save_temp_dir, f"{save_temp_name}.h5")
-
-    print(f"Presaving a dataset from the \'{save_config}\' file.")
-    print(f"Beginning saving process of {SPLIT} split.")
-
-    prepare_seed(RNG_SEED)
-
-    generator = dataset_dict[DATASET_CLASS](parser=save_config, log=None, split=save_split)
-
-    indices = range(save_start_idx, save_end_idx, 1)
-    print(f"Saving Dataset instances between the range [{save_start_idx}-{save_end_idx}].")
-
-    T_TOTAL = 20
-
-    hdf5_setup_dict = {
-        # key, value <--> dataset name, dataset metadata dict
-        'frame':        {'shape': save_temp_len, 'dtype': 'i2'},
-        'scene':        {'shape': save_temp_len, 'dtype': h5py.string_dtype(encoding='utf-8')},
-        'video':        {'shape': save_temp_len, 'dtype': h5py.string_dtype(encoding='utf-8')},
-        'theta':        {'shape': save_temp_len, 'dtype': 'f8'},
-        'center_point': {'shape': (save_temp_len, 2), 'dtype': 'f4'},
-        'ego':          {'shape': (save_temp_len, 2), 'dtype': 'f4'},
-        'occluder':     {'shape': (save_temp_len, 2, 2), 'dtype': 'f4'},
-        # 'occlusion_map':    {'shape': (save_temp_len, 800, 800), 'dtype': 'i1'},
-        'occlusion_map':    {'shape': save_temp_len, 'dtype': 'V80000'},        # TODO: CLEANUP THE FORMATTING HERE
-        'lookup_indices':   {'shape': (save_temp_len, 2), 'dtype': 'i4'},
-        'identities':       {'shape': (0,), 'maxshape': (None,), 'chunks': (1,), 'dtype': 'i2'},
-        'trajectories':       {'shape': (0, T_TOTAL, 2), 'maxshape': (None, T_TOTAL, 2), 'chunks': (1, T_TOTAL, 2), 'dtype': 'f4'},
-        'observation_mask':       {'shape': (0, T_TOTAL), 'maxshape': (None, T_TOTAL), 'chunks': (1, T_TOTAL), 'dtype': '?'},
-        'observed_velocities':       {'shape': (0, T_TOTAL, 2), 'maxshape': (None, T_TOTAL, 2), 'chunks': (1, T_TOTAL, 2), 'dtype': 'f4'},
-        'velocities':       {'shape': (0, T_TOTAL, 2), 'maxshape': (None, T_TOTAL, 2), 'chunks': (1, T_TOTAL, 2), 'dtype': 'f4'},
-    }
-
-    instantiate_hdf5_dataset(
-        save_path=save_temp_path,
-        setup_dict=hdf5_setup_dict
-    )
-
-    for i, idx in enumerate(tqdm(indices)):
-
-        filename = f'{idx:08}'
-        data_dict = generator.__getitem__(idx)
-
-        with h5py.File(save_temp_path, 'a') as hdf5_file:
-            save_method(
-                hdf5_file=hdf5_file,
-                instance_idx=idx,
-                # instance_name=filename,
-                # process_keys=list(hdf5_setup_dict.keys()),
-                setup_dict=hdf5_setup_dict,
-                instance_dict=data_dict
-            )
-
-    print(f"Done!")
 
 
 def load_new_hdf5():
@@ -762,9 +621,10 @@ def compare_old_and_new():
 if __name__ == '__main__':
     print("Hello!")
 
-    CONFIG_STR, DATASET_CLASS, SPLIT = 'dataset_fully_observed', 'pickle', 'train'          # TODO: TRY TO REMAIN CONSISTENT WITH POSITION / VELOCITIES
+    # CONFIG_STR, DATASET_CLASS, SPLIT = 'dataset_fully_observed', 'pickle', 'train'          # TODO: TRY TO REMAIN CONSISTENT WITH POSITION / VELOCITIES
     # CONFIG_STR, DATASET_CLASS, SPLIT = 'dataset_fully_observed', 'torch_preprocess', 'train'
     # config_str, dataset_class, split = 'dataset_fully_observed', 'pickle', 'train'
+    CONFIG_STR, DATASET_CLASS, SPLIT = 'dataset_occlusion_simulation', 'torch_preprocess', 'train'
     # CONFIG_STR, DATASET_CLASS, SPLIT = 'dataset_occlusion_simulation', 'torch_preprocess', 'train'
     # config_str, dataset_class, split = 'dataset_occlusion_simulation', 'pickle', 'train'
 
@@ -773,9 +633,8 @@ if __name__ == '__main__':
     RNG_SEED = 42
     START_IDX = 0
 
-    load_old_data()
-    # save_new_hdf5()
+    # load_old_data()
     # load_new_hdf5()
-    # compare_old_and_new()
+    compare_old_and_new()
 
     print("Goodbye!")
