@@ -138,6 +138,9 @@ class PILMap(BaseMap):
         """
         This implementation won't actually load the image contained within <image_path>,
         but just operate based on the image's resolution.
+
+        (Image.open is a lazy operation)
+        https://pillow.readthedocs.io/en/stable/reference/Image.html#functions
         """
         self._resolution = Image.open(image_path).size[::-1]         # [H, W]
 
