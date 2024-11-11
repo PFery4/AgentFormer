@@ -173,9 +173,32 @@ class TensorMap(BaseMap):
 
 class MapManager:
     """
-    This class is a map manager, whose purpose is to contain a map, and a homography matrix,
-    Transformations are applied simultaneously to both objects, such that they remain consistent with one another.
+    This class is a map manager, whose purpose is to contain a map, and a corresponding homography matrix.
     """
     def __init__(self, map: BaseMap, homography: HomographyMatrix):
-        self.map = map
-        self.homography = homography
+        self._map = map
+        self._homography = homography
+
+    def get_map_dimensions(self) -> Tensor:
+        return self._map.get_resolution()       # [H, W]
+
+    def homography_translation(self, point: Tensor) -> None:
+        # point [2]
+        self._homography.translate(point=point)
+
+    def homography_scaling(self, factor: float) -> None:
+        self._homography.scale(factor=factor)
+
+    def rotate_around_center(self, theta: float) -> None:
+        # theta is expressed in *degrees*
+        self._map.rotate_around_center(theta=theta)
+        center_point = (self.get_map_dimensions() * 0.5)[::-1]      # [x, y]
+
+        # converting theta to radians, and multiplying by -1
+        # this is because the reference frame of the image is reversed
+        # (the origin of the image is in the top left corner)
+        theta *= (-0.0055555555555555555555555555555556 * np.pi)
+        self._homography.rotate_about(point=center_point, theta=theta)
+
+    def map_cropping(self, crop_coordinates: Tensor, resolution: int) -> None:
+        self._map.crop(crop_coords=crop_coordinates, resolution=resolution)
