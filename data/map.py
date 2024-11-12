@@ -1,12 +1,13 @@
-import torch
+import cv2
 import numpy as np
-
-Tensor = torch.Tensor
+import os
+import torch
 import torchvision.transforms.functional
 from PIL import Image
-import cv2
-import os
-from data.homography_warper import get_rotation_matrix2d, warp_affine_crop
+
+from typing import Optional
+Tensor = torch.Tensor
+Size = torch.Size
 
 
 class TorchGeometricMap:
@@ -123,7 +124,10 @@ class HomographyMatrix:
 
 class BaseMap:
 
-    def get_resolution(self) -> Tensor:
+    def get_data(self) -> Optional[Tensor]:
+        raise NotImplementedError
+
+    def get_resolution(self) -> Size:
         raise NotImplementedError
 
     def crop(self, crop_coords: Tensor, resolution: int) -> None:
@@ -143,9 +147,13 @@ class PILMap(BaseMap):
         https://pillow.readthedocs.io/en/stable/reference/Image.html#functions
         """
         self._resolution = Image.open(image_path).size[::-1]         # [H, W]
+        self._data = None
 
-    def get_resolution(self) -> Tensor:
-        return torch.Tensor(self._resolution)
+    def get_data(self) -> Optional[Tensor]:
+        return self._data
+
+    def get_resolution(self) -> Size:
+        return Size(self._resolution)
 
     def crop(self, crop_coords: Tensor, resolution: int) -> None:
         self._resolution = (resolution, resolution)
@@ -164,7 +172,10 @@ class TensorMap(BaseMap):
         image = self.convert_to_tensor(image)
         self._data = image       # [C, H, W]
 
-    def get_resolution(self) -> Tensor:
+    def get_data(self) -> Optional[Tensor]:
+        return self._data
+
+    def get_resolution(self) -> Size:
         return self._data.shape[1:]       # [H, W]
 
     def crop(self, crop_coords: Tensor, resolution: int) -> None:
@@ -189,7 +200,10 @@ class MapManager:
         self._map = map
         self._homography = homography
 
-    def get_map_dimensions(self) -> Tensor:
+    def get_map(self) -> Optional[Tensor]:
+        return self._map.get_data()
+
+    def get_map_dimensions(self) -> Size:
         return self._map.get_resolution()       # [H, W]
 
     def homography_translation(self, point: Tensor) -> None:
@@ -202,13 +216,23 @@ class MapManager:
     def rotate_around_center(self, theta: float) -> None:
         # theta is expressed in *degrees*
         self._map.rotate_around_center(theta=theta)
-        center_point = (self.get_map_dimensions() * 0.5)[::-1]      # [x, y]
+
+        # print(f"{self.get_map_dimensions()=}")
+        # print(f"{torch.tensor(self.get_map_dimensions())=}")
+        center_point = (torch.tensor(self.get_map_dimensions()) * 0.5).flip(dims=(0,))      # [x, y]
+        # cy, cx = self.get_map_dimensions()
+        # cx *= 0.5
+        # cy *= 0.5
+        # center_point = Tensor([cx, cy])
 
         # converting theta to radians, and multiplying by -1
         # this is because the reference frame of the image is reversed
         # (the origin of the image is in the top left corner)
-        theta *= (-0.0055555555555555555555555555555556 * np.pi)
-        self._homography.rotate_about(point=center_point, theta=theta)
+        # theta *= (-0.0055555555555555555555555555555556 * np.pi)
+        self._homography.rotate_about(
+            point=center_point,
+            theta=(-theta * np.pi * 0.0055555555555555555555555555555556)
+        )
 
     def map_cropping(self, crop_coordinates: Tensor, resolution: int) -> None:
         self._map.crop(crop_coords=crop_coordinates, resolution=resolution)
