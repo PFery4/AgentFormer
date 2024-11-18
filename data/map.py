@@ -196,8 +196,8 @@ class MapManager:
     """
     This class is a map manager, whose purpose is to contain a map, and a corresponding homography matrix.
     """
-    def __init__(self, map: BaseMap, homography: HomographyMatrix):
-        self._map = map
+    def __init__(self, map_object: BaseMap, homography: HomographyMatrix):
+        self._map = map_object
         self._homography = homography
 
     def get_map(self) -> Optional[Tensor]:
