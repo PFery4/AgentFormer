@@ -540,7 +540,7 @@ class TorchDataGeneratorSDD(Dataset):
         # )
         _scene_map = TensorMap(image_path=image_path)
         map_homography = HomographyMatrix(matrix=torch.eye(3))
-        scene_map_mgr = MapManager(map=_scene_map, homography=map_homography)
+        scene_map_mgr = MapManager(map_object=_scene_map, homography=map_homography)
 
         # scene_map.homography_translation(Tensor([self.padding_px, self.padding_px]))
         scene_map_mgr.homography_translation(Tensor([self.padding_px, self.padding_px]))
