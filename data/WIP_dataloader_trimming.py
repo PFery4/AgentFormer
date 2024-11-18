@@ -16,7 +16,7 @@ import torch
 from torchvision import transforms
 from tqdm import tqdm
 
-from data.map import TorchGeometricMap
+from data.map import TorchGeometricMap          # TODO: change to MapManager
 from data.sdd_dataloader import dataset_dict, TorchDataGeneratorSDD
 from utils.config import Config, REPO_ROOT
 from utils.sdd_visualize import visualize
@@ -200,7 +200,7 @@ class PresavedDataset(Dataset):
             predict_mask[i, pred_idx:] = True
         return predict_mask
 
-    def crop_scene_map(self, scene_map: TorchGeometricMap):
+    def crop_scene_map(self, scene_map: TorchGeometricMap):     # TODO: change to MapManager
         scene_map.crop(crop_coords=scene_map.to_map_points(self.map_crop_coords), resolution=self.map_resolution)
         scene_map.set_homography(matrix=self.map_homography)
 
@@ -279,7 +279,7 @@ class PresavedDataset(Dataset):
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         image = self.to_torch_image(image)
 
-        scene_map = TorchGeometricMap(
+        scene_map = TorchGeometricMap(      # TODO: change to MapManager
             map_image=image, homography=torch.eye(3)
         )
         scene_map.homography_translation(Tensor([self.padding_px, self.padding_px]))
