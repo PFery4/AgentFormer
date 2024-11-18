@@ -219,16 +219,11 @@ class MapManager:
 
         # print(f"{self.get_map_dimensions()=}")
         # print(f"{torch.tensor(self.get_map_dimensions())=}")
-        center_point = (torch.tensor(self.get_map_dimensions()) * 0.5).flip(dims=(0,))      # [x, y]
-        # cy, cx = self.get_map_dimensions()
-        # cx *= 0.5
-        # cy *= 0.5
-        # center_point = Tensor([cx, cy])
+        center_point = (torch.tensor(self.get_map_dimensions(), dtype=torch.float64) * 0.5).flip(dims=(0,))      # [x, y]
 
         # converting theta to radians, and multiplying by -1
         # this is because the reference frame of the image is reversed
         # (the origin of the image is in the top left corner)
-        # theta *= (-0.0055555555555555555555555555555556 * np.pi)
         self._homography.rotate_about(
             point=center_point,
             theta=(-theta * np.pi * 0.0055555555555555555555555555555556)
