@@ -235,12 +235,18 @@ if __name__ == '__main__':
     parser.add_argument('--size_setting', type=str, default='generator',
                         help='\'generator\': use the length of the generator to set the presaved dataset file size.\n'
                              '\'indices\': use --start_idx and --end_idx to infer the presaved dataset file size.')
+    parser.add_argument('--process_rgb_map', type=bool, default=False,
+                        help="Whether to have the <TorchDataGeneratorSDD> class process the RGB scene map."
+                             "This significantly increases the program's running time and memory usage."
+                             "The saving process does not use the RGB scene map, setting this flag to True will not"
+                             "modify the program's output in any way (so it should be kept as False).")
     args = parser.parse_args()
 
     assert args.split in ['train', 'val', 'test']
     assert args.size_setting in ['generator', 'indices']
 
     cfg = Config(cfg_id=args.cfg)
+    cfg.__setattr__('with_rgb_map', args.process_rgb_map)
 
     if args.save_path is None:
         # Assign default save path
