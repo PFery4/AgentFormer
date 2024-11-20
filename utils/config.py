@@ -9,6 +9,7 @@ from utils.utils import recreate_dirs
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.abspath(__file__), "..", ".."))
 
+
 class Config:
 
     def __init__(self, cfg_id, tmp=False, create_dirs=False):
