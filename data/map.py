@@ -237,3 +237,9 @@ class MapManager:
 
     def set_homography(self, matrix: Tensor) -> None:
         self._homography.set_homography(matrix=matrix)
+
+
+MAP_DICT = {
+    True: TensorMap,
+    False: PILMap
+}
