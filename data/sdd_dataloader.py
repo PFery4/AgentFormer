@@ -23,7 +23,7 @@ from scipy.ndimage import distance_transform_edt
 from collections import defaultdict
 
 # from data.map import TorchGeometricMap
-from data.map import HomographyMatrix, PILMap, TensorMap, MapManager
+from data.map import HomographyMatrix, MapManager, MAP_DICT
 from utils.config import Config, REPO_ROOT
 from utils.utils import print_log, get_timestring
 
@@ -63,6 +63,7 @@ class TorchDataGeneratorSDD(Dataset):
         self.max_train_agent = parser.get('max_train_agent', 100)
         self.traj_scale = parser.traj_scale
         self.occlusion_process = parser.get('occlusion_process', 'fully_observed')
+        self.with_rgb_map = parser.get('with_rgb_map', True)      # whether to process the RGB scene map, or not.
         self.map_side = parser.get('scene_side_length', 80.0)  # [m]
         self.distance_threshold_occluded_target = self.map_side / 4  # [m]
         self.map_resolution = parser.get('global_map_resolution', 800)  # [px]
@@ -538,7 +539,7 @@ class TorchDataGeneratorSDD(Dataset):
         # scene_map = TorchGeometricMap(
         #     map_image=image, homography=torch.eye(3)
         # )
-        _scene_map = TensorMap(image_path=image_path)
+        _scene_map = MAP_DICT[self.with_rgb_map](image_path=image_path)
         map_homography = HomographyMatrix(matrix=torch.eye(3))
         scene_map_mgr = MapManager(map_object=_scene_map, homography=map_homography)
 
