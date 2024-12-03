@@ -290,11 +290,12 @@ if __name__ == '__main__':
     indices = range(args.start_idx, args.end_idx, 1)
     print(f"Saving Dataset instances between the range [{args.start_idx}-{args.end_idx}].")
 
-    for i, idx in enumerate(tqdm(indices)):
+    with h5py.File(args.save_path, 'a') as hdf5_file:
 
-        data_dict = generator.__getitem__(idx)
+        for i, idx in enumerate(tqdm(indices)):
 
-        with h5py.File(args.save_path, 'a') as hdf5_file:
+            data_dict = generator.__getitem__(idx)
+
             write_instance_to_hdf5_dataset(
                 hdf5_file=hdf5_file,
                 instance_idx=idx,
