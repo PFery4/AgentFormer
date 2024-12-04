@@ -39,17 +39,13 @@ import src.data.config as sdd_conf
 
 
 class TorchDataGeneratorSDD(Dataset):
-    def __init__(self, parser: Config, log: Optional[TextIOWrapper] = None, split: str = 'train'):
+    def __init__(self, parser: Config, split: str = 'train'):
         self.split = split
         assert split in ['train', 'val', 'test']
-        assert parser.dataset == 'sdd', f"error: wrong dataset name: {parser.dataset} (should be \"sdd\")"
+        assert parser.dataset == 'sdd', f"Error: wrong dataset name: {parser.dataset} (should be \"sdd\")"
 
-        prnt_str = "\n-------------------------- loading %s data --------------------------" % split
-        print_log(prnt_str, log=log) if log is not None else print(prnt_str)
         self.sdd_config = sdd_conf.get_config(os.path.join(sdd_conf.REPO_ROOT, parser.sdd_config_file_name))
         dataset = StanfordDroneDatasetWithOcclusionSim(self.sdd_config, split=self.split)
-        prnt_str = f"instantiating dataloader from {dataset.__class__} class"
-        print_log(prnt_str, log=log) if log is not None else print(prnt_str)
 
         # stealing StanfordDroneDatasetWithOcclusionSim relevant data
         self.coord_conv = dataset.coord_conv
@@ -106,11 +102,6 @@ class TorchDataGeneratorSDD(Dataset):
         self.timesteps = torch.arange(-dataset.T_obs, dataset.T_pred) + 1
         self.frame_skip = int(dataset.orig_fps // dataset.fps)
         self.lookup_time_window = np.arange(0, self.T_total) * self.frame_skip
-
-        prnt_str = f'total num samples: {len(dataset)}'
-        print_log(prnt_str, log=log) if log is not None else print(prnt_str)
-        prnt_str = "------------------------------ done --------------------------------\n"
-        print_log(prnt_str, log=log) if log is not None else print(prnt_str)
 
     def make_padded_scene_images(self):
         os.makedirs(self.padded_images_path, exist_ok=True)
