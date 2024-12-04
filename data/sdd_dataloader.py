@@ -181,17 +181,19 @@ class TorchDataGeneratorSDD(Dataset):
         keep_mask[idx_sort[final_mask]] = True
         return keep_mask
 
-    def trajectory_processing_without_occlusion(
+    def process_fully_observed_trajectories(
             self,
             process_dict: defaultdict,
             trajs: Tensor,
             scene_map_manager: MapManager,
             m_by_px: float
     ) -> defaultdict:
+
         obs_mask = torch.ones(trajs.shape[:-1])
         obs_mask[..., self.T_obs:] = False
         scene_map_manager.set_homography(torch.eye(3))
 
+        last_obs_indices = torch.full([trajs.shape[0]], self.T_obs - 1)
         last_obs_positions = trajs[:, self.T_obs - 1, :]
         center_point = torch.mean(last_obs_positions, dim=0)
 
@@ -211,33 +213,16 @@ class TorchDataGeneratorSDD(Dataset):
 
         self.crop_scene_map(scene_map_manager=scene_map_manager)
 
-        process_dict['trajs'] = trajs
-        process_dict['obs_mask'] = obs_mask
-        process_dict['keep_agent_mask'] = keep_agent_mask
-        process_dict['scene_map_image'] = scene_map_manager.get_map()
-        process_dict['center_point'] = center_point
-
-        return process_dict
-
-    def wrapped_trajectory_processing_without_occlusion(
-            self,
-            process_dict: defaultdict,
-            trajs: Tensor,
-            scene_map_manager: MapManager,
-            m_by_px: float
-    ) -> defaultdict:
-
-        process_dict = self.trajectory_processing_without_occlusion(
-            process_dict=process_dict, trajs=trajs, scene_map_manager=scene_map_manager, m_by_px=m_by_px
-        )
-
-        last_obs_indices = torch.full([trajs.shape[0]], self.T_obs - 1)
-
         occlusion_map = torch.full([self.map_resolution, self.map_resolution], True)
         dist_transformed_occlusion_map = torch.zeros([self.map_resolution, self.map_resolution])
         probability_map = torch.zeros([self.map_resolution, self.map_resolution])
         nlog_probability_map = torch.zeros([self.map_resolution, self.map_resolution])
 
+        process_dict['trajs'] = trajs
+        process_dict['obs_mask'] = obs_mask
+        process_dict['keep_agent_mask'] = keep_agent_mask
+        process_dict['scene_map_image'] = scene_map_manager.get_map()
+        process_dict['center_point'] = center_point
         process_dict['last_obs_indices'] = last_obs_indices
         process_dict['occlusion_map'] = occlusion_map
         process_dict['dist_transformed_occlusion_map'] = dist_transformed_occlusion_map
@@ -376,7 +361,7 @@ class TorchDataGeneratorSDD(Dataset):
             m_by_px: float
     ):
         if np.isnan(occlusion_case['ego_point']).any():
-            return self.wrapped_trajectory_processing_without_occlusion(
+            return self.process_fully_observed_trajectories(
                 process_dict=process_dict, trajs=trajs, scene_map_manager=scene_map_manager, m_by_px=m_by_px
             )
         else:
@@ -400,7 +385,7 @@ class TorchDataGeneratorSDD(Dataset):
             px_by_m: float,
             m_by_px: float
     ):
-        return self.wrapped_trajectory_processing_without_occlusion(
+        return self.process_fully_observed_trajectories(
             process_dict=process_dict, trajs=trajs, scene_map_manager=scene_map_manager, m_by_px=m_by_px
         )
 
