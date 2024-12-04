@@ -239,10 +239,12 @@ class TorchDataGeneratorSDD(Dataset):
         scene_map_manager.map_cropping(crop_coordinates=cropping_coordinates, resolution=self.map_resolution)
         scene_map_manager.set_homography(matrix=self.map_homography)
 
-    def remove_agents_far_from(self, keep_mask: Tensor, target_point: Tensor, points: Tensor):
-        # keep_mask [N]
-        # target_point [2]
-        # points [N, 2]
+    def remove_agents_far_from(
+            self,
+            keep_mask: Tensor,      # [N]
+            target_point: Tensor,   # [2]
+            points: Tensor          # [N, 2]
+    ) -> Tensor:                    # [N]
         distances = torch.linalg.norm(points - target_point, dim=1)
 
         idx_sort = torch.argsort(distances, dim=-1)
