@@ -220,18 +220,17 @@ class TorchDataGeneratorSDD(Dataset):
 
         process_dict['trajs'] = trajs
         process_dict['obs_mask'] = obs_mask
-        process_dict['keep_agent_mask'] = keep_agent_mask
-        process_dict['scene_map_image'] = scene_map_manager.get_map()
-        process_dict['center_point'] = center_point
         process_dict['last_obs_indices'] = last_obs_indices
+        process_dict['keep_agent_mask'] = keep_agent_mask
         process_dict['occlusion_map'] = occlusion_map
         process_dict['dist_transformed_occlusion_map'] = dist_transformed_occlusion_map
         process_dict['probability_map'] = probability_map
         process_dict['nlog_probability_map'] = nlog_probability_map
-
+        process_dict['scene_map_image'] = scene_map_manager.get_map()
+        process_dict['center_point'] = center_point
         return process_dict
 
-    def trajectory_processing_with_occlusion(
+    def process_trajectories_with_occlusions(
             self,
             process_dict: defaultdict,
             trajs: Tensor,
@@ -239,7 +238,6 @@ class TorchDataGeneratorSDD(Dataset):
             occluder: Tensor,
             tgt_idx: Tensor,
             scene_map_manager: MapManager,
-            px_by_m: float,
             m_by_px: float
     ):
         # mapping trajectories to the scene map coordinate system
@@ -260,6 +258,8 @@ class TorchDataGeneratorSDD(Dataset):
         ).reshape(trajs.shape[:-1])  # [N, T]
         obs_mask[..., self.T_obs:] = False
 
+        true_trajs = None
+        true_obs_mask = None
         if self.impute:
             # copying the unaltered trajectories before we perform the imputation
             true_trajs = trajs.detach().clone()
@@ -341,8 +341,6 @@ class TorchDataGeneratorSDD(Dataset):
         process_dict['probability_map'] = probability_map
         process_dict['nlog_probability_map'] = nlog_probability_map
         process_dict['scene_map_image'] = scene_map_manager.get_map()
-
-        # TODO: figure out whether this needs to be provided by process_dict in other processing functions
         process_dict['center_point'] = center_point
         process_dict['ego'] = ego
         process_dict['occluder'] = occluder
@@ -366,14 +364,14 @@ class TorchDataGeneratorSDD(Dataset):
             )
         else:
             tgt_idx = torch.from_numpy(occlusion_case['target_agent_indices']).squeeze()
-            return self.trajectory_processing_with_occlusion(
+            return self.process_trajectories_with_occlusions(
                 process_dict=process_dict,
                 trajs=trajs,
                 ego=torch.from_numpy(occlusion_case['ego_point']).to(torch.float32).unsqueeze(0),
                 occluder=torch.from_numpy(np.vstack(occlusion_case['occluders'][0])).to(torch.float32),
                 tgt_idx=tgt_idx,
                 scene_map_manager=scene_map_manager,
-                px_by_m=px_by_m, m_by_px=m_by_px
+                m_by_px=m_by_px
             )
 
     def process_fully_observed_cases(
