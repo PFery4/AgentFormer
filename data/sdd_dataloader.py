@@ -43,13 +43,10 @@ import src.data.config as sdd_conf
 class TorchDataGeneratorSDD(Dataset):
     def __init__(self, parser: Config, split: str = 'train'):
         self.split = split
-        assert split in ['train', 'val', 'test']
-        assert parser.dataset == 'sdd', f"Error: wrong dataset name: {parser.dataset} (should be \"sdd\")"
-
         self.sdd_config = sdd_conf.get_config(os.path.join(sdd_conf.REPO_ROOT, parser.sdd_config_file_name))
         dataset = StanfordDroneDatasetWithOcclusionSim(self.sdd_config, split=self.split)
 
-        # stealing StanfordDroneDatasetWithOcclusionSim relevant data
+        # extract <StanfordDroneDatasetWithOcclusionSim> relevant data
         self.coord_conv = dataset.coord_conv
         self.frames = dataset.frames
         self.lookuptable = dataset.lookuptable
@@ -57,16 +54,17 @@ class TorchDataGeneratorSDD(Dataset):
         self.image_path = os.path.join(dataset.SDD_root, 'annotations')
         assert os.path.exists(self.image_path)
 
-        self.rand_rot_scene = parser.get('rand_rot_scene', False)
-        self.max_train_agent = parser.get('max_train_agent', 100)
-        self.traj_scale = parser.traj_scale
-        self.occlusion_process = parser.get('occlusion_process', 'fully_observed')
-        self.with_rgb_map = parser.get('with_rgb_map', True)      # whether to process the RGB scene map, or not.
-        self.map_side = parser.get('scene_side_length', 80.0)  # [m]
-        self.distance_threshold_occluded_target = self.map_side / 4  # [m]
-        self.map_resolution = parser.get('global_map_resolution', 800)  # [px]
+        self.rand_rot_scene = bool(parser.rand_rot_scene)
+        self.max_train_agent = int(parser.max_train_agent)
+        self.traj_scale = float(parser.traj_scale)
+        self.occlusion_process = str(parser.occlusion_process)          # 'fully_observed' | 'occlusion_simulation'
+        self.with_rgb_map = bool(parser.with_rgb_map)
+        self.map_side = float(parser.scene_side_length)                 # [m]
+        self.distance_threshold_occluded_target = self.map_side / 4     # [m]
+        self.map_resolution = int(parser.global_map_resolution)         # [px]
         self.map_crop_coords = self.get_map_crop_coordinates()
         self.map_homography = self.get_map_homography()
+        self.impute = bool(parser.impute)
 
         self.to_torch_image = transforms.ToTensor()
 
@@ -76,10 +74,6 @@ class TorchDataGeneratorSDD(Dataset):
             self.trajectory_processing_strategy = self.process_cases_with_simulated_occlusions
         else:
             raise NotImplementedError
-
-        self.impute = parser.get('impute', False)
-        if self.impute:
-            assert self.occlusion_process != 'fully_observed'
 
         # we are preparing reflect padded versions of the dataset, so that it becomes quicker to process the dataset.
         # the reason why we need to produce reflect padded images is that we will need a full representation of the
@@ -97,6 +91,11 @@ class TorchDataGeneratorSDD(Dataset):
         self.timesteps = torch.arange(-dataset.T_obs, dataset.T_pred) + 1
         self.frame_skip = int(dataset.orig_fps // dataset.fps)
         self.lookup_time_window = np.arange(0, self.T_total) * self.frame_skip
+
+        assert split in ['train', 'val', 'test']
+        assert parser.dataset == 'sdd', f"Error: wrong dataset name: {parser.dataset} (should be \"sdd\")"
+        if self.impute:
+            assert self.occlusion_process != 'fully_observed'
 
     def get_map_crop_coordinates(self) -> Tensor:       # [2, 2]
         return Tensor(
