@@ -154,10 +154,12 @@ class TorchDataGeneratorSDD(Dataset):
     def __len__(self) -> int:
         return len(self.occlusion_table)
 
-    def crop_scene_map(
-            self,
-            scene_map_manager: MapManager
-    ):
+    def get_scene_map_manager(self, image_path: os.PathLike) -> MapManager:
+        scene_map = MAP_DICT[self.with_rgb_map](image_path=image_path)
+        homography = HomographyMatrix(matrix=torch.eye(3))
+        return MapManager(map_object=scene_map, homography=homography)
+
+    def crop_scene_map(self, scene_map_manager: MapManager):
         cropping_coordinates = scene_map_manager.to_map_points(self.map_crop_coords)
         scene_map_manager.map_cropping(crop_coordinates=cropping_coordinates, resolution=self.map_resolution)
         scene_map_manager.set_homography(matrix=self.map_homography)
@@ -401,11 +403,6 @@ class TorchDataGeneratorSDD(Dataset):
         return self.wrapped_trajectory_processing_without_occlusion(
             process_dict=process_dict, trajs=trajs, scene_map_manager=scene_map_manager, m_by_px=m_by_px
         )
-
-    def get_scene_map_manager(self, image_path: os.PathLike) -> MapManager:
-        scene_map = MAP_DICT[self.with_rgb_map](image_path=image_path)
-        homography = HomographyMatrix(matrix=torch.eye(3))
-        return MapManager(map_object=scene_map, homography=homography)
 
     def __getitem__(self, idx: int) -> Dict:
         # look up the row in the occlusion_table
