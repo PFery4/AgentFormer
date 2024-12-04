@@ -42,6 +42,9 @@ import src.data.config as sdd_conf
 
 class TorchDataGeneratorSDD(Dataset):
     def __init__(self, parser: Config, split: str = 'train'):
+        assert split in ['train', 'val', 'test']
+        assert parser.dataset == 'sdd', f"Error: wrong dataset name: {parser.dataset} (should be \"sdd\")"
+
         self.split = split
         self.sdd_config = sdd_conf.get_config(os.path.join(sdd_conf.REPO_ROOT, parser.sdd_config_file_name))
         dataset = StanfordDroneDatasetWithOcclusionSim(self.sdd_config, split=self.split)
@@ -65,8 +68,8 @@ class TorchDataGeneratorSDD(Dataset):
         self.map_crop_coords = self.get_map_crop_coordinates()
         self.map_homography = self.get_map_homography()
         self.impute = bool(parser.impute)
-
-        self.to_torch_image = transforms.ToTensor()
+        if self.impute:
+            assert self.occlusion_process != 'fully_observed'
 
         if self.occlusion_process == 'fully_observed':
             self.trajectory_processing_strategy = self.process_fully_observed_cases
@@ -91,11 +94,6 @@ class TorchDataGeneratorSDD(Dataset):
         self.timesteps = torch.arange(-dataset.T_obs, dataset.T_pred) + 1
         self.frame_skip = int(dataset.orig_fps // dataset.fps)
         self.lookup_time_window = np.arange(0, self.T_total) * self.frame_skip
-
-        assert split in ['train', 'val', 'test']
-        assert parser.dataset == 'sdd', f"Error: wrong dataset name: {parser.dataset} (should be \"sdd\")"
-        if self.impute:
-            assert self.occlusion_process != 'fully_observed'
 
     def get_map_crop_coordinates(self) -> Tensor:       # [2, 2]
         return Tensor(
@@ -158,11 +156,8 @@ class TorchDataGeneratorSDD(Dataset):
 
     def crop_scene_map(
             self,
-            # scene_map: TorchGeometricMap
             scene_map_manager: MapManager
     ):
-        # scene_map.crop(crop_coords=scene_map.to_map_points(self.map_crop_coords), resolution=self.map_resolution)
-        # scene_map.set_homography(matrix=self.map_homography)
         cropping_coordinates = scene_map_manager.to_map_points(self.map_crop_coords)
         scene_map_manager.map_cropping(crop_coordinates=cropping_coordinates, resolution=self.map_resolution)
         scene_map_manager.set_homography(matrix=self.map_homography)
@@ -188,13 +183,11 @@ class TorchDataGeneratorSDD(Dataset):
             self,
             process_dict: defaultdict,
             trajs: Tensor,
-            # scene_map: TorchGeometricMap,
             scene_map_manager: MapManager,
             m_by_px: float
     ) -> defaultdict:
         obs_mask = torch.ones(trajs.shape[:-1])
         obs_mask[..., self.T_obs:] = False
-        # scene_map.set_homography(torch.eye(3))
         scene_map_manager.set_homography(torch.eye(3))
 
         last_obs_positions = trajs[:, self.T_obs - 1, :]
@@ -202,33 +195,23 @@ class TorchDataGeneratorSDD(Dataset):
 
         keep_agent_mask = torch.full([trajs.shape[0]], True)
         if trajs.shape[0] > self.max_train_agent:
-            # print(f"HEY, WE HAVE TOO MANY: {trajs.shape[0]} (full_obs)")
             keep_agent_mask = self.remove_agents_far_from(
                 keep_mask=keep_agent_mask,
                 target_point=center_point,
                 points=last_obs_positions
             )
-            # print(f"{keep_agent_mask=}")
-
             center_point = torch.mean(last_obs_positions[keep_agent_mask], dim=0)
 
         scaling = self.traj_scale * m_by_px
         trajs = (trajs - center_point) * scaling
-        # scene_map.homography_translation(center_point)
-        # scene_map.homography_scaling(1 / scaling)
         scene_map_manager.homography_translation(center_point)
         scene_map_manager.homography_scaling(1 / scaling)
 
-        # cropping the scene map
-        self.crop_scene_map(
-            # scene_map=scene_map
-            scene_map_manager=scene_map_manager
-        )
+        self.crop_scene_map(scene_map_manager=scene_map_manager)
 
         process_dict['trajs'] = trajs
         process_dict['obs_mask'] = obs_mask
         process_dict['keep_agent_mask'] = keep_agent_mask
-        # process_dict['scene_map_image'] = scene_map.image
         process_dict['scene_map_image'] = scene_map_manager.get_map()
         process_dict['center_point'] = center_point
 
@@ -238,7 +221,6 @@ class TorchDataGeneratorSDD(Dataset):
             self,
             process_dict: defaultdict,
             trajs: Tensor,
-            # scene_map: TorchGeometricMap,
             scene_map_manager: MapManager,
             m_by_px: float
     ) -> defaultdict:
@@ -269,26 +251,19 @@ class TorchDataGeneratorSDD(Dataset):
             ego: Tensor,
             occluder: Tensor,
             tgt_idx: Tensor,
-            # scene_map: TorchGeometricMap,
             scene_map_manager: MapManager,
             px_by_m: float,
             m_by_px: float
     ):
         # mapping trajectories to the scene map coordinate system
-        # ego = scene_map.to_map_points(ego)
-        # occluder = scene_map.to_map_points(occluder)
-        # scene_map.set_homography(torch.eye(3))
         ego = scene_map_manager.to_map_points(ego)
         occluder = scene_map_manager.to_map_points(occluder)
         scene_map_manager.set_homography(torch.eye(3))
 
         # computing the ego visibility polygon
-        # scene_boundary = poly_gen.default_rectangle(corner_coords=scene_map.get_map_dimensions())
         scene_boundary = poly_gen.default_rectangle(corner_coords=scene_map_manager.get_map_dimensions())
         ego_visipoly = visibility.torch_compute_visipoly(
-            ego_point=ego.squeeze(),
-            occluder=occluder,
-            boundary=scene_boundary
+            ego_point=ego.squeeze(), occluder=occluder, boundary=scene_boundary
         )
 
         # computing the observation mask
@@ -325,13 +300,11 @@ class TorchDataGeneratorSDD(Dataset):
             # identifying the target agent's last observed position (the agent for whom an occlusion was simulated)
             tgt_last_obs_pos = last_obs_positions[tgt_idx]
 
-            # print(f"HEY, WE HAVE TOO MANY: {torch.sum(sufficiently_observed_mask)} (occlusion)")
             close_keep_mask = self.remove_agents_far_from(
                 keep_mask=sufficiently_observed_mask,
                 target_point=tgt_last_obs_pos,
                 points=last_obs_positions
             )
-            # print(f"{close_keep_mask=}")
 
         keep_agent_mask = torch.logical_and(sufficiently_observed_mask, close_keep_mask)        # [N]
 
@@ -347,24 +320,17 @@ class TorchDataGeneratorSDD(Dataset):
         if self.impute:
             true_trajs = (true_trajs - center_point) * scaling
         ego_visipoly = sg.Polygon((torch.from_numpy(ego_visipoly.coords) - center_point) * scaling)
-        # scene_map.homography_translation(center_point)
-        # scene_map.homography_scaling(1 / scaling)
         scene_map_manager.homography_translation(center_point)
         scene_map_manager.homography_scaling(1 / scaling)
 
         # cropping the scene map
-        self.crop_scene_map(
-            # scene_map=scene_map
-            scene_map_manager=scene_map_manager
-        )
+        self.crop_scene_map(scene_map_manager=scene_map_manager)
 
         # computing the occlusion map and distance transformed occlusion map
-        # map_dims = scene_map.get_map_dimensions()
         map_dims = scene_map_manager.get_map_dimensions()
         occ_y = torch.arange(map_dims[0])
         occ_x = torch.arange(map_dims[1])
         xy = torch.dstack((torch.meshgrid(occ_x, occ_y))).reshape((-1, 2))
-        # mpath = Path(scene_map.to_map_points(torch.from_numpy(ego_visipoly.coords).to(torch.float32)))
         mpath = Path(scene_map_manager.to_map_points(torch.from_numpy(ego_visipoly.coords).to(torch.float32)))
         occlusion_map = torch.from_numpy(mpath.contains_points(xy).reshape(map_dims)).to(torch.bool).T
 
@@ -387,7 +353,6 @@ class TorchDataGeneratorSDD(Dataset):
         process_dict['dist_transformed_occlusion_map'] = dist_transformed_occlusion_map
         process_dict['probability_map'] = probability_map
         process_dict['nlog_probability_map'] = nlog_probability_map
-        # process_dict['scene_map_image'] = scene_map.image
         process_dict['scene_map_image'] = scene_map_manager.get_map()
 
         # TODO: figure out whether this needs to be provided by process_dict in other processing functions
@@ -404,7 +369,6 @@ class TorchDataGeneratorSDD(Dataset):
             process_dict: defaultdict,
             occlusion_case: Dict,
             trajs: Tensor,
-            # scene_map: TorchGeometricMap,
             scene_map_manager: MapManager,
             px_by_m: float,
             m_by_px: float
@@ -430,7 +394,6 @@ class TorchDataGeneratorSDD(Dataset):
             process_dict: defaultdict,
             occlusion_case: Dict,
             trajs: Tensor,
-            # scene_map: TorchGeometricMap,
             scene_map_manager: MapManager,
             px_by_m: float,
             m_by_px: float
@@ -450,17 +413,10 @@ class TorchDataGeneratorSDD(Dataset):
 
         # extract the reference image
         image_path = os.path.join(self.padded_images_path, f'{scene}_{video}_padded_img.jpg')
-        # image = cv2.imread(image_path)
-        # image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        # image = self.to_torch_image(image)
-        # scene_map = TorchGeometricMap(
-        #     map_image=image, homography=torch.eye(3)
-        # )
         _scene_map = MAP_DICT[self.with_rgb_map](image_path=image_path)
+
         map_homography = HomographyMatrix(matrix=torch.eye(3))
         scene_map_mgr = MapManager(map_object=_scene_map, homography=map_homography)
-
-        # scene_map.homography_translation(Tensor([self.padding_px, self.padding_px]))
         scene_map_mgr.homography_translation(Tensor([self.padding_px, self.padding_px]))
 
         # generate a time window to extract the relevant section of the scene
@@ -484,11 +440,9 @@ class TorchDataGeneratorSDD(Dataset):
 
         # prepare for random rotation by choosing a rotation angle and rotating the map
         theta_rot = np.random.rand() * 360 * self.rand_rot_scene
-        # scene_map.rotate_around_center(theta=theta_rot)
         scene_map_mgr.rotate_around_center(theta=theta_rot)
 
         # mapping the trajectories to scene map coordinate system
-        # trajs = scene_map.to_map_points(trajs)
         trajs = scene_map_mgr.to_map_points(trajs)
 
         process_dict = defaultdict(None)
@@ -496,15 +450,10 @@ class TorchDataGeneratorSDD(Dataset):
             process_dict=process_dict,
             occlusion_case=occlusion_case,
             trajs=trajs,
-            # scene_map=scene_map,
             scene_map_manager=scene_map_mgr,
             px_by_m=px_by_m,
             m_by_px=m_by_px
         )
-
-        # identifying agents who are outside the global scene map
-        # inside_map_mask = ~torch.any(torch.any(torch.abs(trajs) >= 0.95 * 0.5 * self.map_side, dim=-1), dim=-1)
-        # print(f"{inside_map_mask=}")
 
         # removing agent surplus
         ids = ids[process_dict['keep_agent_mask']]
@@ -571,7 +520,6 @@ class TorchDataGeneratorSDD(Dataset):
             'dist_transformed_occlusion_map': process_dict['dist_transformed_occlusion_map'],
             'probability_occlusion_map': process_dict['probability_map'],
             'nlog_probability_occlusion_map': process_dict['nlog_probability_map'],
-            # 'scene_map': scene_map.image,
             'scene_map': scene_map_mgr.get_map(),
             'map_homography': self.map_homography,
             'theta': theta_rot,
