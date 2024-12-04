@@ -402,6 +402,11 @@ class TorchDataGeneratorSDD(Dataset):
             process_dict=process_dict, trajs=trajs, scene_map_manager=scene_map_manager, m_by_px=m_by_px
         )
 
+    def get_scene_map_manager(self, image_path: os.PathLike) -> MapManager:
+        scene_map = MAP_DICT[self.with_rgb_map](image_path=image_path)
+        homography = HomographyMatrix(matrix=torch.eye(3))
+        return MapManager(map_object=scene_map, homography=homography)
+
     def __getitem__(self, idx: int) -> Dict:
         # look up the row in the occlusion_table
         occlusion_case = self.occlusion_table.iloc[idx]
@@ -413,10 +418,7 @@ class TorchDataGeneratorSDD(Dataset):
 
         # extract the reference image
         image_path = os.path.join(self.padded_images_path, f'{scene}_{video}_padded_img.jpg')
-        _scene_map = MAP_DICT[self.with_rgb_map](image_path=image_path)
-
-        map_homography = HomographyMatrix(matrix=torch.eye(3))
-        scene_map_mgr = MapManager(map_object=_scene_map, homography=map_homography)
+        scene_map_mgr = self.get_scene_map_manager(image_path=image_path)
         scene_map_mgr.homography_translation(Tensor([self.padding_px, self.padding_px]))
 
         # generate a time window to extract the relevant section of the scene
