@@ -12,29 +12,38 @@ Size = torch.Size
 
 class TorchGeometricMap:
 
-    def __init__(self, map_image: Tensor, homography: Tensor = torch.eye(3)):
-        self.image = map_image          # [C, H, W]
-        self.homography = homography    # [3, 3]
+    def __init__(
+            self,
+            map_image: Tensor,                  # [C, H, W]
+            homography: Tensor = torch.eye(3)   # [3, 3]
+    ):
+        self.image = map_image
+        self.homography = homography
 
     def get_map_dimensions(self):
         return self.image.shape[1:]     # [H, W]
 
-    def homography_translation(self, point: Tensor) -> None:
-        # point [2]
+    def homography_translation(
+            self,
+            point: Tensor   # [2]
+    ) -> None:
         self.homography[:2, 2] += point
 
     def homography_scaling(self, factor: float) -> None:
         self.homography[0, 0] *= factor
         self.homography[1, 1] *= factor
 
-    def rotate_around_center(self, theta: float) -> None:
+    def rotate_around_center(
+            self,
+            theta: float    # [degrees]
+    ) -> None:
         self.image = torchvision.transforms.functional.rotate(self.image, angle=theta)
         cy, cx = self.get_map_dimensions()
 
         cx *= 0.5
         cy *= 0.5
 
-        # angle is in degrees, needs to be converted to rad first, we apply the negative of the angle to remain
+        # angle needs to be converted to rad first, we apply the negative of the angle to remain
         # consistent with the image representation of the scene.
         # due to the fact the coordinate system of the image is flipped (origin in the top left corner).
         cos = np.cos(-theta * np.pi * 0.0055555555555555555555555555555556)
@@ -61,8 +70,10 @@ class TorchGeometricMap:
             self.image, top=top, left=left, height=side, width=side, size=resolution
         )
 
-    def to_map_points(self, points: Tensor) -> Tensor:
-        # points [*, 2]
+    def to_map_points(
+            self,
+            points: Tensor      # [*, 2]
+    ) -> Tensor:                # [*, 2]
         homogeneous_points = torch.cat((points, torch.ones([*points.shape[:-1], 1])), dim=-1).transpose(-1, -2)
         mapped_points = (self.homography @ homogeneous_points).transpose(-1, -2)[..., :-1]
         return mapped_points
@@ -73,23 +84,29 @@ class TorchGeometricMap:
 
 class HomographyMatrix:
 
-    def __init__(self, matrix: Tensor = torch.eye(3)):
-        self._frame = matrix    # [3, 3]
+    def __init__(
+            self,
+            matrix: Tensor = torch.eye(3)   # [3, 3]
+    ):
+        self._frame = matrix
 
     def set_homography(self, matrix: Tensor) -> None:
         self._frame = matrix
 
-    def translate(self, point: Tensor) -> None:
-        # point [2]
+    def translate(
+            self,
+            point: Tensor   # [2]
+    ) -> None:
         self._frame[:2, 2] += point
 
     def scale(self, factor: float) -> None:
         self._frame[0, 0] *= factor
         self._frame[1, 1] *= factor
 
-    def rotate(self, theta: float) -> None:
-        # theta expressed in radians
-
+    def rotate(
+            self,
+            theta: float    # [radians]
+    ) -> None:
         cos = np.cos(theta)
         sin = np.sin(theta)
 
@@ -100,9 +117,11 @@ class HomographyMatrix:
         )
         self._frame = rotation_matrix @ self._frame
 
-    def rotate_about(self, point: Tensor, theta: float) -> None:
-        # point [2]
-        # theta expressed in radians
+    def rotate_about(
+            self,
+            point: Tensor,  # [2]
+            theta: float    # [radians]
+    ) -> None:
         p_x, p_y = point[...]
 
         cos = np.cos(theta)
@@ -115,8 +134,10 @@ class HomographyMatrix:
         )
         self._frame = rotation_matrix @ self._frame
 
-    def transform_points(self, points: Tensor) -> Tensor:
-        # points [*, 2]
+    def transform_points(
+            self,
+            points: Tensor  # [*, 2]
+    ) -> Tensor:            # [*, 2]
         homogeneous_points = torch.cat((points, torch.ones([*points.shape[:-1], 1])), dim=-1).transpose(-1, -2)
         mapped_points = (self._frame @ homogeneous_points).transpose(-1, -2)[..., :-1]
         return mapped_points
@@ -142,6 +163,7 @@ class PILMap(BaseMap):
         """
         This implementation won't actually load the image contained within <image_path>,
         but just operate based on the image's resolution.
+        This class can be used to save processing time in use cases where the rgb scene map is unnecessary.
 
         (Image.open is a lazy operation)
         https://pillow.readthedocs.io/en/stable/reference/Image.html#functions
@@ -152,10 +174,14 @@ class PILMap(BaseMap):
     def get_data(self) -> Optional[Tensor]:
         return self._data
 
-    def get_resolution(self) -> Size:
+    def get_resolution(self) -> Size:   # [H, W]
         return Size(self._resolution)
 
-    def crop(self, crop_coords: Tensor, resolution: int) -> None:
+    def crop(
+            self,
+            crop_coords: Tensor,    # [2, 2]
+            resolution: int
+    ) -> None:
         self._resolution = (resolution, resolution)
 
     def rotate_around_center(self, theta: float) -> None:
@@ -175,11 +201,14 @@ class TensorMap(BaseMap):
     def get_data(self) -> Optional[Tensor]:
         return self._data
 
-    def get_resolution(self) -> Size:
-        return self._data.shape[1:]       # [H, W]
+    def get_resolution(self) -> Size:   # [H, W]
+        return self._data.shape[1:]
 
-    def crop(self, crop_coords: Tensor, resolution: int) -> None:
-        # crop_coords [2, 2]
+    def crop(
+            self,
+            crop_coords: Tensor,    # [2, 2]
+            resolution: int
+    ) -> None:
         top = torch.round(crop_coords[0, 1]).to(torch.int64)
         left = torch.round(crop_coords[0, 0]).to(torch.int64)
         side = torch.round(crop_coords[1, 0] - crop_coords[0, 0]).to(torch.int64)
@@ -203,8 +232,8 @@ class MapManager:
     def get_map(self) -> Optional[Tensor]:
         return self._map.get_data()
 
-    def get_map_dimensions(self) -> Size:
-        return self._map.get_resolution()       # [H, W]
+    def get_map_dimensions(self) -> Size:   # [H, W]
+        return self._map.get_resolution()
 
     def homography_translation(self, point: Tensor) -> None:
         # point [2]
@@ -213,13 +242,13 @@ class MapManager:
     def homography_scaling(self, factor: float) -> None:
         self._homography.scale(factor=factor)
 
-    def rotate_around_center(self, theta: float) -> None:
-        # theta is expressed in *degrees*
+    def rotate_around_center(
+            self,
+            theta: float    # [degrees]
+    ) -> None:
         self._map.rotate_around_center(theta=theta)
 
-        # print(f"{self.get_map_dimensions()=}")
-        # print(f"{torch.tensor(self.get_map_dimensions())=}")
-        center_point = (torch.tensor(self.get_map_dimensions(), dtype=torch.float64) * 0.5).flip(dims=(0,))      # [x, y]
+        center_point = (torch.tensor(self.get_map_dimensions(), dtype=torch.float64) * 0.5).flip(dims=(0,))     # [x, y]
 
         # converting theta to radians, and multiplying by -1
         # this is because the reference frame of the image is reversed
