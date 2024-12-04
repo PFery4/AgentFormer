@@ -225,14 +225,6 @@ class TorchDataGeneratorSDD(Dataset):
                       ) -> Tensor:          # [N, T]
         return torch.vstack([self.timesteps] * ids.shape[0])
 
-    @staticmethod
-    def random_index(bool_mask: Tensor) -> Tensor:
-        # bool_mask [N]
-        # we can only select one index from bool_mask which points to a True value
-        candidates = torch.nonzero(bool_mask)
-        candidate_idx = torch.randint(0, candidates.shape[0], (1,))
-        return candidates[candidate_idx]
-
     def __len__(self) -> int:
         return len(self.occlusion_table)
 
@@ -246,18 +238,6 @@ class TorchDataGeneratorSDD(Dataset):
         cropping_coordinates = scene_map_manager.to_map_points(self.map_crop_coords)
         scene_map_manager.map_cropping(crop_coordinates=cropping_coordinates, resolution=self.map_resolution)
         scene_map_manager.set_homography(matrix=self.map_homography)
-
-    def random_agent_removal(self, keep_mask: Tensor, tgt_idx: int, center_agent_idx: int):
-        keep_indices = torch.Tensor([tgt_idx, center_agent_idx]).to(torch.int64).unique()
-        candidate_indices = torch.nonzero(keep_mask).squeeze()
-        candidate_indices = candidate_indices[(candidate_indices[:, None] != keep_indices).all(dim=1)]
-
-        kps = torch.randperm(candidate_indices.shape[0])[:self.max_train_agent - keep_indices.shape[0]]
-
-        keep_indices = torch.cat((keep_indices, candidate_indices[kps]))
-        keep_mask[:] = False
-        keep_mask[keep_indices] = True
-        return keep_mask
 
     def remove_agents_far_from(self, keep_mask: Tensor, target_point: Tensor, points: Tensor):
         # keep_mask [N]
