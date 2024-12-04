@@ -38,6 +38,79 @@ import src.occlusion_simulation.polygon_generation as poly_gen
 import src.data.config as sdd_conf
 
 
+# TODO: move these functions to a separate file.
+def last_observed_indices(
+        obs_mask: Tensor    # [N, T]
+) -> Tensor:                # [N]
+    return obs_mask.shape[1] - torch.argmax(torch.flip(obs_mask, dims=[1]), dim=1) - 1
+
+
+def last_observed_positions(
+        trajs: Tensor,              # [N, T, 2]
+        last_obs_indices: Tensor    # [N]
+) -> Tensor:                        # [N, 2]
+    return trajs[torch.arange(trajs.shape[0]), last_obs_indices, :]
+
+
+def true_velocity(
+        trajs: Tensor   # [N, T, 2]
+) -> Tensor:            # [N, T, 2]
+    vel = torch.zeros_like(trajs)
+    vel[:, 1:, :] = trajs[:, 1:, :] - trajs[:, :-1, :]
+    return vel
+
+
+def observed_velocity(
+        trajs: Tensor,      # [N, T, 2]
+        obs_mask: Tensor    # [N, T]
+) -> Tensor:                # [N, T, 2]
+    vel = torch.zeros_like(trajs)
+    for traj, mask, v in zip(trajs, obs_mask, vel):
+        obs_indices = torch.nonzero(mask)  # [Z, 1]
+        motion_diff = traj[obs_indices[1:, 0], :] - traj[obs_indices[:-1, 0], :]  # [Z - 1, 2]
+        v[obs_indices[1:].squeeze(), :] = motion_diff / (obs_indices[1:, :] - obs_indices[:-1, :])  # [Z - 1, 2]
+    return vel  # [N, T, 2]
+
+
+def cv_extrapolate(
+        trajs: Tensor,              # [N, T, 2]
+        obs_vel: Tensor,            # [N, T, 2]
+        last_obs_indices: Tensor    # [N]
+) -> Tensor:                        # [N, T, 2]
+    xtrpl_trajs = trajs.detach().clone()
+    for traj, vel, obs_idx in zip(xtrpl_trajs, obs_vel, last_obs_indices):
+        last_pos = traj[obs_idx]
+        last_vel = vel[obs_idx]
+        extra_seq = last_pos + torch.arange(traj.shape[0] - obs_idx).unsqueeze(1) * last_vel
+        traj[obs_idx:] = extra_seq
+    return xtrpl_trajs
+
+
+def impute_and_cv_predict(
+        trajs: Tensor,      # [N, T, 2]
+        obs_mask: Tensor,   # [N, T]
+        timesteps: Tensor   # [T]
+) -> Tensor:                # [N, T, 2]
+    imputed_trajs = torch.zeros_like(trajs)
+    for idx, (traj, mask) in enumerate(zip(trajs, obs_mask)):
+        # if none of the values are observed, then skip this trajectory altogether
+        if mask.sum() == 0:
+            continue
+        f = interp1d(timesteps[mask], traj[mask], axis=0, fill_value='extrapolate')
+        interptraj = f(timesteps)
+        imputed_trajs[idx, ...] = torch.from_numpy(interptraj)
+    return imputed_trajs
+
+
+def points_within_distance(
+        target_point: Tensor,   # [2]
+        points: Tensor,         # [N, 2]
+        distance: Tensor        # [1]
+) -> Tensor:                    # [N]
+    distances = torch.linalg.norm(points - target_point, dim=1)
+    return distances <= distance
+
+
 class TorchDataGeneratorSDD(Dataset):
     def __init__(self, parser: Config, split: str = 'train'):
         self.split = split
@@ -63,15 +136,8 @@ class TorchDataGeneratorSDD(Dataset):
         self.map_side = parser.get('scene_side_length', 80.0)  # [m]
         self.distance_threshold_occluded_target = self.map_side / 4  # [m]
         self.map_resolution = parser.get('global_map_resolution', 800)  # [px]
-        self.map_crop_coords = torch.Tensor(
-            [[-self.map_side, -self.map_side],
-             [self.map_side, self.map_side]]
-        ) * self.traj_scale / 2
-        self.map_homography = torch.Tensor(
-            [[self.map_resolution / self.map_side, 0., self.map_resolution / 2],
-             [0., self.map_resolution / self.map_side, self.map_resolution / 2],
-             [0., 0., 1.]]
-        )
+        self.map_crop_coords = self.get_map_crop_coordinates()
+        self.map_homography = self.get_map_homography()
 
         self.to_torch_image = transforms.ToTensor()
 
@@ -103,6 +169,19 @@ class TorchDataGeneratorSDD(Dataset):
         self.frame_skip = int(dataset.orig_fps // dataset.fps)
         self.lookup_time_window = np.arange(0, self.T_total) * self.frame_skip
 
+    def get_map_crop_coordinates(self) -> Tensor:       # [2, 2]
+        return Tensor(
+            [[-self.map_side, -self.map_side],
+             [self.map_side, self.map_side]]
+        ) * self.traj_scale / 2
+
+    def get_map_homography(self) -> Tensor:             # [3, 3]
+        return Tensor(
+            [[self.map_resolution / self.map_side, 0., self.map_resolution / 2],
+             [0., self.map_resolution / self.map_side, self.map_resolution / 2],
+             [0., 0., 1.]]
+        )
+
     def make_padded_scene_images(self):
         os.makedirs(self.padded_images_path, exist_ok=True)
         for scene in os.scandir(self.image_path):
@@ -122,84 +201,29 @@ class TorchDataGeneratorSDD(Dataset):
                     print(f"Saving padded image of {scene.name} {video.name}, with padding {self.padding_px}, under:\n"
                           f"{save_padded_img_path}")
 
-    @staticmethod
-    def last_observed_indices(obs_mask: Tensor) -> Tensor:
-        # obs_mask [N, T]
-        return obs_mask.shape[1] - torch.argmax(torch.flip(obs_mask, dims=[1]), dim=1) - 1  # [N]
+    def last_observed_timesteps(
+            self,
+            last_obs_indices: Tensor    # [N]
+    ) -> Tensor:                        # [N]
+        return self.timesteps[last_obs_indices]
 
-    def last_observed_timesteps(self, last_obs_indices: Tensor) -> Tensor:
-        # last_obs_indices [N]
-        return self.timesteps[last_obs_indices]  # [N]
-
-    @staticmethod
-    def last_observed_positions(trajs: Tensor, last_obs_indices: Tensor) -> Tensor:
-        # trajs [N, T, 2]
-        # last_obs_indices [N]
-        return trajs[torch.arange(trajs.shape[0]), last_obs_indices, :]  # [N, 2]
-
-    def predict_mask(self, last_obs_indices: Tensor) -> Tensor:
-        # last_obs_indices [N]
-        predict_mask = torch.full([last_obs_indices.shape[0], self.T_total], False)  # [N, T]
+    def predict_mask(
+            self,
+            last_obs_indices: Tensor    # [N]
+    ) -> Tensor:                        # [N, T]
+        predict_mask = torch.full([last_obs_indices.shape[0], self.T_total], False)
         pred_indices = last_obs_indices + 1  # [N]
         for i, pred_idx in enumerate(pred_indices):
             predict_mask[i, pred_idx:] = True
         return predict_mask
 
-    def agent_grid(self, ids: Tensor) -> Tensor:
-        # ids [N]
-        return torch.hstack([ids.unsqueeze(1)] * self.T_total)  # [N, T]
+    def agent_grid(self, ids: Tensor    # [N]
+                   ) -> Tensor:         # [N, T]
+        return torch.hstack([ids.unsqueeze(1)] * self.T_total)
 
-    def timestep_grid(self, ids: Tensor) -> Tensor:
-        return torch.vstack([self.timesteps] * ids.shape[0])  # [N, T]
-
-    @staticmethod
-    def true_velocity(trajs: Tensor) -> Tensor:
-        # trajs [N, T, 2]
-        vel = torch.zeros_like(trajs)
-        vel[:, 1:, :] = trajs[:, 1:, :] - trajs[:, :-1, :]
-        return vel
-
-    @staticmethod
-    def observed_velocity(trajs: Tensor, obs_mask: Tensor) -> Tensor:
-        # trajs [N, T, 2]
-        # obs_mask [N, T]
-        vel = torch.zeros_like(trajs)  # [N, T, 2]
-        for traj, mask, v in zip(trajs, obs_mask, vel):
-            obs_indices = torch.nonzero(mask)  # [Z, 1]
-            motion_diff = traj[obs_indices[1:, 0], :] - traj[obs_indices[:-1, 0], :]  # [Z - 1, 2]
-            v[obs_indices[1:].squeeze(), :] = motion_diff / (obs_indices[1:, :] - obs_indices[:-1, :])  # [Z - 1, 2]
-        return vel  # [N, T, 2]
-
-    @staticmethod
-    def cv_extrapolate(trajs: Tensor, obs_vel: Tensor, last_obs_indices: Tensor) -> Tensor:
-        # trajs [N, T, 2]
-        # obs_vel [N, T, 2]
-        # last_obs_indices [N]
-        xtrpl_trajs = trajs.detach().clone()
-        for traj, vel, obs_idx in zip(xtrpl_trajs, obs_vel, last_obs_indices):
-            last_pos = traj[obs_idx]
-            last_vel = vel[obs_idx]
-            extra_seq = last_pos + torch.arange(traj.shape[0] - obs_idx).unsqueeze(1) * last_vel
-            traj[obs_idx:] = extra_seq
-        return xtrpl_trajs
-
-    @staticmethod
-    def impute_and_cv_predict(trajs: Tensor, obs_mask: Tensor, timesteps: Tensor) -> Tensor:
-        # trajs [N, T, 2]
-        # obs_mask [N, T]
-        # timesteps [T]
-        imputed_trajs = torch.zeros_like(trajs)
-        for i, (traj, mask) in enumerate(zip(trajs, obs_mask)):
-            # if none of the values are observed, then skip this trajectory altogether
-            if mask.sum() == 0:
-                continue
-            # print(f"{self.timesteps[mask]=}")
-            # print(f"{traj[mask]=}")
-            f = interp1d(timesteps[mask], traj[mask], axis=0, fill_value='extrapolate')
-            interptraj = f(timesteps)
-            # print(f"{interptraj=}")
-            imputed_trajs[i, ...] = torch.from_numpy(interptraj)
-        return imputed_trajs
+    def timestep_grid(self, ids: Tensor     # [N]
+                      ) -> Tensor:          # [N, T]
+        return torch.vstack([self.timesteps] * ids.shape[0])
 
     @staticmethod
     def random_index(bool_mask: Tensor) -> Tensor:
@@ -208,14 +232,6 @@ class TorchDataGeneratorSDD(Dataset):
         candidates = torch.nonzero(bool_mask)
         candidate_idx = torch.randint(0, candidates.shape[0], (1,))
         return candidates[candidate_idx]
-
-    @staticmethod
-    def points_within_distance(target_point: Tensor, points: Tensor, distance: Tensor) -> Tensor:
-        # target_point [2]
-        # agent_points [N, 2]
-        # distance [1]
-        distances = torch.linalg.norm(points - target_point, dim=1)
-        return distances <= distance
 
     def __len__(self) -> int:
         return len(self.occlusion_table)
@@ -378,7 +394,7 @@ class TorchDataGeneratorSDD(Dataset):
             true_obs_mask = obs_mask.detach().clone()
 
             # performing the imputation
-            trajs = self.impute_and_cv_predict(trajs=trajs, obs_mask=obs_mask.to(torch.bool), timesteps=self.timesteps)
+            trajs = impute_and_cv_predict(trajs=trajs, obs_mask=obs_mask.to(torch.bool), timesteps=self.timesteps)
             obs_mask = torch.full_like(obs_mask, True)
             obs_mask[..., self.T_obs:] = False
             trajs[~obs_mask.to(torch.bool), :] = true_trajs[~obs_mask.to(torch.bool), :]
@@ -390,8 +406,8 @@ class TorchDataGeneratorSDD(Dataset):
             sufficiently_observed_mask = (torch.sum(obs_mask, dim=1) >= 2)                          # [N]
 
         # computing agents' last observed positions
-        last_obs_indices = self.last_observed_indices(obs_mask=obs_mask)
-        last_obs_positions = self.last_observed_positions(trajs=trajs, last_obs_indices=last_obs_indices)  # [N, 2]
+        last_obs_indices = last_observed_indices(obs_mask=obs_mask)
+        last_obs_positions = last_observed_positions(trajs=trajs, last_obs_indices=last_obs_indices)  # [N, 2]
 
         # further removing agents if we have too many.
         close_keep_mask = torch.full_like(sufficiently_observed_mask, True)
@@ -603,15 +619,15 @@ class TorchDataGeneratorSDD(Dataset):
         timestep_grid = self.timestep_grid(ids=ids)
 
         obs_trajs = trajs[obs_mask, ...]
-        obs_vel = self.observed_velocity(trajs=trajs, obs_mask=obs_mask)
+        obs_vel = observed_velocity(trajs=trajs, obs_mask=obs_mask)
         obs_vel_seq = obs_vel[obs_mask, ...]
         obs_ids = agent_grid[obs_mask, ...]
         obs_timesteps = timestep_grid[obs_mask, ...]
-        last_obs_positions = self.last_observed_positions(trajs=trajs, last_obs_indices=last_obs_indices)
+        last_obs_positions = last_observed_positions(trajs=trajs, last_obs_indices=last_obs_indices)
         last_obs_timesteps = self.last_observed_timesteps(last_obs_indices=last_obs_indices)
 
         pred_trajs = trajs.transpose(0, 1)[pred_mask.T, ...]
-        pred_vel = self.true_velocity(trajs=trajs)
+        pred_vel = true_velocity(trajs=trajs)
         pred_vel_seq = pred_vel.transpose(0, 1)[pred_mask.T, ...]
         pred_ids = agent_grid.T[pred_mask.T, ...]
         pred_timesteps = timestep_grid.T[pred_mask.T, ...]
