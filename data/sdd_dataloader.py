@@ -71,12 +71,11 @@ class TorchDataGeneratorSDD(Dataset):
         if self.impute:
             assert self.occlusion_process != 'fully_observed'
 
-        if self.occlusion_process == 'fully_observed':
-            self.trajectory_processing_strategy = self.process_fully_observed_cases
-        elif self.occlusion_process == 'occlusion_simulation':
-            self.trajectory_processing_strategy = self.process_cases_with_simulated_occlusions
-        else:
-            raise NotImplementedError
+        strategies = {
+            'fully_observed': self.process_fully_observed_cases,
+            'occlusion_simulation': self.process_cases_with_simulated_occlusions
+        }
+        self.trajectory_processing_strategy = strategies[self.occlusion_process]
 
         # we are preparing reflect padded versions of the dataset, so that it becomes quicker to process the dataset.
         # the reason why we need to produce reflect padded images is that we will need a full representation of the
