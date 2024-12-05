@@ -72,8 +72,8 @@ class TorchDataGeneratorSDD(Dataset):
             assert self.occlusion_process != 'fully_observed'
 
         strategies = {
-            'fully_observed': self.process_fully_observed_cases,
-            'occlusion_simulation': self.process_cases_with_simulated_occlusions
+            'fully_observed': self.handle_fully_observed_cases,
+            'occlusion_simulation': self.handle_cases_with_simulated_occlusions
         }
         self.trajectory_processing_strategy = strategies[self.occlusion_process]
 
@@ -348,7 +348,7 @@ class TorchDataGeneratorSDD(Dataset):
             process_dict['true_obs_mask'] = true_obs_mask
         return process_dict
 
-    def process_cases_with_simulated_occlusions(
+    def handle_cases_with_simulated_occlusions(
             self,
             process_dict: defaultdict,
             trajs: Tensor,
@@ -375,7 +375,7 @@ class TorchDataGeneratorSDD(Dataset):
                 m_by_px=m_by_px
             )
 
-    def process_fully_observed_cases(
+    def handle_fully_observed_cases(
             self,
             process_dict: defaultdict,
             trajs: Tensor,
