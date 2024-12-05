@@ -351,15 +351,17 @@ class TorchDataGeneratorSDD(Dataset):
     def process_cases_with_simulated_occlusions(
             self,
             process_dict: defaultdict,
-            occlusion_case: Dict,
             trajs: Tensor,
             scene_map_manager: MapManager,
-            px_by_m: float,
-            m_by_px: float
+            m_by_px: float,
+            occlusion_case: Dict,
     ):
         if np.isnan(occlusion_case['ego_point']).any():
             return self.process_fully_observed_trajectories(
-                process_dict=process_dict, trajs=trajs, scene_map_manager=scene_map_manager, m_by_px=m_by_px
+                process_dict=process_dict,
+                trajs=trajs,
+                scene_map_manager=scene_map_manager,
+                m_by_px=m_by_px
             )
         else:
             tgt_idx = torch.from_numpy(occlusion_case['target_agent_indices']).squeeze()
@@ -376,14 +378,16 @@ class TorchDataGeneratorSDD(Dataset):
     def process_fully_observed_cases(
             self,
             process_dict: defaultdict,
-            occlusion_case: Dict,
             trajs: Tensor,
             scene_map_manager: MapManager,
-            px_by_m: float,
-            m_by_px: float
+            m_by_px: float,
+            **unused_kwargs
     ):
         return self.process_fully_observed_trajectories(
-            process_dict=process_dict, trajs=trajs, scene_map_manager=scene_map_manager, m_by_px=m_by_px
+            process_dict=process_dict,
+            trajs=trajs,
+            scene_map_manager=scene_map_manager,
+            m_by_px=m_by_px
         )
 
     def __getitem__(self, idx: int) -> Dict:
@@ -416,7 +420,6 @@ class TorchDataGeneratorSDD(Dataset):
             trajs[i, :, 1] = torch.from_numpy(agent_df['y'].values)
 
         # extract the metric / pixel space coordinate conversion factors
-        px_by_m = self.coord_conv.loc[scene, video]['px/m']
         m_by_px = self.coord_conv.loc[scene, video]['m/px']
 
         # prepare for random rotation by choosing a rotation angle and rotating the map
@@ -429,11 +432,10 @@ class TorchDataGeneratorSDD(Dataset):
         process_dict = defaultdict(None)
         process_dict = self.trajectory_processing_strategy(
             process_dict=process_dict,
-            occlusion_case=occlusion_case,
             trajs=trajs,
             scene_map_manager=scene_map_mgr,
-            px_by_m=px_by_m,
-            m_by_px=m_by_px
+            m_by_px=m_by_px,
+            occlusion_case=occlusion_case
         )
 
         # removing agent surplus
