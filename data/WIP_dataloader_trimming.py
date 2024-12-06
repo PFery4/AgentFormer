@@ -16,7 +16,10 @@ import torch
 from torchvision import transforms
 from tqdm import tqdm
 
-from data.map import TorchGeometricMap          # TODO: change to MapManager
+from data.map import \
+    compute_distance_transformed_map, compute_probability_map, compute_nlog_probability_map, \
+    HomographyMatrix, MapManager, MAP_DICT
+    # TorchGeometricMap          # TODO: change to MapManager
 from data.sdd_dataloader import dataset_dict, TorchDataGeneratorSDD
 from utils.config import Config, REPO_ROOT
 from utils.sdd_visualize import visualize
@@ -200,9 +203,12 @@ class PresavedDataset(Dataset):
             predict_mask[i, pred_idx:] = True
         return predict_mask
 
-    def crop_scene_map(self, scene_map: TorchGeometricMap):     # TODO: change to MapManager
-        scene_map.crop(crop_coords=scene_map.to_map_points(self.map_crop_coords), resolution=self.map_resolution)
-        scene_map.set_homography(matrix=self.map_homography)
+    def crop_scene_map(self, scene_map_manager: MapManager):
+        scene_map_manager.map_cropping(
+            crop_coordinates=scene_map_manager.to_map_points(self.map_crop_coords),
+            resolution=self.map_resolution
+        )
+        scene_map_manager.set_homography(matrix=self.map_homography)
 
     def add_instance_identifiers(self, data_dict: Dict, idx: int):
         data_dict['frame'] = self.h5_dataset['frame'][idx].astype(np.int64)
@@ -272,26 +278,40 @@ class PresavedDataset(Dataset):
         data_dict['probability_occlusion_map'] = probability_map
         data_dict['nlog_probability_occlusion_map'] = nlog_probability_map
 
+    def get_scene_map_manager(self, image_path: os.PathLike) -> MapManager:
+        scene_map = MAP_DICT[self.with_rgb_map](image_path=image_path)
+        homography = HomographyMatrix(matrix=torch.eye(3))
+        return MapManager(map_object=scene_map, homography=homography)
+
     def add_scene_map_data(self, data_dict: Dict):
         # loading the scene map
         image_path = os.path.join(self.padded_images_path, f"{data_dict['seq']}_padded_img.jpg")
-        image = cv2.imread(image_path)
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        image = self.to_torch_image(image)
-
-        scene_map = TorchGeometricMap(      # TODO: change to MapManager
-            map_image=image, homography=torch.eye(3)
+        scene_map_mgr = self.get_scene_map_manager(image_path=image_path)
+        scene_map_mgr.homography_translation(Tensor([self.padding_px, self.padding_px]))
+        scene_map_mgr.rotate_around_center(theta=data_dict['theta'])
+        scene_map_mgr.set_homography(torch.eye(3))
+        scene_map_mgr.homography_translation(data_dict['center_point'])
+        scene_map_mgr.homography_scaling(
+            1 / (self.traj_scale * self.coord_conv_table.loc[data_dict['scene'], data_dict['video']]['m/px'])
         )
-        scene_map.homography_translation(Tensor([self.padding_px, self.padding_px]))
-        scene_map.rotate_around_center(theta=data_dict['theta'])
-        scene_map.set_homography(torch.eye(3))
-        center_point = data_dict['center_point']
-        scaling = self.traj_scale * self.coord_conv_table.loc[data_dict['scene'], data_dict['video']]['m/px']
-        scene_map.homography_translation(center_point)
-        scene_map.homography_scaling(1 / scaling)
-        self.crop_scene_map(scene_map=scene_map)
+        self.crop_scene_map(scene_map_manager=scene_map_mgr)
 
-        data_dict['scene_map'] = scene_map.image
+        # image = cv2.imread(image_path)
+        # image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        # image = self.to_torch_image(image)
+        # scene_map = TorchGeometricMap(      # TODO: change to MapManager
+        #     map_image=image, homography=torch.eye(3)
+        # )
+        # scene_map.homography_translation(Tensor([self.padding_px, self.padding_px]))
+        # scene_map.rotate_around_center(theta=data_dict['theta'])
+        # scene_map.set_homography(torch.eye(3))
+        # center_point = data_dict['center_point']
+        # scaling = self.traj_scale * self.coord_conv_table.loc[data_dict['scene'], data_dict['video']]['m/px']
+        # scene_map.homography_translation(center_point)
+        # scene_map.homography_scaling(1 / scaling)
+        # self.crop_scene_map(scene_map=scene_map)
+
+        data_dict['scene_map'] = scene_map_mgr.get_map()
 
     def __len__(self):
         return self.lookup_indices.shape[0]
