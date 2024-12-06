@@ -321,29 +321,12 @@ class TorchDataGeneratorSDD(Dataset):
                 torch.from_numpy(ego_visipoly.coords).to(torch.float32)
             )
         )
-        # map_dims = scene_map_manager.get_map_dimensions()
-        # occ_y = torch.arange(map_dims[0])
-        # occ_x = torch.arange(map_dims[1])
-        # xy = torch.dstack((torch.meshgrid(occ_x, occ_y))).reshape((-1, 2))
-        # mpath = Path(scene_map_manager.to_map_points(torch.from_numpy(ego_visipoly.coords).to(torch.float32)))
-        # occlusion_map = torch.from_numpy(mpath.contains_points(xy).reshape(map_dims)).to(torch.bool).T
-
         dist_transformed_occlusion_map = compute_distance_transformed_map(
             occlusion_map=occlusion_map,
             scaling=scaling
         )
         probability_map = compute_probability_map(dt_map=dist_transformed_occlusion_map)
         nlog_probability_map = compute_nlog_probability_map(dt_map=dist_transformed_occlusion_map)
-        # invert_occlusion_map = ~occlusion_map
-        # dist_transformed_occlusion_map = (torch.where(
-        #     invert_occlusion_map,
-        #     torch.from_numpy(-distance_transform_edt(invert_occlusion_map)),
-        #     torch.from_numpy(distance_transform_edt(occlusion_map))
-        # ) * scaling).to(torch.float32)
-        #
-        # clipped_map = -torch.clamp(dist_transformed_occlusion_map, min=0.)
-        # probability_map = torch.nn.functional.softmax(clipped_map.view(-1), dim=0).view(clipped_map.shape)
-        # nlog_probability_map = -torch.nn.functional.log_softmax(clipped_map.view(-1), dim=0).view(clipped_map.shape)
 
         process_dict['trajs'] = trajs
         process_dict['obs_mask'] = obs_mask
