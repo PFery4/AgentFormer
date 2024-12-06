@@ -6,7 +6,7 @@ import struct
 import torch
 from tqdm import tqdm
 
-from data.sdd_dataloader import dataset_dict, TorchDataGeneratorSDD
+from data.sdd_dataloader import TorchDataGeneratorSDD
 from utils.config import Config, REPO_ROOT
 from utils.utils import prepare_seed
 
