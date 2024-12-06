@@ -24,6 +24,7 @@ rand_rot_scene                : true
 max_train_agent               : 32
 occlusion_process             : 'occlusion_simulation'      # can be either 'fully_observed' or 'occlusion_simulation'
 impute                        : true
+quick_fix                     : true
 
 # ------------------- Model -------------------------
 

@@ -21,3 +21,4 @@ max_train_agent               : 32
 occlusion_process             : 'fully_observed'      # can be either 'fully_observed' or 'occlusion_simulation'
 impute                        : false
 momentary                     : true
+quick_fix                     : true

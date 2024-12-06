@@ -26,3 +26,4 @@ occlusion_process             : 'occlusion_simulation'      # can be either 'ful
 impute                        : false
 momentary                     : false
 difficult                     : true
+quick_fix                     : true
