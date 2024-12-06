@@ -70,6 +70,10 @@ class TorchDataGeneratorSDD(Dataset):
         self.map_crop_coords = self.get_map_crop_coordinates()
         self.map_homography = self.get_map_homography()
         self.quick_fix = bool(parser.quick_fix)        # TODO: REMOVE QUICK FIX, FIX DIRECTLY PLEASE
+
+        # TODO: remove
+        # self.compute_probability_maps = False       # whether probability maps need to be derived from occlusion map
+
         self.impute = bool(parser.impute)
         if self.impute:
             assert self.occlusion_process != 'fully_observed'
@@ -217,8 +221,6 @@ class TorchDataGeneratorSDD(Dataset):
 
         occlusion_map = torch.full([self.map_resolution, self.map_resolution], True)
         dist_transformed_occlusion_map = torch.zeros([self.map_resolution, self.map_resolution])
-        probability_map = torch.zeros([self.map_resolution, self.map_resolution])
-        nlog_probability_map = torch.zeros([self.map_resolution, self.map_resolution])
 
         process_dict['trajs'] = trajs
         process_dict['obs_mask'] = obs_mask
@@ -226,10 +228,16 @@ class TorchDataGeneratorSDD(Dataset):
         process_dict['keep_agent_mask'] = keep_agent_mask
         process_dict['occlusion_map'] = occlusion_map
         process_dict['dist_transformed_occlusion_map'] = dist_transformed_occlusion_map
-        process_dict['probability_map'] = probability_map
-        process_dict['nlog_probability_map'] = nlog_probability_map
         process_dict['scene_map_image'] = scene_map_manager.get_map()
         process_dict['center_point'] = center_point
+
+        # TODO: remove
+        # if self.compute_probability_maps:
+        #     probability_map = torch.zeros([self.map_resolution, self.map_resolution])
+        #     nlog_probability_map = torch.zeros([self.map_resolution, self.map_resolution])
+        #     process_dict['probability_map'] = probability_map
+        #     process_dict['nlog_probability_map'] = nlog_probability_map
+
         return process_dict
 
     def process_trajectories_with_occlusions(
@@ -326,8 +334,6 @@ class TorchDataGeneratorSDD(Dataset):
             occlusion_map=occlusion_map,
             scaling=scaling
         )
-        probability_map = compute_probability_map(dt_map=dist_transformed_occlusion_map)
-        nlog_probability_map = compute_nlog_probability_map(dt_map=dist_transformed_occlusion_map)
 
         process_dict['trajs'] = trajs
         process_dict['obs_mask'] = obs_mask
@@ -335,8 +341,6 @@ class TorchDataGeneratorSDD(Dataset):
         process_dict['keep_agent_mask'] = keep_agent_mask
         process_dict['occlusion_map'] = occlusion_map
         process_dict['dist_transformed_occlusion_map'] = dist_transformed_occlusion_map
-        process_dict['probability_map'] = probability_map
-        process_dict['nlog_probability_map'] = nlog_probability_map
         process_dict['scene_map_image'] = scene_map_manager.get_map()
         process_dict['center_point'] = center_point
         process_dict['ego'] = ego
@@ -344,6 +348,14 @@ class TorchDataGeneratorSDD(Dataset):
         if self.impute:
             process_dict['true_trajs'] = true_trajs
             process_dict['true_obs_mask'] = true_obs_mask
+
+        # TODO: remove
+        # if self.compute_probability_maps:
+        #     probability_map = compute_probability_map(dt_map=dist_transformed_occlusion_map)
+        #     nlog_probability_map = compute_nlog_probability_map(dt_map=dist_transformed_occlusion_map)
+        #     process_dict['probability_map'] = probability_map
+        #     process_dict['nlog_probability_map'] = nlog_probability_map
+
         return process_dict
 
     def handle_cases_with_simulated_occlusions(
@@ -511,8 +523,6 @@ class TorchDataGeneratorSDD(Dataset):
 
             'occlusion_map': process_dict['occlusion_map'],
             'dist_transformed_occlusion_map': process_dict['dist_transformed_occlusion_map'],
-            'probability_occlusion_map': process_dict['probability_map'],
-            'nlog_probability_occlusion_map': process_dict['nlog_probability_map'],
             'scene_map': scene_map_mgr.get_map(),
             'map_homography': self.map_homography,
             'theta': theta_rot,
@@ -528,6 +538,11 @@ class TorchDataGeneratorSDD(Dataset):
             'true_trajectories': true_trajs if self.impute else None,
             'true_observation_mask': true_obs_mask if self.impute else None
         }
+
+        # TODO: remove
+        # if self.compute_probability_maps:
+        #     data_dict['probability_occlusion_map'] = process_dict['probability_map']
+        #     data_dict['nlog_probability_occlusion_map'] = process_dict['nlog_probability_map']
 
         return data_dict
 
@@ -746,19 +761,26 @@ class HDF5PresavedDatasetSDD(Dataset):
         scaling = self.traj_scale * self.coord_conv_table.loc[data_dict['scene'], data_dict['video']]['m/px']
         if torch.any(torch.isnan(data_dict['ego'])):
             dist_transformed_occlusion_map = torch.zeros([self.map_resolution, self.map_resolution])
-            probability_map = torch.zeros([self.map_resolution, self.map_resolution])
-            nlog_probability_map = torch.zeros([self.map_resolution, self.map_resolution])
+
+            # TODO: remove
+            # probability_map = torch.zeros([self.map_resolution, self.map_resolution])
+            # nlog_probability_map = torch.zeros([self.map_resolution, self.map_resolution])
+
         else:
             dist_transformed_occlusion_map = compute_distance_transformed_map(
                 occlusion_map=processed_occl_map,
                 scaling=scaling
             )
-            probability_map = compute_probability_map(dt_map=dist_transformed_occlusion_map)
-            nlog_probability_map = compute_nlog_probability_map(dt_map=dist_transformed_occlusion_map)
+
+            # TODO: remove
+            # probability_map = compute_probability_map(dt_map=dist_transformed_occlusion_map)
+            # nlog_probability_map = compute_nlog_probability_map(dt_map=dist_transformed_occlusion_map)
 
         data_dict['dist_transformed_occlusion_map'] = dist_transformed_occlusion_map
-        data_dict['probability_occlusion_map'] = probability_map
-        data_dict['nlog_probability_occlusion_map'] = nlog_probability_map
+
+        # TODO: remove
+        # data_dict['probability_occlusion_map'] = probability_map
+        # data_dict['nlog_probability_occlusion_map'] = nlog_probability_map
 
     def get_scene_map_manager(self, image_path: os.PathLike) -> MapManager:
         scene_map = MAP_DICT[self.with_rgb_map](image_path=image_path)
@@ -837,8 +859,9 @@ class HDF5PresavedDatasetSDD(Dataset):
             data_dict['dist_transformed_occlusion_map'], min=0.
         )
 
-        del data_dict['probability_occlusion_map']
-        del data_dict['nlog_probability_occlusion_map']
+        # TODO: remove
+        # del data_dict['probability_occlusion_map']
+        # del data_dict['nlog_probability_occlusion_map']
 
         return data_dict
 
