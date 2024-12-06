@@ -251,16 +251,12 @@ class PresavedDataset(Dataset):
             probability_map = torch.zeros([self.map_resolution, self.map_resolution])
             nlog_probability_map = torch.zeros([self.map_resolution, self.map_resolution])
         else:
-            invert_occlusion_map = ~processed_occl_map
-            dist_transformed_occlusion_map = (torch.where(
-                invert_occlusion_map,
-                torch.from_numpy(-distance_transform_edt(invert_occlusion_map)),
-                torch.from_numpy(distance_transform_edt(processed_occl_map))
-            ) * scaling).to(torch.float32)
-
-            clipped_map = -torch.clamp(dist_transformed_occlusion_map, min=0.)
-            probability_map = torch.nn.functional.softmax(clipped_map.view(-1), dim=0).view(clipped_map.shape)
-            nlog_probability_map = -torch.nn.functional.log_softmax(clipped_map.view(-1), dim=0).view(clipped_map.shape)
+            dist_transformed_occlusion_map = compute_distance_transformed_map(
+                occlusion_map=processed_occl_map,
+                scaling=scaling
+            )
+            probability_map = compute_probability_map(dt_map=dist_transformed_occlusion_map)
+            nlog_probability_map = compute_nlog_probability_map(dt_map=dist_transformed_occlusion_map)
 
         data_dict['dist_transformed_occlusion_map'] = dist_transformed_occlusion_map
         data_dict['probability_occlusion_map'] = probability_map
