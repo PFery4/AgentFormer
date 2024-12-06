@@ -19,6 +19,7 @@ import sys
 import numpy as np
 import skgeom as sg
 from scipy.ndimage import distance_transform_edt
+import struct
 from collections import defaultdict
 
 # from data.map import TorchGeometricMap
@@ -519,6 +520,320 @@ class TorchDataGeneratorSDD(Dataset):
         return data_dict
 
 
+class HDF5PresavedDatasetSDD(Dataset):
+    presaved_datasets_dir = os.path.join(REPO_ROOT, 'datasets', 'SDD', 'pre_saved_datasets')
+
+    # This is a "quick fix".
+    # We performed the wrong px/m coordinate conversion when computing the distance transformed map.
+    # Ideally we should correct this in the TorchDatasetGenerator class.
+    # the real fix is to have the distance transformed map scaled by the proper factor:
+    # TorchDatasetGenerator.map_side / TorchDatasetGenerator.map_resolution
+    coord_conv_dir = os.path.join(REPO_ROOT, 'datasets', 'SDD', 'coordinates_conversion.txt')
+    coord_conv_table = pd.read_csv(coord_conv_dir, sep=';', index_col=('scene', 'video'))
+
+    def __init__(self, parser: Config, log: Optional[TextIOWrapper] = None, split: str = 'train'):
+
+        # TODO: REMOVE QUICK FIX, FIX DIRECTLY PLEASE
+        self.quick_fix = parser.get('quick_fix', False)   # again, the quick fix should be result upstream, in the TorchDatasetGenerator class.
+
+        self.split = split
+
+        assert split in ['train', 'val', 'test']
+        assert parser.dataset == 'sdd', f"error: wrong dataset name: {parser.dataset} (should be \"sdd\")"
+        assert parser.occlusion_process in ['fully_observed', 'occlusion_simulation']
+
+        prnt_str = "\n-------------------------- loading %s data --------------------------" % split
+        print_log(prnt_str, log=log) if log is not None else print(prnt_str)
+
+        # occlusion process specific parameters
+        self.occlusion_process = parser.get('occlusion_process', 'fully_observed')
+        self.impute = parser.get('impute', False)
+        assert not self.impute or self.occlusion_process != 'fully_observed'
+
+        # map specific parameters
+        self.map_side = parser.get('scene_side_length', 80.0)               # [m]
+        self.map_resolution = parser.get('global_map_resolution', 800)      # [px]
+        self.traj_scale = parser.traj_scale
+        self.with_rgb_map = bool(parser.with_rgb_map)
+        self.map_crop_coords = torch.Tensor(
+            [[-self.map_side, -self.map_side],
+             [self.map_side, self.map_side]]
+        ) * self.traj_scale / 2
+        self.map_homography = torch.Tensor(
+            [[self.map_resolution / self.map_side, 0., self.map_resolution / 2],
+             [0., self.map_resolution / self.map_side, self.map_resolution / 2],
+             [0., 0., 1.]]
+        )
+        self.struct_format = f'{int(self.map_resolution * self.map_resolution / 8)}B'
+        assert self.map_resolution % 8 == 0
+
+        # scene map parameters
+        self.padding_px = 2075
+        self.padded_images_path = os.path.join(REPO_ROOT, 'datasets', 'SDD', f'padded_images_{self.padding_px}')
+
+        # timesteps specific parameters
+        self.T_obs = parser.past_frames
+        self.T_pred = parser.future_frames
+        self.T_total = self.T_obs + self.T_pred
+        self.timesteps = torch.arange(-self.T_obs, self.T_pred) + 1
+
+        # dataset identification
+        dataset_dir_name = f'{self.occlusion_process}_imputed' if self.impute else self.occlusion_process
+        self.dataset_dir = os.path.join(self.presaved_datasets_dir, dataset_dir_name, self.split)
+
+        assert os.path.exists(self.dataset_dir)
+        prnt_str = f"Dataset directory is:\n{self.dataset_dir}"
+        print_log(prnt_str, log=log) if log is not None else print(prnt_str)
+
+        ################################################################################################################
+        self.hdf5_file = os.path.join(self.dataset_dir, 'dataset_v2.h5')    # TODO: maybe don't hard set filename
+        assert os.path.exists(self.hdf5_file)
+
+        # For integrating the hdf5 dataset into the Pytorch class,
+        # we follow the principles recommended by Piotr Januszewski:
+        # https://discuss.pytorch.org/t/dataloader-when-num-worker-0-there-is-bug/25643/16
+        self.h5_dataset = None
+        self.lookup_indices = None
+        self.lookup_datasets = []       # datasets which will have to be indexed using self.lookup_indices
+        with h5py.File(self.hdf5_file, 'r') as h5_file:
+            for dset_name, dset in h5_file.items():       # str, dataset
+                if None in dset.maxshape:
+                    self.lookup_datasets.append(dset_name)
+            self.lookup_indices = torch.from_numpy(h5_file['lookup_indices'][()])
+
+        if False:       # handle difficult cases
+        # if parser.get('difficult', False):
+            print("KEEPING ONLY THE DIFFICULT CASES")
+
+            # verify the dataset is the correct configuration
+            assert self.occlusion_process == 'occlusion_simulation'
+            assert not self.impute
+            assert not self.momentary
+
+            from utils.performance_analysis import get_perf_scores_df
+
+            cv_perf_df = get_perf_scores_df(
+                experiment_name='const_vel_occlusion_simulation',
+                model_name='untrained',
+                split=self.split,
+                drop_idx=False
+            )
+            cv_perf_df = cv_perf_df[cv_perf_df['past_pred_length'] > 0]
+            cv_perf_df = cv_perf_df[cv_perf_df['OAC_t0'] == 0.]
+
+            difficult_instances = cv_perf_df.index.get_level_values('idx').unique().tolist()
+            difficult_instances = [f'{instance:08}' for instance in difficult_instances]
+            difficult_mask = np.in1d(self.instance_names, difficult_instances)
+
+            difficult_instance_names = list(np.array(self.instance_names)[difficult_mask])
+            difficult_instance_nums = list(np.array(self.instance_nums)[difficult_mask])
+            self.instance_names = difficult_instance_names
+            self.instance_nums = difficult_instance_nums
+
+        elif False:             # handle validation subsampling
+        # elif self.split == 'val' and parser.get('validation_set_size', None) is not None:
+            assert len(self.instance_names) > parser.validation_set_size
+            # Training set might be quite large. When that is the case, we prefer to validate after every
+            # <parser.validation_freq> batches rather than every epoch (i.e., validating multiple times per epoch).
+            # train / val split size ratios are typically ~80/20. Our desired validation set size should then be:
+            #       <parser.validation_freq> * 20/80
+            # We let the user choose the validation set size.
+            # The dataset will then be effectively reduced to <parser.validation_set_size>
+            required_val_set_size = parser.validation_set_size
+            keep_instances = np.linspace(0, len(self.instance_names)-1, num=required_val_set_size).round().astype(int)
+
+            assert np.all(keep_instances[1:] != keep_instances[:-1])        # verifying no duplicates
+
+            keep_instance_names = [self.instance_names[i] for i in keep_instances]
+            keep_instance_nums = [self.instance_nums[i] for i in keep_instances]
+
+            prnt_str = f"Val set size too large! --> {len(self.instance_names)} " \
+                       f"(validating after every {parser.validation_freq} batch).\n" \
+                       f"Reducing val set size to {len(keep_instances)}."
+            print_log(prnt_str, log=log) if log is not None else print(prnt_str)
+            self.instance_names = keep_instance_names
+            self.instance_nums = keep_instance_nums
+            assert len(self.instance_names) == required_val_set_size
+
+        assert self.__len__() != 0
+        prnt_str = f'total number of samples: {self.__len__()}'
+        print_log(prnt_str, log=log) if log is not None else print(prnt_str)
+        prnt_str = f'------------------------------ done --------------------------------\n'
+        print_log(prnt_str, log=log) if log is not None else print(prnt_str)
+
+    def last_observed_timesteps(self, last_obs_indices: Tensor) -> Tensor:
+        # last_obs_indices [N]
+        return self.timesteps[last_obs_indices]  # [N]
+
+    def agent_grid(self, ids: Tensor) -> Tensor:
+        # ids [N]
+        return torch.hstack([ids.unsqueeze(1)] * self.T_total)  # [N, T]
+
+    def timestep_grid(self, ids: Tensor) -> Tensor:
+        return torch.vstack([self.timesteps] * ids.shape[0])  # [N, T]
+
+    def predict_mask(self, last_obs_indices: Tensor) -> Tensor:
+        # last_obs_indices [N]
+        predict_mask = torch.full([last_obs_indices.shape[0], self.T_total], False)  # [N, T]
+        pred_indices = last_obs_indices + 1  # [N]
+        for i, pred_idx in enumerate(pred_indices):
+            predict_mask[i, pred_idx:] = True
+        return predict_mask
+
+    def crop_scene_map(self, scene_map_manager: MapManager):
+        scene_map_manager.map_cropping(
+            crop_coordinates=scene_map_manager.to_map_points(self.map_crop_coords),
+            resolution=self.map_resolution
+        )
+        scene_map_manager.set_homography(matrix=self.map_homography)
+
+    def add_instance_identifiers(self, data_dict: Dict, idx: int):
+        data_dict['frame'] = self.h5_dataset['frame'][idx].astype(np.int64)
+        data_dict['scene'] = self.h5_dataset['scene'].asstr()[idx]
+        data_dict['video'] = self.h5_dataset['video'].asstr()[idx]
+        data_dict['seq'] = f"{data_dict['scene']}_{data_dict['video']}"
+
+    def add_occlusion_objects(self, data_dict: Dict, idx: int):
+        data_dict['ego'] = torch.from_numpy(self.h5_dataset['ego'][idx]).view(1, 2)
+        data_dict['occluder'] = torch.from_numpy(self.h5_dataset['occluder'][idx])
+
+    def add_scene_map_transform_parameters(self, data_dict: Dict, idx: int):
+        data_dict['theta'] = float(self.h5_dataset['theta'][idx])
+        data_dict['center_point'] = torch.from_numpy(self.h5_dataset['center_point'][idx])
+
+    def add_trajectory_data(self, data_dict):
+        agent_grid = self.agent_grid(ids=data_dict['identities'])
+        timestep_grid = self.timestep_grid(ids=data_dict['identities'])
+        last_obs_indices = last_observed_indices(obs_mask=data_dict['observation_mask'].to(torch.int16))
+        pred_mask = self.predict_mask(last_obs_indices=last_obs_indices)
+
+        data_dict['obs_identity_sequence'] = agent_grid[data_dict['observation_mask'], ...]
+        data_dict['obs_timestep_sequence'] = timestep_grid[data_dict['observation_mask'], ...]
+        data_dict['obs_position_sequence'] = data_dict['trajectories'][data_dict['observation_mask'], ...]
+        data_dict['obs_velocity_sequence'] = data_dict['observed_velocities'][data_dict['observation_mask'], ...]
+
+        data_dict['last_obs_positions'] = last_observed_positions(
+            trajs=data_dict['trajectories'], last_obs_indices=last_obs_indices
+        )
+        data_dict['last_obs_timesteps'] = self.last_observed_timesteps(
+            last_obs_indices=last_obs_indices
+        )
+
+        data_dict['pred_identity_sequence'] = agent_grid.T[pred_mask.T, ...]
+        data_dict['pred_position_sequence'] = data_dict['trajectories'].transpose(0, 1)[pred_mask.T, ...]
+        data_dict['pred_velocity_sequence'] = data_dict['velocities'].transpose(0, 1)[pred_mask.T, ...]
+        data_dict['pred_timestep_sequence'] = timestep_grid.T[pred_mask.T, ...]
+
+    def add_occlusion_map_data(self, data_dict: Dict, idx: int):
+        retrieved_bytes = self.h5_dataset['occlusion_map'][idx]
+        retrieved_bytes = struct.unpack(self.struct_format, retrieved_bytes)
+        retrieved_bytes = [f'{num:08b}' for num in retrieved_bytes]
+        retrieved_bytes = "".join(retrieved_bytes)
+        processed_occl_map = torch.BoolTensor(
+            [int(num) for num in retrieved_bytes]
+        ).reshape(self.map_resolution, self.map_resolution)
+        data_dict['occlusion_map'] = processed_occl_map
+
+        scaling = self.traj_scale * self.coord_conv_table.loc[data_dict['scene'], data_dict['video']]['m/px']
+        if torch.any(torch.isnan(data_dict['ego'])):
+            dist_transformed_occlusion_map = torch.zeros([self.map_resolution, self.map_resolution])
+            probability_map = torch.zeros([self.map_resolution, self.map_resolution])
+            nlog_probability_map = torch.zeros([self.map_resolution, self.map_resolution])
+        else:
+            dist_transformed_occlusion_map = compute_distance_transformed_map(
+                occlusion_map=processed_occl_map,
+                scaling=scaling
+            )
+            probability_map = compute_probability_map(dt_map=dist_transformed_occlusion_map)
+            nlog_probability_map = compute_nlog_probability_map(dt_map=dist_transformed_occlusion_map)
+
+        data_dict['dist_transformed_occlusion_map'] = dist_transformed_occlusion_map
+        data_dict['probability_occlusion_map'] = probability_map
+        data_dict['nlog_probability_occlusion_map'] = nlog_probability_map
+
+    def get_scene_map_manager(self, image_path: os.PathLike) -> MapManager:
+        scene_map = MAP_DICT[self.with_rgb_map](image_path=image_path)
+        homography = HomographyMatrix(matrix=torch.eye(3))
+        return MapManager(map_object=scene_map, homography=homography)
+
+    def add_scene_map_data(self, data_dict: Dict):
+        # loading the scene map
+        image_path = os.path.join(self.padded_images_path, f"{data_dict['seq']}_padded_img.jpg")
+        scene_map_mgr = self.get_scene_map_manager(image_path=image_path)
+        scene_map_mgr.homography_translation(Tensor([self.padding_px, self.padding_px]))
+        scene_map_mgr.rotate_around_center(theta=data_dict['theta'])
+        scene_map_mgr.set_homography(torch.eye(3))
+        scene_map_mgr.homography_translation(data_dict['center_point'])
+        scene_map_mgr.homography_scaling(
+            1 / (self.traj_scale * self.coord_conv_table.loc[data_dict['scene'], data_dict['video']]['m/px'])
+        )
+        self.crop_scene_map(scene_map_manager=scene_map_mgr)
+
+        data_dict['scene_map'] = scene_map_mgr.get_map()
+
+    def __len__(self):
+        return self.lookup_indices.shape[0]
+
+    def __getitem__(self, idx: int) -> Dict:
+        idx_start, idx_end = self.lookup_indices[idx]
+
+        if self.h5_dataset is None:
+            self.h5_dataset = h5py.File(self.hdf5_file, 'r')
+
+        data_dict = dict()
+
+        self.add_instance_identifiers(data_dict=data_dict, idx=idx)
+        self.add_scene_map_transform_parameters(data_dict=data_dict, idx=idx)
+        if self.occlusion_process == 'occlusion_simulation':
+            self.add_occlusion_objects(data_dict=data_dict, idx=idx)
+
+        for dset_name in self.lookup_datasets:
+            data_dict[dset_name] = torch.from_numpy(self.h5_dataset[dset_name][idx_start:idx_end])
+        data_dict['identities'] = data_dict['identities'].to(torch.int64)
+
+        self.add_trajectory_data(data_dict=data_dict)
+        if self.occlusion_process == 'occlusion_simulation':
+            self.add_occlusion_map_data(data_dict=data_dict, idx=idx)
+        # self.add_scene_map_data(data_dict=data_dict)
+
+        data_dict['timesteps'] = self.timesteps
+        data_dict['scene_orig'] = torch.zeros([2])
+        data_dict['map_homography'] = self.map_homography
+
+        if self.impute:
+            assert 'true_trajectories' in data_dict.keys()
+            data_dict['imputation_mask'] = data_dict['true_observation_mask'][data_dict['observation_mask']]
+
+        # Quick Fix
+        if self.quick_fix:
+            data_dict = self.apply_quick_fix(data_dict)
+
+        return data_dict
+
+    def apply_quick_fix(self, data_dict: Dict):
+        scene, video = data_dict['seq'].split('_')
+        px_by_m = self.coord_conv_table.loc[scene, video]['px/m']
+
+        data_dict['dist_transformed_occlusion_map'] *= px_by_m * self.map_side / self.map_resolution
+
+        # clipped_map = -torch.clamp(data_dict['dist_transformed_occlusion_map'], min=0.)
+        # data_dict['probability_occlusion_map'] = torch.nn.functional.softmax(
+        #     clipped_map.view(-1), dim=0
+        # ).view(clipped_map.shape)
+        # data_dict['nlog_probability_occlusion_map'] = -torch.nn.functional.log_softmax(
+        #     clipped_map.view(-1), dim=0
+        # ).view(clipped_map.shape)
+
+        data_dict['clipped_dist_transformed_occlusion_map'] = torch.clamp(
+            data_dict['dist_transformed_occlusion_map'], min=0.
+        )
+
+        del data_dict['probability_occlusion_map']
+        del data_dict['nlog_probability_occlusion_map']
+
+        return data_dict
+
+
 class MomentaryTorchDataGeneratorSDD(TorchDataGeneratorSDD):
 
     def __init__(self, parser: Config, log: Optional[TextIOWrapper] = None, split: str = 'train',
@@ -860,7 +1175,8 @@ class HDF5DatasetSDD(PresavedDatasetSDD):
 dataset_dict = {
         'hdf5': HDF5DatasetSDD,
         'pickle': PickleDatasetSDD,
-        'torch_preprocess': TorchDataGeneratorSDD
+        'torch_preprocess': TorchDataGeneratorSDD,
+        'presaved': HDF5PresavedDatasetSDD
     }
 
 
