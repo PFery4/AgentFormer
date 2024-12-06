@@ -30,7 +30,6 @@ from data.map import \
     compute_occlusion_map, compute_distance_transformed_map, compute_probability_map, compute_nlog_probability_map, \
     HomographyMatrix, MapManager, MAP_DICT
 from utils.config import Config, REPO_ROOT
-from utils.utils import print_log, get_timestring
 
 from typing import Dict, Optional
 Tensor = torch.Tensor
@@ -531,7 +530,7 @@ class HDF5PresavedDatasetSDD(Dataset):
     coord_conv_dir = os.path.join(REPO_ROOT, 'datasets', 'SDD', 'coordinates_conversion.txt')
     coord_conv_table = pd.read_csv(coord_conv_dir, sep=';', index_col=('scene', 'video'))
 
-    def __init__(self, parser: Config, log: Optional[TextIOWrapper] = None, split: str = 'train'):
+    def __init__(self, parser: Config, split: str = 'train'):
 
         # TODO: REMOVE QUICK FIX, FIX DIRECTLY PLEASE
         self.quick_fix = parser.get('quick_fix', False)   # again, the quick fix should be result upstream, in the TorchDatasetGenerator class.
@@ -542,8 +541,7 @@ class HDF5PresavedDatasetSDD(Dataset):
         assert parser.dataset == 'sdd', f"error: wrong dataset name: {parser.dataset} (should be \"sdd\")"
         assert parser.occlusion_process in ['fully_observed', 'occlusion_simulation']
 
-        prnt_str = "\n-------------------------- loading %s data --------------------------" % split
-        print_log(prnt_str, log=log) if log is not None else print(prnt_str)
+        print("\n-------------------------- loading %s data --------------------------" % split)
 
         # occlusion process specific parameters
         self.occlusion_process = parser.get('occlusion_process', 'fully_observed')
@@ -582,8 +580,7 @@ class HDF5PresavedDatasetSDD(Dataset):
         self.dataset_dir = os.path.join(self.presaved_datasets_dir, dataset_dir_name, self.split)
 
         assert os.path.exists(self.dataset_dir)
-        prnt_str = f"Dataset directory is:\n{self.dataset_dir}"
-        print_log(prnt_str, log=log) if log is not None else print(prnt_str)
+        print(f"Dataset directory is:\n{self.dataset_dir}")
 
         ################################################################################################################
         self.hdf5_file = os.path.join(self.dataset_dir, 'dataset_v2.h5')    # TODO: maybe don't hard set filename
@@ -647,19 +644,18 @@ class HDF5PresavedDatasetSDD(Dataset):
             keep_instance_names = [self.instance_names[i] for i in keep_instances]
             keep_instance_nums = [self.instance_nums[i] for i in keep_instances]
 
-            prnt_str = f"Val set size too large! --> {len(self.instance_names)} " \
-                       f"(validating after every {parser.validation_freq} batch).\n" \
-                       f"Reducing val set size to {len(keep_instances)}."
-            print_log(prnt_str, log=log) if log is not None else print(prnt_str)
+            print(
+                f"Val set size too large! --> {len(self.instance_names)} "
+                f"(validating after every {parser.validation_freq} batch).\n"
+                f"Reducing val set size to {len(keep_instances)}."
+            )
             self.instance_names = keep_instance_names
             self.instance_nums = keep_instance_nums
             assert len(self.instance_names) == required_val_set_size
 
         assert self.__len__() != 0
-        prnt_str = f'total number of samples: {self.__len__()}'
-        print_log(prnt_str, log=log) if log is not None else print(prnt_str)
-        prnt_str = f'------------------------------ done --------------------------------\n'
-        print_log(prnt_str, log=log) if log is not None else print(prnt_str)
+        print(f'total number of samples: {self.__len__()}')
+        print(f'------------------------------ done --------------------------------\n')
 
     def last_observed_timesteps(self, last_obs_indices: Tensor) -> Tensor:
         # last_obs_indices [N]
@@ -836,9 +832,9 @@ class HDF5PresavedDatasetSDD(Dataset):
 
 class MomentaryTorchDataGeneratorSDD(TorchDataGeneratorSDD):
 
-    def __init__(self, parser: Config, log: Optional[TextIOWrapper] = None, split: str = 'train',
+    def __init__(self, parser: Config, split: str = 'train',
                  momentary_t_obs: int = 2):
-        super().__init__(parser=parser, log=log, split=split)
+        super().__init__(parser=parser, split=split)
 
         assert 1 < momentary_t_obs < self.T_obs
         assert self.occlusion_process == 'fully_observed'
@@ -862,7 +858,7 @@ class PresavedDatasetSDD(Dataset):
     coord_conv_dir = os.path.join(REPO_ROOT, 'datasets', 'SDD', 'coordinates_conversion.txt')
     coord_conv_table = pd.read_csv(coord_conv_dir, sep=';', index_col=('scene', 'video'))
 
-    def __init__(self, parser: Config, log: Optional[TextIOWrapper] = None, split: str = 'train'):
+    def __init__(self, parser: Config, split: str = 'train'):
 
         self.quick_fix = parser.get('quick_fix', False)   # again, the quick fix should be result upstream, in the TorchDatasetGenerator class.
 
@@ -872,8 +868,7 @@ class PresavedDatasetSDD(Dataset):
         assert parser.dataset == 'sdd', f"error: wrong dataset name: {parser.dataset} (should be \"sdd\")"
         assert parser.occlusion_process in ['fully_observed', 'occlusion_simulation']
 
-        prnt_str = "\n-------------------------- loading %s data --------------------------" % split
-        print_log(prnt_str, log=log) if log is not None else print(prnt_str)
+        print("\n-------------------------- loading %s data --------------------------" % split)
 
         # occlusion process specific parameters
         self.occlusion_process = parser.get('occlusion_process', 'fully_observed')
@@ -900,12 +895,11 @@ class PresavedDatasetSDD(Dataset):
         # dataset identification
         self.dataset_name = None
         self.dataset_dir = None
-        self.set_dataset_name_and_dir(log=log)
+        self.set_dataset_name_and_dir()
         assert os.path.exists(self.dataset_dir)
-        prnt_str = f"Dataset directory is:\n{self.dataset_dir}"
-        print_log(prnt_str, log=log) if log is not None else print(prnt_str)
+        print(f"Dataset directory is:\n{self.dataset_dir}")
 
-    def set_dataset_name_and_dir(self, log: Optional[TextIOWrapper] = None):
+    def set_dataset_name_and_dir(self):
         try_name = self.occlusion_process
         if self.impute:
             try_name += '_imputed'
@@ -916,8 +910,7 @@ class PresavedDatasetSDD(Dataset):
             self.dataset_name = try_name
             self.dataset_dir = try_dir
         else:
-            prnt_str = "Couldn't find full dataset path, trying with tiny dataset instead..."
-            print_log(prnt_str, log=log) if log is not None else print(prnt_str)
+            print("Couldn't find full dataset path, trying with tiny dataset instead...")
             try_name += '_tiny'
             self.dataset_name = try_name
             self.dataset_dir = os.path.join(self.presaved_datasets_dir, self.dataset_name, self.split)
@@ -954,8 +947,8 @@ class PresavedDatasetSDD(Dataset):
 
 class PickleDatasetSDD(PresavedDatasetSDD):
 
-    def __init__(self, parser: Config, log: Optional[TextIOWrapper] = None, split: str = 'train'):
-        super().__init__(parser=parser, log=log, split=split)
+    def __init__(self, parser: Config, split: str = 'train'):
+        super().__init__(parser=parser, split=split)
 
         self.pickle_files = sorted(glob.glob1(self.dataset_dir, "*.pickle"))
 
@@ -1001,18 +994,17 @@ class PickleDatasetSDD(PresavedDatasetSDD):
 
             keep_pickle_files = [self.pickle_files[i] for i in keep_instances]
 
-            prnt_str = f"Val set size too large! --> {len(self.pickle_files)} " \
-                       f"(validating after every {parser.validation_freq} batch).\n" \
-                       f"Reducing val set size to {len(keep_pickle_files)}."
-            print_log(prnt_str, log=log) if log is not None else print(prnt_str)
+            print(
+                f"Val set size too large! --> {len(self.pickle_files)} "
+                f"(validating after every {parser.validation_freq} batch).\n"
+                f"Reducing val set size to {len(keep_pickle_files)}."
+            )
             self.pickle_files = keep_pickle_files
             assert len(self.pickle_files) == required_val_set_size
 
         assert self.__len__() != 0
-        prnt_str = f'total number of samples: {self.__len__()}'
-        print_log(prnt_str, log=log) if log is not None else print(prnt_str)
-        prnt_str = f'------------------------------ done --------------------------------\n'
-        print_log(prnt_str, log=log) if log is not None else print(prnt_str)
+        print(f'total number of samples: {self.__len__()}')
+        print(f'------------------------------ done --------------------------------\n')
 
     def __len__(self):
         return len(self.pickle_files)
@@ -1043,8 +1035,8 @@ class PickleDatasetSDD(PresavedDatasetSDD):
 
 class HDF5DatasetSDD(PresavedDatasetSDD):
 
-    def __init__(self, parser: Config, log: Optional[TextIOWrapper] = None, split: str = 'train'):
-        super().__init__(parser=parser, log=log, split=split)
+    def __init__(self, parser: Config, split: str = 'train'):
+        super().__init__(parser=parser, split=split)
 
         self.hdf5_file = os.path.join(self.dataset_dir, 'dataset.h5')
         assert os.path.exists(self.hdf5_file)
@@ -1104,10 +1096,11 @@ class HDF5DatasetSDD(PresavedDatasetSDD):
             keep_instance_names = [self.instance_names[i] for i in keep_instances]
             keep_instance_nums = [self.instance_nums[i] for i in keep_instances]
 
-            prnt_str = f"Val set size too large! --> {len(self.instance_names)} " \
-                       f"(validating after every {parser.validation_freq} batch).\n" \
-                       f"Reducing val set size to {len(keep_instances)}."
-            print_log(prnt_str, log=log) if log is not None else print(prnt_str)
+            print(
+                f"Val set size too large! --> {len(self.instance_names)} "
+                f"(validating after every {parser.validation_freq} batch).\n"
+                f"Reducing val set size to {len(keep_instances)}."
+            )
             self.instance_names = keep_instance_names
             self.instance_nums = keep_instance_nums
             assert len(self.instance_names) == required_val_set_size
@@ -1115,10 +1108,8 @@ class HDF5DatasetSDD(PresavedDatasetSDD):
         assert len(self.instance_names) == len(self.instance_nums)
 
         assert self.__len__() != 0
-        prnt_str = f'total number of samples: {self.__len__()}'
-        print_log(prnt_str, log=log) if log is not None else print(prnt_str)
-        prnt_str = f'------------------------------ done --------------------------------\n'
-        print_log(prnt_str, log=log) if log is not None else print(prnt_str)
+        print(f'total number of samples: {self.__len__()}')
+        print(f'------------------------------ done --------------------------------\n')
 
     def __len__(self):
         return len(self.instance_names)
@@ -1206,7 +1197,7 @@ if __name__ == '__main__':
 
     cfg = Config(config_str)
     prepare_seed(42)
-    torch_dataset = dataset_dict[dataset_class](parser=cfg, log=None, split=split)
+    torch_dataset = dataset_dict[dataset_class](parser=cfg, split=split)
 
     n_row, n_col = 4, 6
     fig, ax = plt.subplots(n_row, n_col)
