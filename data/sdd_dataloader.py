@@ -69,6 +69,7 @@ class TorchDataGeneratorSDD(Dataset):
         self.map_resolution = int(parser.global_map_resolution)         # [px]
         self.map_crop_coords = self.get_map_crop_coordinates()
         self.map_homography = self.get_map_homography()
+        self.quick_fix = bool(parser.quick_fix)        # TODO: REMOVE QUICK FIX, FIX DIRECTLY PLEASE
         self.impute = bool(parser.impute)
         if self.impute:
             assert self.occlusion_process != 'fully_observed'
@@ -387,6 +388,11 @@ class TorchDataGeneratorSDD(Dataset):
             m_by_px=m_by_px
         )
 
+    def fix_distance_transformed_map_scaling(self, process_dict: Dict, px_by_m: float) -> None:
+        # We performed the wrong px/m coordinate conversion when computing the distance transformed map.
+        # This function applies a fix, ensuring proper rescaling of the distance transformed map.
+        process_dict['dist_transformed_occlusion_map'] *= px_by_m * self.map_side / self.map_resolution
+
     def __getitem__(self, idx: int) -> Dict:
         # look up the row in the occlusion_table
         occlusion_case = self.occlusion_table.iloc[idx]
@@ -418,6 +424,7 @@ class TorchDataGeneratorSDD(Dataset):
 
         # extract the metric / pixel space coordinate conversion factors
         m_by_px = self.coord_conv.loc[scene, video]['m/px']
+        px_by_m = self.coord_conv.loc[scene, video]['px/m']
 
         # prepare for random rotation by choosing a rotation angle and rotating the map
         theta_rot = np.random.rand() * 360 * self.rand_rot_scene
@@ -434,6 +441,12 @@ class TorchDataGeneratorSDD(Dataset):
             m_by_px=m_by_px,
             occlusion_case=occlusion_case
         )
+
+        if self.quick_fix:
+            self.fix_distance_transformed_map_scaling(
+                process_dict=process_dict,
+                px_by_m=px_by_m
+            )
 
         # removing agent surplus
         ids = ids[process_dict['keep_agent_mask']]
