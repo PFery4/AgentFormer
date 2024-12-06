@@ -1,13 +1,61 @@
 import cv2
 import numpy as np
+from matplotlib.path import Path
 import os
+from scipy.ndimage import distance_transform_edt
 import torch
+import torch.nn.functional as fctl
 import torchvision.transforms.functional
 from PIL import Image
 
-from typing import Optional
+from typing import Callable, Optional
 Tensor = torch.Tensor
+softmax = fctl.softmax
+log_softmax = fctl.log_softmax
 Size = torch.Size
+
+
+def compute_occlusion_map(
+        map_dimensions: Size,                       # [H, W]
+        visibility_polygon_coordinates: Tensor      # [*, 2]
+) -> Tensor:                                        # [H, W]
+    occ_y = torch.arange(map_dimensions[0])
+    occ_x = torch.arange(map_dimensions[1])
+    xy = torch.dstack((torch.meshgrid(occ_x, occ_y))).reshape((-1, 2))
+    mpath = Path(visibility_polygon_coordinates)
+    return torch.from_numpy(mpath.contains_points(xy).reshape(map_dimensions)).to(torch.bool).T
+
+
+def compute_distance_transformed_map(
+        occlusion_map: Tensor,      # [H, W]
+        scaling: float = 1.0
+) -> Tensor:                        # [H, W]
+    return (torch.where(
+        ~occlusion_map,
+        torch.from_numpy(-distance_transform_edt(~occlusion_map)),
+        torch.from_numpy(distance_transform_edt(occlusion_map))
+    ) * scaling).to(torch.float32)
+
+
+def compute_clipped_map(
+        map_tensor: Tensor      # [H, W]
+) -> Tensor:                    # [H, W]
+    return -torch.clamp(map_tensor, min=0.)
+
+
+def apply_function_over_whole_map(
+        map_tensor: Tensor,                     # [H, W]
+        function: Callable[[Tensor], Tensor]
+) -> Tensor:
+    return function(map_tensor.view(-1)).view(map_tensor.shape)
+
+
+def compute_probability_map(dt_map: Tensor) -> Tensor:
+    return apply_function_over_whole_map(dt_map, lambda x: softmax(compute_clipped_map(x), dim=0))
+
+
+def compute_nlog_probability_map(dt_map: Tensor) -> Tensor:
+    return apply_function_over_whole_map(dt_map, lambda x: -log_softmax(compute_clipped_map(x), dim=0))
 
 
 class TorchGeometricMap:
