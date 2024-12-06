@@ -13,9 +13,9 @@ from scipy.ndimage import distance_transform_edt
 import skgeom as sg
 import struct
 import torch
-from torchvision import transforms
 from tqdm import tqdm
 
+from data.trajectory_operations import last_observed_indices, last_observed_positions
 from data.map import \
     compute_distance_transformed_map, compute_probability_map, compute_nlog_probability_map, \
     HomographyMatrix, MapManager, MAP_DICT
@@ -65,6 +65,7 @@ class PresavedDataset(Dataset):
         self.map_side = parser.get('scene_side_length', 80.0)               # [m]
         self.map_resolution = parser.get('global_map_resolution', 800)      # [px]
         self.traj_scale = parser.traj_scale
+        self.with_rgb_map = bool(parser.with_rgb_map)
         self.map_crop_coords = torch.Tensor(
             [[-self.map_side, -self.map_side],
              [self.map_side, self.map_side]]
@@ -80,7 +81,6 @@ class PresavedDataset(Dataset):
         # scene map parameters
         self.padding_px = 2075
         self.padded_images_path = os.path.join(REPO_ROOT, 'datasets', 'SDD', f'padded_images_{self.padding_px}')
-        self.to_torch_image = transforms.ToTensor()
 
         # timesteps specific parameters
         self.T_obs = parser.past_frames
@@ -172,17 +172,6 @@ class PresavedDataset(Dataset):
         prnt_str = f'------------------------------ done --------------------------------\n'
         print_log(prnt_str, log=log) if log is not None else print(prnt_str)
 
-    @staticmethod
-    def last_observed_indices(obs_mask: Tensor) -> Tensor:
-        # obs_mask [N, T]
-        return obs_mask.shape[1] - torch.argmax(torch.flip(obs_mask, dims=[1]), dim=1) - 1  # [N]
-
-    @staticmethod
-    def last_observed_positions(trajs: Tensor, last_obs_indices: Tensor) -> Tensor:
-        # trajs [N, T, 2]
-        # last_obs_indices [N]
-        return trajs[torch.arange(trajs.shape[0]), last_obs_indices, :]  # [N, 2]
-
     def last_observed_timesteps(self, last_obs_indices: Tensor) -> Tensor:
         # last_obs_indices [N]
         return self.timesteps[last_obs_indices]  # [N]
@@ -226,7 +215,7 @@ class PresavedDataset(Dataset):
     def add_trajectory_data(self, data_dict):
         agent_grid = self.agent_grid(ids=data_dict['identities'])
         timestep_grid = self.timestep_grid(ids=data_dict['identities'])
-        last_obs_indices = self.last_observed_indices(obs_mask=data_dict['observation_mask'].to(torch.int16))
+        last_obs_indices = last_observed_indices(obs_mask=data_dict['observation_mask'].to(torch.int16))
         pred_mask = self.predict_mask(last_obs_indices=last_obs_indices)
 
         data_dict['obs_identity_sequence'] = agent_grid[data_dict['observation_mask'], ...]
@@ -234,7 +223,7 @@ class PresavedDataset(Dataset):
         data_dict['obs_position_sequence'] = data_dict['trajectories'][data_dict['observation_mask'], ...]
         data_dict['obs_velocity_sequence'] = data_dict['observed_velocities'][data_dict['observation_mask'], ...]
 
-        data_dict['last_obs_positions'] = self.last_observed_positions(
+        data_dict['last_obs_positions'] = last_observed_positions(
             trajs=data_dict['trajectories'], last_obs_indices=last_obs_indices
         )
         data_dict['last_obs_timesteps'] = self.last_observed_timesteps(
