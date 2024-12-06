@@ -19,7 +19,6 @@ from tqdm import tqdm
 from data.map import \
     compute_distance_transformed_map, compute_probability_map, compute_nlog_probability_map, \
     HomographyMatrix, MapManager, MAP_DICT
-    # TorchGeometricMap          # TODO: change to MapManager
 from data.sdd_dataloader import dataset_dict, TorchDataGeneratorSDD
 from utils.config import Config, REPO_ROOT
 from utils.sdd_visualize import visualize
@@ -295,21 +294,6 @@ class PresavedDataset(Dataset):
             1 / (self.traj_scale * self.coord_conv_table.loc[data_dict['scene'], data_dict['video']]['m/px'])
         )
         self.crop_scene_map(scene_map_manager=scene_map_mgr)
-
-        # image = cv2.imread(image_path)
-        # image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        # image = self.to_torch_image(image)
-        # scene_map = TorchGeometricMap(      # TODO: change to MapManager
-        #     map_image=image, homography=torch.eye(3)
-        # )
-        # scene_map.homography_translation(Tensor([self.padding_px, self.padding_px]))
-        # scene_map.rotate_around_center(theta=data_dict['theta'])
-        # scene_map.set_homography(torch.eye(3))
-        # center_point = data_dict['center_point']
-        # scaling = self.traj_scale * self.coord_conv_table.loc[data_dict['scene'], data_dict['video']]['m/px']
-        # scene_map.homography_translation(center_point)
-        # scene_map.homography_scaling(1 / scaling)
-        # self.crop_scene_map(scene_map=scene_map)
 
         data_dict['scene_map'] = scene_map_mgr.get_map()
 
