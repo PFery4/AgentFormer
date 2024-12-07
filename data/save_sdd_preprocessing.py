@@ -9,6 +9,8 @@ from data.sdd_dataloader import TorchDataGeneratorSDD, MomentaryTorchDataGenerat
 from utils.config import Config, REPO_ROOT
 from utils.utils import prepare_seed
 
+# TODO: remove this file once confirmed that the WIP_save_light_dataset.py file is working properly.
+
 """
 
 Due to the fact that the preprocessing pipeline of the SDD dataset is quite demanding,
