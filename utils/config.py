@@ -7,17 +7,29 @@ import pandas as pd
 
 from utils.utils import recreate_dirs
 
+from typing import Union
+
 REPO_ROOT = os.path.abspath(os.path.join(os.path.abspath(__file__), "..", ".."))
+
+
+def search_for_config_yaml_file(cfg_id: str) -> str:
+    search_path = os.path.join(REPO_ROOT, 'cfg/**/%s.yml' % cfg_id)
+    found_files = glob.glob(search_path, recursive=True)
+    assert len(found_files) == 1, "Couldn't find the configuration file."
+    return os.path.abspath(found_files[0])
 
 
 class Config:
 
-    def __init__(self, cfg_id, tmp=False, create_dirs=False):
-        self.id = cfg_id
-        cfg_path = os.path.join(REPO_ROOT, 'cfg/**/%s.yml' % cfg_id)
-        files = glob.glob(cfg_path, recursive=True)
-        assert(len(files) == 1)
-        self.yml_dict = EasyDict(yaml.safe_load(open(files[0], 'r')))
+    def __init__(self, cfg_id: Union[str, os.PathLike], tmp: bool = False, create_dirs: bool = False):
+        if os.path.isfile(cfg_id) and os.path.exists(cfg_id):
+            cfg_path = os.path.abspath(cfg_id)
+        else:
+            cfg_path = search_for_config_yaml_file(cfg_id)
+        assert os.path.exists(cfg_path)
+
+        self.id = os.path.splitext(os.path.basename(cfg_path))[0]
+        self.yml_dict = EasyDict(yaml.safe_load(open(cfg_path, 'r')))
 
         # data dir
         self.results_root_dir = os.path.join(REPO_ROOT, self.yml_dict['results_root_dir'])
@@ -25,7 +37,7 @@ class Config:
         cfg_root_dir = '/tmp/agentformer' if tmp else self.results_root_dir
         self.cfg_root_dir = os.path.expanduser(cfg_root_dir)
 
-        self.cfg_dir = os.path.join(self.cfg_root_dir, cfg_id)
+        self.cfg_dir = os.path.join(self.cfg_root_dir, self.id)
         self.model_dir = os.path.join(self.cfg_dir, 'models')
         self.result_dir = os.path.join(self.cfg_dir, 'results')
         self.log_dir = os.path.join(self.cfg_dir, 'log')
