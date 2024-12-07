@@ -227,8 +227,9 @@ def write_instance_to_hdf5_dataset(
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', default=None)
-    parser.add_argument('--split', default='train')
+    parser.add_argument('--cfg', type=str, required=True, default=None,
+                        help="config file (specified as either name or path")
+    parser.add_argument('--split', type=str, default='train')
     parser.add_argument('--start_idx', type=int, default=0)
     parser.add_argument('--end_idx', type=int, default=-10)
     parser.add_argument('--save_path', type=os.path.abspath, default=None)
@@ -265,7 +266,7 @@ if __name__ == '__main__':
     prepare_seed(cfg.seed)
 
     print(f"Instantiating Dataset object:\n")
-    generator = TorchDataGeneratorSDD(parser=cfg, log=None, split=args.split)
+    generator = TorchDataGeneratorSDD(parser=cfg, split=args.split)
 
     if args.end_idx < 0:
         print(f"Setting end index to the length of the Dataset: {len(generator)}\n")
