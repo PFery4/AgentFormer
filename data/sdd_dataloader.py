@@ -42,6 +42,88 @@ import src.occlusion_simulation.polygon_generation as poly_gen
 import src.data.config as sdd_conf
 
 
+class BaseDataset:
+
+    padding_px = 2075
+    padded_images_path = os.path.join(REPO_ROOT, 'datasets', 'SDD', f'padded_images_{padding_px}')
+
+    def __init__(self, parser: Config, split: str = 'train'):
+        self.split = split
+
+        self.occlusion_process = str(parser.occlusion_process)      # 'fully_observed' | 'occlusion_simulation'
+        self.impute = bool(parser.impute)
+        if self.impute:
+            assert self.occlusion_process != 'fully_observed'
+
+        # timesteps specific parameters
+        self.T_obs = int(parser.past_frames)
+        self.T_pred = int(parser.future_frames)
+        self.T_total = int(self.T_obs + self.T_pred)
+        self.timesteps = torch.arange(-self.T_obs, self.T_pred) + 1
+
+        # map specific parameters
+        self.map_side = float(parser.scene_side_length)             # [m]
+        self.map_resolution = int(parser.global_map_resolution)     # [px]
+        self.traj_scale = float(parser.traj_scale)
+        self.with_rgb_map = bool(parser.with_rgb_map)
+        assert self.map_resolution % 8 == 0
+
+        self.map_crop_coords = self.get_map_crop_coordinates()
+        self.map_homography = self.get_map_homography()
+
+        # TODO: REMOVE QUICK FIX, FIX DIRECTLY PLEASE
+        self.quick_fix = bool(parser.get('quick_fix', False))
+
+    def get_map_crop_coordinates(self) -> Tensor:       # [2, 2]
+        return Tensor(
+            [[-self.map_side, -self.map_side],
+             [self.map_side, self.map_side]]
+        ) * self.traj_scale / 2
+
+    def get_map_homography(self) -> Tensor:             # [3, 3]
+        return Tensor(
+            [[self.map_resolution / self.map_side, 0., self.map_resolution / 2],
+             [0., self.map_resolution / self.map_side, self.map_resolution / 2],
+             [0., 0., 1.]]
+        )
+
+    def agent_grid(self, ids: Tensor    # [N]
+                   ) -> Tensor:         # [N, T]
+        return torch.hstack([ids.unsqueeze(1)] * self.T_total)
+
+    def timestep_grid(self, ids: Tensor     # [N]
+                      ) -> Tensor:          # [N, T]
+        return torch.vstack([self.timesteps] * ids.shape[0])
+
+    def last_observed_timesteps(
+            self,
+            last_obs_indices: Tensor    # [N]
+    ) -> Tensor:                        # [N]
+        return self.timesteps[last_obs_indices]
+
+    def predict_mask(
+            self,
+            last_obs_indices: Tensor    # [N]
+    ) -> Tensor:                        # [N, T]
+        predict_mask = torch.full([last_obs_indices.shape[0], self.T_total], False)
+        pred_indices = last_obs_indices + 1  # [N]
+        for i, pred_idx in enumerate(pred_indices):
+            predict_mask[i, pred_idx:] = True
+        return predict_mask
+
+    def get_scene_map_manager(self, image_path: os.PathLike) -> MapManager:
+        scene_map = MAP_DICT[self.with_rgb_map](image_path=image_path)
+        homography = HomographyMatrix(matrix=torch.eye(3))
+        return MapManager(map_object=scene_map, homography=homography)
+
+    def crop_scene_map(self, scene_map_manager: MapManager):
+        scene_map_manager.map_cropping(
+            crop_coordinates=scene_map_manager.to_map_points(self.map_crop_coords),
+            resolution=self.map_resolution
+        )
+        scene_map_manager.set_homography(matrix=self.map_homography)
+
+
 class TorchDataGeneratorSDD(Dataset):
     def __init__(self, parser: Config, split: str = 'train'):
         assert split in ['train', 'val', 'test']
@@ -836,7 +918,7 @@ class HDF5PresavedDatasetSDD(Dataset):
             data_dict['imputation_mask'] = data_dict['true_observation_mask'][data_dict['observation_mask']]
 
         # Quick Fix
-        if self.quick_fix:
+        if self.quick_fix and self.occlusion_process == 'occlusion_simulation':
             data_dict = self.apply_quick_fix(data_dict)
 
         return data_dict
