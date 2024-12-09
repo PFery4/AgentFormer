@@ -168,19 +168,6 @@ class TorchDataGeneratorSDD(BaseDataset, Dataset):
         self.frame_skip = int(dataset.orig_fps // dataset.fps)
         self.lookup_time_window = np.arange(0, self.T_total) * self.frame_skip
 
-    def get_map_crop_coordinates(self) -> Tensor:       # [2, 2]
-        return Tensor(
-            [[-self.map_side, -self.map_side],
-             [self.map_side, self.map_side]]
-        ) * self.traj_scale / 2
-
-    def get_map_homography(self) -> Tensor:             # [3, 3]
-        return Tensor(
-            [[self.map_resolution / self.map_side, 0., self.map_resolution / 2],
-             [0., self.map_resolution / self.map_side, self.map_resolution / 2],
-             [0., 0., 1.]]
-        )
-
     def make_padded_scene_images(self):
         os.makedirs(self.padded_images_path, exist_ok=True)
         for scene in os.scandir(self.image_path):
@@ -200,42 +187,8 @@ class TorchDataGeneratorSDD(BaseDataset, Dataset):
                     print(f"Saving padded image of {scene.name} {video.name}, with padding {self.padding_px}, under:\n"
                           f"{save_padded_img_path}")
 
-    def last_observed_timesteps(
-            self,
-            last_obs_indices: Tensor    # [N]
-    ) -> Tensor:                        # [N]
-        return self.timesteps[last_obs_indices]
-
-    def predict_mask(
-            self,
-            last_obs_indices: Tensor    # [N]
-    ) -> Tensor:                        # [N, T]
-        predict_mask = torch.full([last_obs_indices.shape[0], self.T_total], False)
-        pred_indices = last_obs_indices + 1  # [N]
-        for i, pred_idx in enumerate(pred_indices):
-            predict_mask[i, pred_idx:] = True
-        return predict_mask
-
-    def agent_grid(self, ids: Tensor    # [N]
-                   ) -> Tensor:         # [N, T]
-        return torch.hstack([ids.unsqueeze(1)] * self.T_total)
-
-    def timestep_grid(self, ids: Tensor     # [N]
-                      ) -> Tensor:          # [N, T]
-        return torch.vstack([self.timesteps] * ids.shape[0])
-
     def __len__(self) -> int:
         return len(self.occlusion_table)
-
-    def get_scene_map_manager(self, image_path: os.PathLike) -> MapManager:
-        scene_map = MAP_DICT[self.with_rgb_map](image_path=image_path)
-        homography = HomographyMatrix(matrix=torch.eye(3))
-        return MapManager(map_object=scene_map, homography=homography)
-
-    def crop_scene_map(self, scene_map_manager: MapManager):
-        cropping_coordinates = scene_map_manager.to_map_points(self.map_crop_coords)
-        scene_map_manager.map_cropping(crop_coordinates=cropping_coordinates, resolution=self.map_resolution)
-        scene_map_manager.set_homography(matrix=self.map_homography)
 
     def remove_agents_far_from(
             self,
@@ -713,32 +666,6 @@ class HDF5PresavedDatasetSDD(BaseDataset, Dataset):
         print(f'total number of samples: {self.__len__()}')
         print(f'------------------------------ done --------------------------------\n')
 
-    def last_observed_timesteps(self, last_obs_indices: Tensor) -> Tensor:
-        # last_obs_indices [N]
-        return self.timesteps[last_obs_indices]  # [N]
-
-    def agent_grid(self, ids: Tensor) -> Tensor:
-        # ids [N]
-        return torch.hstack([ids.unsqueeze(1)] * self.T_total)  # [N, T]
-
-    def timestep_grid(self, ids: Tensor) -> Tensor:
-        return torch.vstack([self.timesteps] * ids.shape[0])  # [N, T]
-
-    def predict_mask(self, last_obs_indices: Tensor) -> Tensor:
-        # last_obs_indices [N]
-        predict_mask = torch.full([last_obs_indices.shape[0], self.T_total], False)  # [N, T]
-        pred_indices = last_obs_indices + 1  # [N]
-        for i, pred_idx in enumerate(pred_indices):
-            predict_mask[i, pred_idx:] = True
-        return predict_mask
-
-    def crop_scene_map(self, scene_map_manager: MapManager):
-        scene_map_manager.map_cropping(
-            crop_coordinates=scene_map_manager.to_map_points(self.map_crop_coords),
-            resolution=self.map_resolution
-        )
-        scene_map_manager.set_homography(matrix=self.map_homography)
-
     def add_instance_identifiers(self, data_dict: Dict, idx: int):
         data_dict['frame'] = self.h5_dataset['frame'][idx].astype(np.int64)
         data_dict['scene'] = self.h5_dataset['scene'].asstr()[idx]
@@ -809,11 +736,6 @@ class HDF5PresavedDatasetSDD(BaseDataset, Dataset):
         # TODO: remove
         # data_dict['probability_occlusion_map'] = probability_map
         # data_dict['nlog_probability_occlusion_map'] = nlog_probability_map
-
-    def get_scene_map_manager(self, image_path: os.PathLike) -> MapManager:
-        scene_map = MAP_DICT[self.with_rgb_map](image_path=image_path)
-        homography = HomographyMatrix(matrix=torch.eye(3))
-        return MapManager(map_object=scene_map, homography=homography)
 
     def add_scene_map_data(self, data_dict: Dict):
         # loading the scene map
