@@ -49,6 +49,8 @@ class BaseDataset:
 
     def __init__(self, parser: Config, split: str = 'train'):
         self.split = split
+        assert self.split in ['train', 'val', 'test']
+        assert parser.dataset == 'sdd', f"Error: wrong dataset name: {parser.dataset} (should be \"sdd\")"
 
         self.occlusion_process = str(parser.occlusion_process)      # 'fully_observed' | 'occlusion_simulation'
         self.impute = bool(parser.impute)
