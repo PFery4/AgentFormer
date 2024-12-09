@@ -44,6 +44,12 @@ import src.data.config as sdd_conf
 
 class BaseDataset:
 
+    # we are preparing reflect padded versions of the dataset, so that it becomes quicker to process the dataset.
+    # the reason why we need to produce reflect padded images is that we will need a full representation of the
+    # scene image (as the model requires a global map). With the known SDD pixel to meter ratios and a desired
+    # scene side length of <self.map_side> meters, the required padding is equal to the following value.
+    # (note that if you need to change the desired side length to a different value, then you will need to
+    # recompute the required padding)
     padding_px = 2075
     padded_images_path = os.path.join(REPO_ROOT, 'datasets', 'SDD', f'padded_images_{padding_px}')
 
@@ -127,12 +133,10 @@ class BaseDataset:
         scene_map_manager.set_homography(matrix=self.map_homography)
 
 
-class TorchDataGeneratorSDD(Dataset):
+class TorchDataGeneratorSDD(BaseDataset, Dataset):
     def __init__(self, parser: Config, split: str = 'train'):
-        assert split in ['train', 'val', 'test']
-        assert parser.dataset == 'sdd', f"Error: wrong dataset name: {parser.dataset} (should be \"sdd\")"
+        BaseDataset.__init__(self, parser=parser, split=split)
 
-        self.split = split
         self.sdd_config = sdd_conf.get_config(os.path.join(sdd_conf.REPO_ROOT, parser.sdd_config_file_name))
         dataset = StanfordDroneDatasetWithOcclusionSim(self.sdd_config, split=self.split)
 
@@ -146,22 +150,10 @@ class TorchDataGeneratorSDD(Dataset):
 
         self.rand_rot_scene = bool(parser.rand_rot_scene)
         self.max_train_agent = int(parser.max_train_agent)
-        self.traj_scale = float(parser.traj_scale)
-        self.occlusion_process = str(parser.occlusion_process)          # 'fully_observed' | 'occlusion_simulation'
-        self.with_rgb_map = bool(parser.with_rgb_map)
-        self.map_side = float(parser.scene_side_length)                 # [m]
         self.distance_threshold_occluded_target = self.map_side / 4     # [m]
-        self.map_resolution = int(parser.global_map_resolution)         # [px]
-        self.map_crop_coords = self.get_map_crop_coordinates()
-        self.map_homography = self.get_map_homography()
-        self.quick_fix = bool(parser.quick_fix)        # TODO: REMOVE QUICK FIX, FIX DIRECTLY PLEASE
 
         # TODO: remove
         # self.compute_probability_maps = False       # whether probability maps need to be derived from occlusion map
-
-        self.impute = bool(parser.impute)
-        if self.impute:
-            assert self.occlusion_process != 'fully_observed'
 
         strategies = {
             'fully_observed': self.handle_fully_observed_cases,
@@ -169,20 +161,10 @@ class TorchDataGeneratorSDD(Dataset):
         }
         self.trajectory_processing_strategy = strategies[self.occlusion_process]
 
-        # we are preparing reflect padded versions of the dataset, so that it becomes quicker to process the dataset.
-        # the reason why we need to produce reflect padded images is that we will need a full representation of the
-        # scene image (as the model requires a global map). With the known SDD pixel to meter ratios and a desired
-        # scene side length of <self.map_side> meters, the required padding is equal to the following value.
-        # (note that if you need to change the desired side length to a different value, then you will need to
-        # recompute the required padding)
-        self.padding_px = 2075
-        self.padded_images_path = os.path.join(REPO_ROOT, 'datasets', 'SDD', f'padded_images_{self.padding_px}')
         self.make_padded_scene_images()
 
-        self.T_obs = dataset.T_obs
-        self.T_pred = dataset.T_pred
-        self.T_total = self.T_obs + self.T_pred
-        self.timesteps = torch.arange(-dataset.T_obs, dataset.T_pred) + 1
+        assert self.T_obs == dataset.T_obs
+        assert self.T_pred == dataset.T_pred
         self.frame_skip = int(dataset.orig_fps // dataset.fps)
         self.lookup_time_window = np.arange(0, self.T_total) * self.frame_skip
 
