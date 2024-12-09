@@ -53,6 +53,7 @@ class BaseDataset:
         assert parser.dataset == 'sdd', f"Error: wrong dataset name: {parser.dataset} (should be \"sdd\")"
 
         self.occlusion_process = str(parser.occlusion_process)      # 'fully_observed' | 'occlusion_simulation'
+        assert self.occlusion_process in ['fully_observed', 'occlusion_simulation']
         self.impute = bool(parser.impute)
         if self.impute:
             assert self.occlusion_process != 'fully_observed'
@@ -631,7 +632,9 @@ class TorchDataGeneratorSDD(Dataset):
         return data_dict
 
 
-class HDF5PresavedDatasetSDD(Dataset):
+class HDF5PresavedDatasetSDD(BaseDataset, Dataset):
+
+    dataset_filename = 'dataset_v2.h5'
     presaved_datasets_dir = os.path.join(REPO_ROOT, 'datasets', 'SDD', 'pre_saved_datasets')
 
     # This is a "quick fix".
@@ -643,60 +646,19 @@ class HDF5PresavedDatasetSDD(Dataset):
     coord_conv_table = pd.read_csv(coord_conv_dir, sep=';', index_col=('scene', 'video'))
 
     def __init__(self, parser: Config, split: str = 'train'):
-
-        # TODO: REMOVE QUICK FIX, FIX DIRECTLY PLEASE
-        self.quick_fix = parser.get('quick_fix', False)   # again, the quick fix should be result upstream, in the TorchDatasetGenerator class.
-
-        self.split = split
-
-        assert split in ['train', 'val', 'test']
-        assert parser.dataset == 'sdd', f"error: wrong dataset name: {parser.dataset} (should be \"sdd\")"
-        assert parser.occlusion_process in ['fully_observed', 'occlusion_simulation']
-
+        BaseDataset.__init__(self, parser=parser, split=split)
         print("\n-------------------------- loading %s data --------------------------" % split)
 
-        # occlusion process specific parameters
-        self.occlusion_process = parser.get('occlusion_process', 'fully_observed')
-        self.impute = parser.get('impute', False)
-        assert not self.impute or self.occlusion_process != 'fully_observed'
-
-        # map specific parameters
-        self.map_side = parser.get('scene_side_length', 80.0)               # [m]
-        self.map_resolution = parser.get('global_map_resolution', 800)      # [px]
-        self.traj_scale = parser.traj_scale
-        self.with_rgb_map = bool(parser.with_rgb_map)
-        self.map_crop_coords = torch.Tensor(
-            [[-self.map_side, -self.map_side],
-             [self.map_side, self.map_side]]
-        ) * self.traj_scale / 2
-        self.map_homography = torch.Tensor(
-            [[self.map_resolution / self.map_side, 0., self.map_resolution / 2],
-             [0., self.map_resolution / self.map_side, self.map_resolution / 2],
-             [0., 0., 1.]]
-        )
+        # occlusion map extraction struct format
         self.struct_format = f'{int(self.map_resolution * self.map_resolution / 8)}B'
-        assert self.map_resolution % 8 == 0
-
-        # scene map parameters
-        self.padding_px = 2075
-        self.padded_images_path = os.path.join(REPO_ROOT, 'datasets', 'SDD', f'padded_images_{self.padding_px}')
-
-        # timesteps specific parameters
-        self.T_obs = parser.past_frames
-        self.T_pred = parser.future_frames
-        self.T_total = self.T_obs + self.T_pred
-        self.timesteps = torch.arange(-self.T_obs, self.T_pred) + 1
 
         # dataset identification
         dataset_dir_name = f'{self.occlusion_process}_imputed' if self.impute else self.occlusion_process
         self.dataset_dir = os.path.join(self.presaved_datasets_dir, dataset_dir_name, self.split)
-
+        self.hdf5_file = os.path.join(self.dataset_dir, self.dataset_filename)
         assert os.path.exists(self.dataset_dir)
-        print(f"Dataset directory is:\n{self.dataset_dir}")
-
-        ################################################################################################################
-        self.hdf5_file = os.path.join(self.dataset_dir, 'dataset_v2.h5')    # TODO: maybe don't hard set filename
         assert os.path.exists(self.hdf5_file)
+        print(f"Dataset directory is:\n{self.dataset_dir}")
 
         # For integrating the hdf5 dataset into the Pytorch class,
         # we follow the principles recommended by Piotr Januszewski:
