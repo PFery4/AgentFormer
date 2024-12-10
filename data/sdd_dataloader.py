@@ -1013,7 +1013,7 @@ class PickleDatasetSDD(PresavedDatasetSDD):
             data_dict['imputation_mask'] = data_dict['true_observation_mask'][data_dict['observation_mask']]
 
         # Quick Fix
-        if self.quick_fix:
+        if self.quick_fix and self.occlusion_process == 'occlusion_simulation':
             data_dict = self.apply_quick_fix(data_dict)
 
         return data_dict
