@@ -569,7 +569,7 @@ class TorchDataGeneratorSDD(BaseDataset, Dataset):
 
 class HDF5PresavedDatasetSDD(BaseDataset, Dataset):
 
-    dataset_filename = 'dataset_v2.h5'
+    dataset_filenames = {False: 'dataset_v2.h5', True: 'legacy_dataset.h5'}
     presaved_datasets_dir = os.path.join(REPO_ROOT, 'datasets', 'SDD', 'pre_saved_datasets')
 
     # This is a "quick fix".
@@ -580,7 +580,7 @@ class HDF5PresavedDatasetSDD(BaseDataset, Dataset):
     coord_conv_dir = os.path.join(REPO_ROOT, 'datasets', 'SDD', 'coordinates_conversion.txt')
     coord_conv_table = pd.read_csv(coord_conv_dir, sep=';', index_col=('scene', 'video'))
 
-    def __init__(self, parser: Config, split: str = 'train'):
+    def __init__(self, parser: Config, split: str = 'train', legacy_mode: bool = False):
         BaseDataset.__init__(self, parser=parser, split=split)
         print("\n-------------------------- loading %s data --------------------------" % split)
 
@@ -588,6 +588,7 @@ class HDF5PresavedDatasetSDD(BaseDataset, Dataset):
         self.struct_format = f'{int(self.map_resolution * self.map_resolution / 8)}B'
 
         # dataset identification
+        self.dataset_filename = self.dataset_filenames[legacy_mode]
         dataset_dir_name = f'{self.occlusion_process}_imputed' if self.impute else self.occlusion_process
         self.dataset_dir = os.path.join(self.presaved_datasets_dir, dataset_dir_name, self.split)
         self.hdf5_file = os.path.join(self.dataset_dir, self.dataset_filename)
@@ -606,6 +607,16 @@ class HDF5PresavedDatasetSDD(BaseDataset, Dataset):
                 if None in dset.maxshape:
                     self.lookup_datasets.append(dset_name)
             self.lookup_indices = torch.from_numpy(h5_file['lookup_indices'][()])
+
+        # flags for __getitem__ behaviour
+        self.with_map_transforms = True
+        self.with_occlusion_objects = True if self.occlusion_process == 'occlusion_simulation' else False
+        self.with_occlusion_map_data = True if self.occlusion_process == 'occlusion_simulation' else False
+
+        if legacy_mode:
+            self.with_map_transforms = False
+            self.with_occlusion_objects = False
+            # TODO: something with self.with_occlusion_map_data
 
         if False:       # handle difficult cases
         # if parser.get('difficult', False):
@@ -764,8 +775,9 @@ class HDF5PresavedDatasetSDD(BaseDataset, Dataset):
         data_dict = dict()
 
         self.add_instance_identifiers(data_dict=data_dict, idx=idx)
-        self.add_scene_map_transform_parameters(data_dict=data_dict, idx=idx)
-        if self.occlusion_process == 'occlusion_simulation':
+        if self.with_map_transforms:
+            self.add_scene_map_transform_parameters(data_dict=data_dict, idx=idx)
+        if self.with_occlusion_objects:
             self.add_occlusion_objects(data_dict=data_dict, idx=idx)
 
         for dset_name in self.lookup_datasets:
@@ -773,7 +785,7 @@ class HDF5PresavedDatasetSDD(BaseDataset, Dataset):
         data_dict['identities'] = data_dict['identities'].to(torch.int64)
 
         self.add_trajectory_data(data_dict=data_dict)
-        if self.occlusion_process == 'occlusion_simulation':
+        if self.with_occlusion_map_data:
             self.add_occlusion_map_data(data_dict=data_dict, idx=idx)
         # self.add_scene_map_data(data_dict=data_dict)
 
