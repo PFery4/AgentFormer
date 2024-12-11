@@ -547,6 +547,7 @@ class TorchDataGeneratorSDD(BaseDataset, Dataset):
             'map_homography': self.map_homography,
             'theta': theta_rot,
             'center_point': process_dict['center_point'],
+            'is_occluded': True if 'ego' in process_dict.keys() else False,
             'ego': process_dict.get('ego', torch.full([1, 2], float('nan'))),
             'occluder': process_dict.get('occluder', torch.full([2, 2], float('nan'))),
 
@@ -610,13 +611,13 @@ class HDF5PresavedDatasetSDD(BaseDataset, Dataset):
 
         # flags for __getitem__ behaviour
         self.with_map_transforms = True
+        self.with_occlusion_state = True if self.occlusion_process == 'occlusion_simulation' else False
         self.with_occlusion_objects = True if self.occlusion_process == 'occlusion_simulation' else False
         self.with_occlusion_map_data = True if self.occlusion_process == 'occlusion_simulation' else False
 
         if legacy_mode:
             self.with_map_transforms = False
             self.with_occlusion_objects = False
-            # TODO: something with self.with_occlusion_map_data
 
         if False:       # handle difficult cases
         # if parser.get('difficult', False):
@@ -683,6 +684,9 @@ class HDF5PresavedDatasetSDD(BaseDataset, Dataset):
         data_dict['video'] = self.h5_dataset['video'].asstr()[idx]
         data_dict['seq'] = f"{data_dict['scene']}_{data_dict['video']}"
 
+    def add_occlusion_state(self, data_dict: Dict, idx: int):
+        data_dict['is_occluded'] = bool(self.h5_dataset['is_occluded'][idx])
+
     def add_occlusion_objects(self, data_dict: Dict, idx: int):
         data_dict['ego'] = torch.from_numpy(self.h5_dataset['ego'][idx]).view(1, 2)
         data_dict['occluder'] = torch.from_numpy(self.h5_dataset['occluder'][idx])
@@ -725,7 +729,8 @@ class HDF5PresavedDatasetSDD(BaseDataset, Dataset):
         data_dict['occlusion_map'] = processed_occl_map
 
         scaling = self.traj_scale * self.coord_conv_table.loc[data_dict['scene'], data_dict['video']]['m/px']
-        if torch.any(torch.isnan(data_dict['ego'])):
+        # if torch.any(torch.isnan(data_dict['ego'])):
+        if not data_dict['is_occluded']:
             dist_transformed_occlusion_map = torch.zeros([self.map_resolution, self.map_resolution])
 
             # TODO: remove
@@ -777,6 +782,8 @@ class HDF5PresavedDatasetSDD(BaseDataset, Dataset):
         self.add_instance_identifiers(data_dict=data_dict, idx=idx)
         if self.with_map_transforms:
             self.add_scene_map_transform_parameters(data_dict=data_dict, idx=idx)
+        if self.with_occlusion_state:
+            self.add_occlusion_state(data_dict=data_dict, idx=idx)
         if self.with_occlusion_objects:
             self.add_occlusion_objects(data_dict=data_dict, idx=idx)
 
