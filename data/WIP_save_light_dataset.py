@@ -45,6 +45,7 @@ def prepare_dataset_setup_dict(dataset: TorchDataGeneratorSDD, save_size: Option
         'velocities': {'shape': (0, t_len, 2), 'maxshape': (None, t_len, 2), 'chunks': (16, t_len, 2), 'dtype': 'f4'},
     }
     occlusion_setup_dict = {
+        'is_occluded': {'shape': save_size, 'chunks': (512,), 'dtype': '?'},
         'ego': {'shape': (save_size, 2), 'chunks': (128, 2), 'dtype': 'f4'},
         'occluder': {'shape': (save_size, 2, 2), 'chunks': (64, 2, 2), 'dtype': 'f4'},
         'occlusion_map': {'shape': save_size, 'chunks': (1,), 'dtype': f'V{int(map_res * map_res / 8)}'},
