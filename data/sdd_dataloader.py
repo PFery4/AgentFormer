@@ -570,7 +570,7 @@ class TorchDataGeneratorSDD(BaseDataset, Dataset):
 
 class HDF5PresavedDatasetSDD(BaseDataset, Dataset):
 
-    dataset_filenames = {False: 'dataset_v2.h5', True: 'legacy_dataset.h5'}
+    dataset_filenames = {False: 'dataset_v2.h5', True: 'legacy_dataset_v2.h5'}
     presaved_datasets_dir = os.path.join(REPO_ROOT, 'datasets', 'SDD', 'pre_saved_datasets')
 
     # This is a "quick fix".
