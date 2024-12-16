@@ -69,6 +69,8 @@ class GaussianDensityModel(nn.Module):
         return mu, sig, rho
 
 
+# TODO: remove __main__ (this is not a script)
+
 if __name__ == '__main__':
 
     from torch.distributions import MultivariateNormal
