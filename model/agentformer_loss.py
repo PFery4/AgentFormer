@@ -186,9 +186,3 @@ loss_func = {
     'occl_map': compute_train_occlusion_map_loss,
     'infer_occl_map': compute_infer_occlusion_map_loss
 }
-
-if __name__ == '__main__':
-    # cfg = {'normalize': True, 'weight': 3.0}
-    # compute_occlusion_map_loss(data=None, cfg=cfg)
-    print(f'Hello World!')
-
