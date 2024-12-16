@@ -21,7 +21,7 @@ def search_for_config_yaml_file(cfg_id: str) -> str:
 
 class Config:
 
-    def __init__(self, cfg_id: Union[str, os.PathLike], tmp: bool = False, create_dirs: bool = False):
+    def __init__(self, cfg_id: Union[str, os.PathLike]):
         if os.path.isfile(cfg_id) and os.path.exists(cfg_id):
             cfg_path = os.path.abspath(cfg_id)
         else:
@@ -30,6 +30,35 @@ class Config:
 
         self.id = os.path.splitext(os.path.basename(cfg_path))[0]
         self.yml_dict = EasyDict(yaml.safe_load(open(cfg_path, 'r')))
+
+    def __getattribute__(self, name):
+        yml_dict = super().__getattribute__('yml_dict')
+        if name in yml_dict:
+            return yml_dict[name]
+        else:
+            return super().__getattribute__(name)
+
+    def __setattr__(self, name, value):
+        try:
+            yml_dict = super().__getattribute__('yml_dict')
+        except AttributeError:
+            return super().__setattr__(name, value)
+        if name in yml_dict:
+            yml_dict[name] = value
+        else:
+            return super().__setattr__(name, value)
+
+    def get(self, name, default=None):
+        if hasattr(self, name):
+            return getattr(self, name)
+        else:
+            return default
+
+
+class ModelConfig(Config):
+
+    def __init__(self, cfg_id: Union[str, os.PathLike], tmp: bool = False, create_dirs: bool = False):
+        Config.__init__(self, cfg_id=cfg_id)
 
         # data dir
         self.results_root_dir = os.path.join(REPO_ROOT, self.yml_dict['results_root_dir'])
@@ -61,27 +90,3 @@ class Config:
 
         checkpoint_name = str(val_csv[val_csv['val_loss'] == val_csv['val_loss'].min()]['model_name'].item())
         return checkpoint_name
-
-    def __getattribute__(self, name):
-        yml_dict = super().__getattribute__('yml_dict')
-        if name in yml_dict:
-            return yml_dict[name]
-        else:
-            return super().__getattribute__(name)
-
-    def __setattr__(self, name, value):
-        try:
-            yml_dict = super().__getattribute__('yml_dict')
-        except AttributeError:
-            return super().__setattr__(name, value)
-        if name in yml_dict:
-            yml_dict[name] = value
-        else:
-            return super().__setattr__(name, value)
-
-    def get(self, name, default=None):
-        if hasattr(self, name):
-            return getattr(self, name)
-        else:
-            return default
-            
