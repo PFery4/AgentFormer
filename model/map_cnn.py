@@ -98,32 +98,3 @@ class GlobalMapCNN(nn.Module):
         x = torch.flatten(x, start_dim=1)
         x = self.fc(x)
         return x
-
-
-if __name__ == "__main__":
-
-    map_cfg = {
-        'use_scene_map': False,
-        'map_channels': 3,
-        'use_occlusion_map': True,
-        'output_dim': 256,
-        'layers': [
-            ['conv2d', 4, 7, 3],    # [out_channels, kernel_size, stride]
-            ['maxpool', 2, 2],      # [kernel_size, stride]
-            ['conv2d', 8, 5, 2],
-            ['maxpool', 2, 2],
-            ['conv2d', 8, 3, 1],
-            ['maxpool', 2, 2]
-        ]
-    }
-
-    map_cnn = GlobalMapCNN(cfg=map_cfg)
-    print("GlobalMapCNN attributes:\n")
-    [print(f"{k}:\t\t{v}") for k, v in map_cnn.__dict__.items()]
-    print("\n")
-
-    x_input = torch.randn([1, *map_cnn.input_shape])
-    y_output = map_cnn(x_input)
-    print(f"{x_input.shape=}")
-    print(f"{y_output.shape=}")
-
