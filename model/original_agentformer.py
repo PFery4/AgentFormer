@@ -97,7 +97,3 @@ class OrigModelWrapper(nn.Module):
 
     def compute_loss(self):
         return self.orig_model.compute_loss()
-
-
-if __name__ == '__main__':
-    print("Goodbye !")
