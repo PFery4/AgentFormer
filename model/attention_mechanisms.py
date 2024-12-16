@@ -457,7 +457,3 @@ class MapAgentAwareAttention(SelfOtherAwareAttention):
 #
 #         # [B, L, V], [B, V], [B, L+1, S+1]
 #         return traj_output, map_output, combined_attention.sum(dim=1) / self.num_heads
-
-
-if __name__ == '__main__':
-    print("Hello!")
