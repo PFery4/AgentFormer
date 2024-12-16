@@ -174,6 +174,7 @@ def compute_flat_grad(output, inputs, filter_input_ids=set(), retain_graph=False
         param.grad = None
     return grads
 
+
 def set_optimizer_lr(optimizer, lr):
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
@@ -184,6 +185,7 @@ def filter_state_dict(state_dict, filter_keys):
             if f_key in key:
                 del state_dict[key]
                 break
+
 
 def get_scheduler(optimizer, policy, nepoch_fix=None, nepoch=None, decay_step=None, decay_gamma=0.1):
     if policy == 'lambda':
