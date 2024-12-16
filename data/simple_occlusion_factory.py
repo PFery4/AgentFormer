@@ -24,11 +24,3 @@ class SimpleOcclusionFactory:
             start_idx = torch.randint(high=self.T_obs-occlusion_length, size=(1,))
             obs_mask[idx, start_idx:start_idx+occlusion_length] = 0.
         return obs_mask
-
-
-if __name__ == '__main__':
-
-    n_agents = 10
-
-    corruptor = SimpleOcclusionFactory(p=0.6, n_timesteps=8)
-    print(f"{corruptor.corrupt_trajectories(n_agents=n_agents)=}")
