@@ -11,7 +11,7 @@ from csv import DictWriter
 
 from data.sdd_dataloader import dataset_dict
 from model.model_lib import model_dict
-from utils.torch import get_scheduler
+from utils.torch_ops import get_scheduler
 from utils.config import Config
 from utils.utils import prepare_seed, print_log, AverageMeter, convert_secs2time, get_timestring,\
     get_cuda_device, memory_report

@@ -9,7 +9,7 @@ from torch.utils.tensorboard import SummaryWriter
 import train
 from data.sdd_dataloader import TorchDataGeneratorSDD, PresavedDatasetSDD, PickleDatasetSDD, HDF5DatasetSDD
 from model.model_lib import model_dict
-from utils.torch import get_scheduler
+from utils.torch_ops import get_scheduler
 from utils.config import Config
 from utils.utils import prepare_seed, get_timestring, AverageMeter
 from train import print_log

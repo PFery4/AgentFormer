@@ -12,7 +12,7 @@ from model.common.dist import Normal, Categorical
 from model.attention_modules import \
     AgentFormerEncoder, AgentFormerDecoder, OcclusionFormerEncoder, OcclusionFormerDecoder
 from model.map_encoder import MapEncoder
-from utils.torch import ExpParamAnnealer
+from utils.torch_ops import ExpParamAnnealer
 from utils.utils import initialize_weights, memory_report
 
 from typing import Dict
