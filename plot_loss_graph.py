@@ -5,51 +5,39 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 
-from utils.config import Config, REPO_ROOT
+from utils.config import ModelConfig
+
+COLOR_MAPS = {'train': 'cool', 'val': 'winter'}
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', nargs='+', default=None)
-    parser.add_argument('--split', nargs='+', default=None)
-    parser.add_argument('--save', action='store_true', default=False)
+    parser.add_argument('--cfg', type=str, nargs='+', required=True, default=None,
+                        help="Model config file (specified as either name or path")
+    parser.add_argument('--split', type=str, nargs='+', required=True, default=None,
+                        help="\'train\' | \'val\'")
+    parser.add_argument('--loss_names', type=str, nargs='+', default=None)
+    parser.add_argument('--save_path', type=str, default=None,
+                        help="path of a \'.png\' file to save the graph")
     parser.add_argument('--show', action='store_true', default=False)
-    parser.add_argument('--weighted_losses', type=bool, default=True)
-    parser.add_argument('--loss_names', nargs='+', default=None)
+    parser.add_argument('--unweighted_losses', action='store_true', default=False)
     args = parser.parse_args()
 
-    print(args.cfg)
-    print(args.split)
     assert all([name in ['train', 'val'] for name in args.split])
-    assert args.save or args.show, "You must choose to either *show* or *save* the loss graph..."
-    color_maps = {'train': 'cool', 'val': 'winter'}
+    assert args.save_path is not None or args.show, "You must choose to either --show the graph," \
+                                                    "or save it by providing a --save_path."
 
     for cfg_str in args.cfg:
-        cfg = Config(cfg_str)
+        cfg = ModelConfig(cfg_str, tmp=False, create_dirs=False)
 
         # create figure
         fig, ax = plt.subplots()
 
         for split in args.split:
             csv_file = os.path.join(cfg.log_dir, f'{split}_losses.csv')
-
             assert os.path.exists(csv_file)
 
             df = pd.read_csv(csv_file)
-
-            # # wip to show example of corrupted dataframe
-            # lines = df.iloc[[12, 13, 14, 15]]
-            # lines.index = [15.1, 15.2, 15.3, 15.4]
-            # df = pd.concat([df, lines])
-            # df.sort_index(inplace=True)
-            # df.reset_index(inplace=True, drop=True)
-            # lines = df.iloc[[29, 30, 31]]
-            # lines.index = [31.1, 31.2, 31.3]
-            # df = pd.concat([df, lines])
-            # df.sort_index(inplace=True)
-            # df.reset_index(inplace=True, drop=True)
-            # df.loc[10000] = ['tb_x', 'epoch', 'batch', 'total_loss', 'mse', 'kld', 'sample']
-            # df = df.sort_index().reset_index(drop=True)
-            # print(df)
 
             # Beginning preprocessing
             # Remove rows with same content as columns
@@ -66,7 +54,7 @@ if __name__ == '__main__':
 
             # multiply unweighted loss values by their weight factor
             loss_weights = {name: loss_dict['weight'] for name, loss_dict in cfg.loss_cfg.items()}
-            if args.weighted_losses:
+            if not args.unweighted_losses:
                 for name, weight in loss_weights.items():
                     df[name] *= weight
 
@@ -86,7 +74,7 @@ if __name__ == '__main__':
                 assert all([loss_name in df.columns.tolist() for loss_name in args.loss_names])
                 loss_names = args.loss_names
 
-            colors = iter(mpl.colormaps[color_maps[split]](np.linspace(0, 1, len(loss_names))))
+            colors = iter(mpl.colormaps[COLOR_MAPS[split]](np.linspace(0, 1, len(loss_names))))
 
             for loss in loss_names:
                 c = next(colors)
@@ -102,21 +90,12 @@ if __name__ == '__main__':
             fig.set_size_inches(16, 9)
             plt.legend(loc='upper right')
 
-        if args.save:
-            save_path = os.path.join(cfg.log_dir, f"{'_'.join(args.split)}_losses.png")
-            print(f"saving loss graph under:\n{save_path}")
-            plt.savefig(save_path, bbox_inches='tight', transparent=True, dpi=100)
+        if args.save_path is not None:
+            assert os.path.exists(os.path.dirname(os.path.abspath(args.save_path)))
+            assert args.save_path.endswith('.png')
+            print(f"saving loss graph under:\n{os.path.abspath(args.save_path)}")
+            plt.savefig(os.path.abspath(args.save_path), bbox_inches='tight', transparent=True, dpi=100)
 
-            save_dir = os.path.join(REPO_ROOT, 'performance_analysis', 'loss_graphs', cfg_str)
-            os.makedirs(save_dir, exist_ok=True)
-            save_path = os.path.join(save_dir, f"{'_'.join(args.split)}_losses.png")
-            print(f"saving loss graph under:\n{save_path}")
-            plt.savefig(save_path, bbox_inches='tight', transparent=True, dpi=100)
-
-            save_dir = os.path.join(REPO_ROOT, 'performance_analysis', 'loss_graphs')
-            save_path = os.path.join(save_dir, f"{cfg_str}___{'_'.join(args.split)}_losses.png")
-            print(f"saving loss graph under:\n{save_path}")
-            plt.savefig(save_path, bbox_inches='tight', transparent=True, dpi=100)
     if args.show:
         plt.show()
     print("Goodbye!")
