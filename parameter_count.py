@@ -1,47 +1,27 @@
-import sys
-
+import argparse
 import pandas as pd
 import torch
-import argparse
 
 from model.model_lib import model_dict
-from utils.config import Config
-from utils.utils import prepare_seed
+from utils.config import ModelConfig
+from utils.utils import prepare_seed, get_cuda_device
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', default=None)
-    parser.add_argument('--checkpoint_name', default=None)        # can be None / 'best_val' / 'untrained' / <model_id>
+    parser.add_argument('--cfg', type=str, default=None,
+                        help="Model config file (specified as either name or path)")
+    parser.add_argument('--checkpoint_name', type=str, default=None,
+                        help="None | 'best_val' | 'untrained' | <model_id>")
     parser.add_argument('--gpu', type=int, default=0)
     args = parser.parse_args()
 
     checkpoint_name = args.checkpoint_name
-    cfg = Config(cfg_id=args.cfg, tmp=False, create_dirs=False)
+    cfg = ModelConfig(cfg_id=args.cfg, tmp=False, create_dirs=False)
     prepare_seed(cfg.seed)
     torch.set_default_dtype(torch.float32)
 
     # device
-    cuda_avail = torch.cuda.is_available()
-    if cuda_avail:
-        print("Torch CUDA is available")
-        num_of_devices = torch.cuda.device_count()
-        if num_of_devices:
-            print(f"Number of CUDA devices: {num_of_devices}")
-            current_device = torch.cuda.current_device()
-            current_device_id = torch.cuda.device(current_device)
-            current_device_name = torch.cuda.get_device_name(current_device)
-            print(f"Current device: {current_device}")
-            print(f"Current device id: {current_device_id}")
-            print(f"Current device name: {current_device_name}")
-            print()
-            device = torch.device('cuda', index=current_device)
-            torch.cuda.set_device(current_device)
-        else:
-            print("No CUDA devices!")
-            sys.exit()
-    else:
-        print("Torch CUDA is not available!")
-        sys.exit()
+    device = get_cuda_device()
 
     # model
     if checkpoint_name == 'best_val':
