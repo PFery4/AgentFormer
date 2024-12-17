@@ -608,6 +608,7 @@ class HDF5PresavedDatasetSDD(BaseDataset, Dataset):
                 if None in dset.maxshape:
                     self.lookup_datasets.append(dset_name)
             self.lookup_indices = torch.from_numpy(h5_file['lookup_indices'][()])
+        self.indices = torch.arange(len(self.lookup_indices))
 
         # flags for __getitem__ behaviour
         self.with_map_transforms = True
@@ -648,31 +649,15 @@ class HDF5PresavedDatasetSDD(BaseDataset, Dataset):
             self.instance_names = difficult_instance_names
             self.instance_nums = difficult_instance_nums
 
-        elif False:             # handle validation subsampling
-        # elif self.split == 'val' and parser.get('validation_set_size', None) is not None:
-            assert len(self.instance_names) > parser.validation_set_size
-            # Training set might be quite large. When that is the case, we prefer to validate after every
-            # <parser.validation_freq> batches rather than every epoch (i.e., validating multiple times per epoch).
-            # train / val split size ratios are typically ~80/20. Our desired validation set size should then be:
-            #       <parser.validation_freq> * 20/80
-            # We let the user choose the validation set size.
-            # The dataset will then be effectively reduced to <parser.validation_set_size>
-            required_val_set_size = parser.validation_set_size
-            keep_instances = np.linspace(0, len(self.instance_names)-1, num=required_val_set_size).round().astype(int)
-
-            assert np.all(keep_instances[1:] != keep_instances[:-1])        # verifying no duplicates
-
-            keep_instance_names = [self.instance_names[i] for i in keep_instances]
-            keep_instance_nums = [self.instance_nums[i] for i in keep_instances]
-
-            print(
-                f"Val set size too large! --> {len(self.instance_names)} "
-                f"(validating after every {parser.validation_freq} batch).\n"
-                f"Reducing val set size to {len(keep_instances)}."
-            )
-            self.instance_names = keep_instance_names
-            self.instance_nums = keep_instance_nums
-            assert len(self.instance_names) == required_val_set_size
+        # dataset subsampling
+        elif parser.get('custom_dataset_size', None) is not None:
+            assert len(self.indices) > parser.custom_dataset_size
+            print(f"Setting a custom dataset size: {parser.custom_dataset_size} (original size: {len(self.indices)})")
+            self.indices = torch.from_numpy(np.linspace(
+                0, len(self.indices)-1, num=parser.custom_dataset_size
+            ).round().astype(int))
+            assert len(self.indices) == parser.custom_dataset_size
+            assert torch.all(self.indices[1:] != self.indices[:-1])        # verifying no duplicates
 
         assert self.__len__() != 0
         print(f'total number of samples: {self.__len__()}')
@@ -769,31 +754,32 @@ class HDF5PresavedDatasetSDD(BaseDataset, Dataset):
         data_dict['scene_map'] = scene_map_mgr.get_map()
 
     def __len__(self):
-        return self.lookup_indices.shape[0]
+        return self.indices.shape[0]
 
     def __getitem__(self, idx: int) -> Dict:
-        idx_start, idx_end = self.lookup_indices[idx]
+        instance_idx = self.indices[idx]
+        lookup_idx_start, lookup_idx_end = self.lookup_indices[instance_idx]
 
         if self.h5_dataset is None:
             self.h5_dataset = h5py.File(self.hdf5_file, 'r')
 
         data_dict = dict()
 
-        self.add_instance_identifiers(data_dict=data_dict, idx=idx)
+        self.add_instance_identifiers(data_dict=data_dict, idx=instance_idx)
         if self.with_map_transforms:
-            self.add_scene_map_transform_parameters(data_dict=data_dict, idx=idx)
+            self.add_scene_map_transform_parameters(data_dict=data_dict, idx=instance_idx)
         if self.with_occlusion_state:
-            self.add_occlusion_state(data_dict=data_dict, idx=idx)
+            self.add_occlusion_state(data_dict=data_dict, idx=instance_idx)
         if self.with_occlusion_objects:
-            self.add_occlusion_objects(data_dict=data_dict, idx=idx)
+            self.add_occlusion_objects(data_dict=data_dict, idx=instance_idx)
 
         for dset_name in self.lookup_datasets:
-            data_dict[dset_name] = torch.from_numpy(self.h5_dataset[dset_name][idx_start:idx_end])
+            data_dict[dset_name] = torch.from_numpy(self.h5_dataset[dset_name][lookup_idx_start:lookup_idx_end])
         data_dict['identities'] = data_dict['identities'].to(torch.int64)
 
         self.add_trajectory_data(data_dict=data_dict)
         if self.with_occlusion_map_data:
-            self.add_occlusion_map_data(data_dict=data_dict, idx=idx)
+            self.add_occlusion_map_data(data_dict=data_dict, idx=instance_idx)
         # self.add_scene_map_data(data_dict=data_dict)
 
         data_dict['timesteps'] = self.timesteps
@@ -954,6 +940,7 @@ class PickleDatasetSDD(PresavedDatasetSDD):
 
     def __init__(self, parser: Config, split: str = 'train'):
         super().__init__(parser=parser, split=split)
+        print("PICKLE PICKLE PICKLE DATASET DATASET DATASET")
 
         self.pickle_files = sorted(glob.glob1(self.dataset_dir, "*.pickle"))
 
@@ -1006,6 +993,8 @@ class PickleDatasetSDD(PresavedDatasetSDD):
             )
             self.pickle_files = keep_pickle_files
             assert len(self.pickle_files) == required_val_set_size
+
+            print(f"{self.pickle_files=}")
 
         assert self.__len__() != 0
         print(f'total number of samples: {self.__len__()}')
