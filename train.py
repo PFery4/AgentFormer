@@ -12,9 +12,8 @@ from csv import DictWriter
 from data.sdd_dataloader import dataset_dict
 from model.model_lib import model_dict
 from utils.torch_ops import get_scheduler
-from utils.config import Config
-from utils.utils import prepare_seed, print_log, AverageMeter, convert_secs2time, get_timestring,\
-    get_cuda_device, memory_report
+from utils.config import Config, ModelConfig
+from utils.utils import prepare_seed, print_log, AverageMeter, convert_secs2time, get_timestring, get_cuda_device
 
 from typing import Optional
 from io import TextIOWrapper
@@ -234,18 +233,18 @@ def train(epoch_index: int, batch_idx: int = 0):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', default=None)
+    parser.add_argument('--cfg', type=str, required=True, default=None,
+                        help="Model config file (specified as either name or path")
     parser.add_argument('--checkpoint_name', default=None)
     parser.add_argument('--tmp', action='store_true', default=False)
-    parser.add_argument('--gpu', default=None)
-    parser.add_argument('--dataset_class', default='hdf5')          # [hdf5, pickle, torch_preprocess]
+    parser.add_argument('--gpu', type=int, default=None)
+    parser.add_argument('--dataset_class', default='hdf5')          # [hdf5, pickle, torch_preprocess]  # TODO: FIX THIS WITH THE DEFINITIVE DATASET OPTIONS
     args = parser.parse_args()
 
     assert args.dataset_class in ['hdf5', 'pickle', 'torch_preprocess']
-    args.gpu = int(args.gpu) if args.gpu is not None else args.gpu
 
     """ setup """
-    cfg = Config(args.cfg, args.tmp, create_dirs=False)
+    cfg = ModelConfig(args.cfg, args.tmp, create_dirs=False)
     prepare_seed(cfg.seed)
     torch.set_default_dtype(torch.float32)
 
