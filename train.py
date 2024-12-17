@@ -238,10 +238,11 @@ if __name__ == '__main__':
     parser.add_argument('--checkpoint_name', default=None)
     parser.add_argument('--tmp', action='store_true', default=False)
     parser.add_argument('--gpu', type=int, default=None)
-    parser.add_argument('--dataset_class', default='hdf5')          # [hdf5, pickle, torch_preprocess]  # TODO: FIX THIS WITH THE DEFINITIVE DATASET OPTIONS
+    parser.add_argument('--dataset_class', type=str, default='hdf5',
+                        help="'torch' | 'hdf5'")
     args = parser.parse_args()
 
-    assert args.dataset_class in ['hdf5', 'pickle', 'torch_preprocess']
+    assert args.dataset_class in ['hdf5', 'torch']
 
     """ setup """
     cfg = ModelConfig(args.cfg, args.tmp, create_dirs=False)
@@ -274,17 +275,23 @@ if __name__ == '__main__':
         dict_writer.writerow(row_dict)
 
     """ data """
-    assert cfg.dataset == "sdd"
     dataset_class = dataset_dict[args.dataset_class]
+    data_cfg = Config(cfg.dataset_cfg)      # TODO: MAKE SURE ALL MODEL CONFIG FILES HAVE A dataset_cfg FIELD
+    data_cfg.__setattr__('with_rgb_map', False)
+    assert data_cfg.dataset == "sdd"
+    if data_cfg.dataset == "sdd":
+        print_log(f"\nUsing dataset of class: {dataset_class}\n", log)
 
-    if cfg.dataset == "sdd":
-        # sdd_dataset = TorchDataGeneratorSDD(parser=cfg, log=log, split='train')
-        sdd_train_set = dataset_class(parser=cfg, log=log, split='train')
+        sdd_train_set = dataset_class(parser=data_cfg, split='train')
         training_loader = DataLoader(dataset=sdd_train_set, shuffle=True, num_workers=0)
 
-        sdd_val_set = dataset_class(parser=cfg, log=log, split='val')
+        data_cfg.__setattr__('custom_dataset_size', int(cfg.validation_set_size))
+        sdd_val_set = dataset_class(parser=data_cfg, split='val')
         validation_loader = DataLoader(dataset=sdd_val_set, shuffle=False, num_workers=0)
-        print_log(f"\nUsing dataset of class: {dataset_class}\n", log)
+
+    for key in ['future_frames', 'motion_dim', 'forecast_dim', 'global_map_resolution']:
+        assert key in data_cfg.yml_dict.keys()
+        cfg.__setattr__(key, data_cfg.__getattribute__(key))
 
     """ model """
     model_id = cfg.get('model_id', 'agentformer')
