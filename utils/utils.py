@@ -414,10 +414,11 @@ def load_list_from_folder(folder_path, ext_filter=None, depth=1, recursive=False
     return fulllist, num_elem
 
 
-def get_cuda_device(device_index: Optional[int] = None):
+def get_cuda_device(device_index: Optional[int] = None, verbose: bool = False):
     # DELFTBLUE GPU ##################################################################################################
     assert torch.cuda.is_available(), "Torch CUDA is not available!"
-    print("Torch CUDA is available")
+    if verbose:
+        print("Torch CUDA is available")
 
     num_of_devices = torch.cuda.device_count()
     assert num_of_devices, "No CUDA devices!"
@@ -426,13 +427,16 @@ def get_cuda_device(device_index: Optional[int] = None):
         device_index = torch.cuda.current_device()
 
     assert device_index < num_of_devices, "device index out of range!"
+    if verbose:
+        print(f"Number of CUDA devices: {num_of_devices}")
 
-    print(f"Number of CUDA devices: {num_of_devices}")
     device_id = torch.cuda.device(device_index)
     device_name = torch.cuda.get_device_name(device_index)
-    print(f"Selected device index: {device_index}")
-    print(f"Selected device id: {device_id}")
-    print(f"Selected device name: {device_name}")
+
+    if verbose:
+        print(f"Selected device index: {device_index}")
+        print(f"Selected device id: {device_id}")
+        print(f"Selected device name: {device_name}")
     device = torch.device('cuda', index=device_index)
     torch.cuda.set_device(device_index)
 
