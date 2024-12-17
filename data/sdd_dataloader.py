@@ -1169,8 +1169,8 @@ class HDF5DatasetSDD(PresavedDatasetSDD):
 
 
 dataset_dict = {
-        'hdf5': HDF5DatasetSDD,
-        'pickle': PickleDatasetSDD,
-        'torch_preprocess': TorchDataGeneratorSDD,
-        'presaved': HDF5PresavedDatasetSDD
+        # 'hdf5': HDF5DatasetSDD,           # TODO: remove once done
+        # 'pickle': PickleDatasetSDD,       # TODO: remove once done
+        'torch': TorchDataGeneratorSDD,
+        'hdf5': HDF5PresavedDatasetSDD
     }
