@@ -83,6 +83,15 @@ class BaseDataset:
         # TODO: REMOVE QUICK FIX, FIX DIRECTLY PLEASE
         self.quick_fix = bool(parser.get('quick_fix', False))
 
+        # dataset identification
+        self.dataset_name = self.get_dataset_name()
+
+    def get_dataset_name(self):
+        dset_name = self.occlusion_process
+        if self.impute:
+            dset_name += '_imputed'
+        return dset_name
+
     def get_map_crop_coordinates(self) -> Tensor:       # [2, 2]
         return Tensor(
             [[-self.map_side, -self.map_side],
@@ -555,6 +564,7 @@ class TorchDataGeneratorSDD(BaseDataset, Dataset):
             'video': video,
             'seq': f'{scene}_{video}',
             'frame': timestep,
+            'instance_name': f'{idx:08}',
 
             'true_trajectories': true_trajs if self.impute else None,
             'true_observation_mask': true_obs_mask if self.impute else None
@@ -668,6 +678,7 @@ class HDF5PresavedDatasetSDD(BaseDataset, Dataset):
         data_dict['scene'] = self.h5_dataset['scene'].asstr()[idx]
         data_dict['video'] = self.h5_dataset['video'].asstr()[idx]
         data_dict['seq'] = f"{data_dict['scene']}_{data_dict['video']}"
+        data_dict['instance_name'] = f'{idx:08}'
 
     def add_occlusion_state(self, data_dict: Dict, idx: int):
         data_dict['is_occluded'] = bool(self.h5_dataset['is_occluded'][idx])
