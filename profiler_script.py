@@ -15,6 +15,8 @@ from utils.utils import prepare_seed, get_timestring, AverageMeter
 from train import print_log
 
 
+# TODO: DELETE THIS FILE, AS IT IS UNNECESSARY.
+
 def analyze_cProfile(filename):
     # This script might come in handy when it comes to optimizing model performance
 
