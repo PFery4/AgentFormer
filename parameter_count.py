@@ -15,7 +15,6 @@ if __name__ == '__main__':
     parser.add_argument('--gpu', type=int, default=0)
     args = parser.parse_args()
 
-    checkpoint_name = args.checkpoint_name
     cfg = ModelConfig(cfg_id=args.cfg, tmp=False, create_dirs=False)
     prepare_seed(cfg.seed)
     torch.set_default_dtype(torch.float32)
@@ -24,16 +23,16 @@ if __name__ == '__main__':
     device = get_cuda_device()
 
     # model
-    if checkpoint_name == 'best_val':
-        checkpoint_name = cfg.get_best_val_checkpoint_name()
-        print(f"Best validation checkpoint name is: {checkpoint_name}")
+    if args.checkpoint_name == 'best_val':
+        args.checkpoint_name = cfg.get_best_val_checkpoint_name()
+        print(f"Best validation checkpoint name is: {args.checkpoint_name}")
 
     model_id = cfg.get('model_id', 'agentformer')
     model = model_dict[model_id](cfg)
     model.set_device(device)
     model.eval()
-    if checkpoint_name is not None:
-        cp_path = cfg.model_path % checkpoint_name
+    if args.checkpoint_name is not None:
+        cp_path = cfg.model_path % args.checkpoint_name
         print(f'loading model from checkpoint: {cp_path}')
         model_cp = torch.load(cp_path, map_location='cpu')
         model.load_state_dict(model_cp['model_dict'])
