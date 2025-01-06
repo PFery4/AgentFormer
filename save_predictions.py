@@ -47,13 +47,17 @@ if __name__ == '__main__':
     dataset_cfg.__setattr__('with_rgb_map', False)
     assert dataset_cfg.dataset == 'sdd'
     if dataset_cfg.dataset == 'sdd':
-        sdd_test_set = dataset_class(parser=dataset_cfg, log=log, split=args.data_split)
+        sdd_test_set = dataset_class(parser=dataset_cfg, split=args.data_split)
         test_loader = DataLoader(dataset=sdd_test_set, shuffle=False, num_workers=0)
     else:
         raise NotImplementedError
 
     # model
     model_id = cfg.get('model_id', 'agentformer')
+    for key in ['future_frames', 'motion_dim', 'forecast_dim', 'global_map_resolution']:
+        assert key in dataset_cfg.yml_dict.keys()
+        cfg.yml_dict[key] = dataset_cfg.__getattribute__(key)
+
     model = model_dict[model_id](cfg)
     model.set_device(device)
     model.eval()
