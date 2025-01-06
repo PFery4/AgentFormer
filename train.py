@@ -291,7 +291,7 @@ if __name__ == '__main__':
 
     for key in ['future_frames', 'motion_dim', 'forecast_dim', 'global_map_resolution']:
         assert key in data_cfg.yml_dict.keys()
-        cfg.__setattr__(key, data_cfg.__getattribute__(key))
+        cfg.yml_dict[key] = data_cfg.__getattribute__(key)
 
     """ model """
     model_id = cfg.get('model_id', 'agentformer')

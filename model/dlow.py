@@ -2,7 +2,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 # from utils.torch import *
-from utils.config import Config
+from utils.config import ModelConfig
 from model.agentformer_loss import index_mapping_gt_seq_pred_seq
 from model.common.mlp import MLP
 # from model.common.dist import *
@@ -123,7 +123,11 @@ class DLow(nn.Module):
             elif self.loss_cfg['infer_occl_map'].get('kernel', None) is not None:
                 raise NotImplementedError
 
-        pred_cfg = Config(cfg.pred_cfg, tmp=False, create_dirs=False)
+        pred_cfg = ModelConfig(cfg_id=cfg.pred_cfg, tmp=False, create_dirs=False)
+        for key in ['future_frames', 'motion_dim', 'forecast_dim', 'global_map_resolution']:
+            assert key in cfg.yml_dict.keys(), key
+            pred_cfg.yml_dict[key] = cfg.__getattribute__(key)
+
         pred_model = model_lib.model_dict[pred_cfg.model_id](pred_cfg)
         self.pred_model_dim = pred_cfg.tf_model_dim
 
