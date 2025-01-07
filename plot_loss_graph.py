@@ -26,6 +26,9 @@ if __name__ == '__main__':
     assert all([name in ['train', 'val'] for name in args.split])
     assert args.save_path is not None or args.show, "You must choose to either --show the graph," \
                                                     "or save it by providing a --save_path."
+    if args.save_path is not None:
+        assert os.path.exists(os.path.dirname(os.path.abspath(args.save_path)))
+        assert args.save_path.endswith('.png')
 
     for cfg_str in args.cfg:
         cfg = ModelConfig(cfg_str, tmp=False, create_dirs=False)
@@ -91,8 +94,6 @@ if __name__ == '__main__':
             plt.legend(loc='upper right')
 
         if args.save_path is not None:
-            assert os.path.exists(os.path.dirname(os.path.abspath(args.save_path)))
-            assert args.save_path.endswith('.png')
             print(f"saving loss graph under:\n{os.path.abspath(args.save_path)}")
             plt.savefig(os.path.abspath(args.save_path), bbox_inches='tight', transparent=True, dpi=100)
 
