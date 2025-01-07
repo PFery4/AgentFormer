@@ -135,7 +135,8 @@ if __name__ == '__main__':
     parser.add_argument('--cfg', type=str, required=True, default=None,
                         help="Dataset config file (specified as either name or path")
     parser.add_argument('--output', type=os.path.abspath, default=None)
-    parser.add_argument('--split', type=str, default='train')
+    parser.add_argument('--split', type=str, default='train',
+                        help="\'train\' | \'val\' | \'test\'")
     parser.add_argument('--start_idx', type=int, default=0)
     parser.add_argument('--end_idx', type=int, default=-10)
     parser.add_argument('--legacy', action='store_true', default=False)
