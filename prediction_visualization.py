@@ -11,6 +11,8 @@ from utils.sdd_visualize import visualize, visualize_predictions
 from utils.config import Config
 from utils.utils import prepare_seed, print_log
 
+# TODO: REMOVE (DEPRECATED, USE performance_analysis/qualitative_example.py instead)
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--cfg', default=None)
