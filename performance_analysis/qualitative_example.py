@@ -4,12 +4,17 @@ import os.path
 import pickle
 
 from data.sdd_dataloader import HDF5DatasetSDD
-from utils.config import Config
+from utils.config import Config, ModelConfig
 from utils.sdd_visualize import visualize_input_and_predictions
 from utils.performance_analysis import get_all_results_directories
 
 FIG_SIZE = (14, 10)
 FIG_DPI = 300
+
+# TODO:
+#   - FIX DATASET INSTANTIATION (USE NEW CLASS IMPLEMENTATIONS)
+#   - BETTER ARGUMENT PASSING FOR CFG's (ALLOW FOR PASSING file paths, AND MAYBE AN OPTIONAL DEFAULT yml file)
+#   - REMOVE --highlight_past FROM SCRIPT ARGUMENTS, SET AS A DEFAULT VALUE THAT CAN BE CHANGED FROM INSIDE THE SCRIPT
 
 
 if __name__ == '__main__':
@@ -37,9 +42,9 @@ if __name__ == '__main__':
         # exp_dict.keys() --> ['experiment_name', 'dataset_used', 'model_name', 'split']
 
         # preparing the dataloader for the experiment
-        model_config = Config(exp_dict['experiment_name'])
+        model_config = ModelConfig(exp_dict['experiment_name'], tmp=False, create_dirs=False)
         dataset_config = Config(f"dataset_{exp_dict['dataset_used']}")
-        dataloader_exp = HDF5DatasetSDD(dataset_config, log=None, split='test')
+        dataloader_exp = HDF5DatasetSDD(dataset_config, split='test')       # TODO: optional dataset class
 
         # retrieve the corresponding entry name and dataset index
         instance_name = f"{args.instance_num}".rjust(8, '0')
