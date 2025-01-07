@@ -239,7 +239,7 @@ if __name__ == '__main__':
     parser.add_argument('--tmp', action='store_true', default=False)
     parser.add_argument('--gpu', type=int, default=None)
     parser.add_argument('--dataset_class', type=str, default='hdf5',
-                        help="'torch' | 'hdf5'")
+                        help="\'torch\' | \'hdf5\'")
     args = parser.parse_args()
 
     assert args.dataset_class in ['hdf5', 'torch']
