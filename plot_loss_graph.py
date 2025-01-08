@@ -10,19 +10,7 @@ from utils.config import ModelConfig
 COLOR_MAPS = {'train': 'cool', 'val': 'winter'}
 
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', type=str, nargs='+', required=True, default=None,
-                        help="Model config file (specified as either name or path")
-    parser.add_argument('--split', type=str, nargs='+', required=True, default=None,
-                        help="\'train\' | \'val\'")
-    parser.add_argument('--loss_names', type=str, nargs='+', default=None)
-    parser.add_argument('--save_path', type=str, default=None,
-                        help="path of a \'.png\' file to save the graph")
-    parser.add_argument('--show', action='store_true', default=False)
-    parser.add_argument('--unweighted_losses', action='store_true', default=False)
-    args = parser.parse_args()
-
+def main(args: argparse.Namespace):
     assert all([name in ['train', 'val'] for name in args.split])
     assert args.save_path is not None or args.show, "You must choose to either --show the graph," \
                                                     "or save it by providing a --save_path."
@@ -99,4 +87,20 @@ if __name__ == '__main__':
 
     if args.show:
         plt.show()
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--cfg', type=str, nargs='+', required=True, default=None,
+                        help="Model config file (specified as either name or path")
+    parser.add_argument('--split', type=str, nargs='+', required=True, default=None,
+                        help="\'train\' | \'val\'")
+    parser.add_argument('--loss_names', type=str, nargs='+', default=None)
+    parser.add_argument('--save_path', type=str, default=None,
+                        help="path of a \'.png\' file to save the graph")
+    parser.add_argument('--show', action='store_true', default=False)
+    parser.add_argument('--unweighted_losses', action='store_true', default=False)
+    args = parser.parse_args()
+
+    main(args=args)
     print("Goodbye!")
