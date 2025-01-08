@@ -26,6 +26,10 @@ DEFAULT_CFG = [
     'occlusionformer_basis_bias_3',
     'occlusionformer_basis_bias_4',
     'occlusionformer_basis_bias_5',
+    'v2_occluded',
+    'v2_difficult_occlusions',
+    'v2_diff_wmap_balanced',
+    'v2_diff_wmap_balanced_half'
 ]
 
 MIN_SCORES = ['min_ADE', 'min_FDE']
@@ -36,34 +40,27 @@ PAST_MEAN_SCORES = ['mean_past_ADE', 'mean_past_FDE']
 PRED_LENGTHS = ['past_pred_length', 'pred_length']
 OCCLUSION_MAP_SCORES = ['OAO', 'OAC', 'OAC_t0']
 
-if __name__ == '__main__':
-    # Script Controls #################################################################################################
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', nargs='+', default=None)
-    parser.add_argument('--unit', type=str, default='m')        # 'm' | 'px'
-    parser.add_argument('--sort_by', type=str, default='experiment')
-    parser.add_argument('--filter', nargs='+', default=None)
-    parser.add_argument('--save_file', type=os.path.abspath, default=None)
-    parser.add_argument('--print_dataset_stats', action='store_true', default=False)
-    args = parser.parse_args()
 
+def main(args: argparse.Namespace):
     assert args.unit in ['m', 'px']
 
-    UNIT = args.unit  # 'm' | 'px'
-    if UNIT == 'px':
+    if args.unit == 'm':
+        min_scores, mean_scores = MIN_SCORES, MEAN_SCORES
+        past_min_scores, past_mean_scores = PAST_MIN_SCORES, PAST_MEAN_SCORES
+    elif args.unit == 'px':
         px_name = lambda names_list: [f'{score_name}_px' for score_name in names_list]
-        MIN_SCORES = px_name(MIN_SCORES)
-        MEAN_SCORES = px_name(MEAN_SCORES)
-        PAST_MIN_SCORES = px_name(PAST_MIN_SCORES)
-        PAST_MEAN_SCORES = px_name(PAST_MEAN_SCORES)
+        min_scores, mean_scores = px_name(MIN_SCORES), px_name(MEAN_SCORES)
+        past_min_scores, past_mean_scores = px_name(PAST_MIN_SCORES), px_name(PAST_MEAN_SCORES)
+    else:
+        raise NotImplementedError
 
     print("PERFORMANCE SUMMARY:\n\n")
 
     experiment_names = args.cfg if args.cfg is not None else DEFAULT_CFG
     operation = 'mean'  # 'mean' | 'median' | 'IQR'
 
-    metric_names = (MIN_SCORES + MEAN_SCORES +
-                    PAST_MIN_SCORES + PAST_MEAN_SCORES +
+    metric_names = (min_scores + mean_scores +
+                    past_min_scores + past_mean_scores +
                     PRED_LENGTHS + OCCLUSION_MAP_SCORES)
 
     ref_index = get_reference_indices()
@@ -99,11 +96,26 @@ if __name__ == '__main__':
 
     print(f"Experiments Performance Summary ({operation}):")
     print(all_perf_df)
+    # print(all_perf_df[all_perf_df['dataset_used'] == 'occlusion_simulation'])
 
     if args.save_file:
-
         assert os.path.exists(os.path.dirname(args.save_file))
         assert not os.path.isfile(args.save_file)
 
         print(f"saving dataframe to:\n{args.save_file}\n")
         all_perf_df.to_csv(args.save_file)
+
+
+if __name__ == '__main__':
+    print("Hello!")
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--cfg', nargs='+', default=None)
+    parser.add_argument('--unit', type=str, default='m')        # 'm' | 'px'
+    parser.add_argument('--sort_by', type=str, default='experiment')
+    parser.add_argument('--filter', nargs='+', default=None)
+    parser.add_argument('--save_file', type=os.path.abspath, default=None)
+    parser.add_argument('--print_dataset_stats', action='store_true', default=False)
+    args = parser.parse_args()
+
+    main(args=args)
+    print("Goodbye!")
