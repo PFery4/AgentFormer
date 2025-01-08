@@ -30,6 +30,7 @@ from data.map import \
     compute_occlusion_map, compute_distance_transformed_map, compute_probability_map, compute_nlog_probability_map, \
     HomographyMatrix, MapManager, MAP_DICT
 from utils.config import Config, REPO_ROOT
+from utils.performance_analysis import get_difficult_occlusion_indices
 
 from typing import Dict, Optional
 Tensor = torch.Tensor
@@ -630,34 +631,16 @@ class HDF5PresavedDatasetSDD(BaseDataset, Dataset):
             self.with_map_transforms = False
             self.with_occlusion_objects = False
 
-        if False:       # handle difficult cases
-        # if parser.get('difficult', False):
+        if parser.get('difficult', False):
             print("KEEPING ONLY THE DIFFICULT CASES")
-
-            # verify the dataset is the correct configuration
+            # verifying the dataset is the correct configuration
             assert self.occlusion_process == 'occlusion_simulation'
             assert not self.impute
-            assert not self.momentary
-
-            from utils.performance_analysis import get_perf_scores_df
-
-            cv_perf_df = get_perf_scores_df(
-                experiment_name='const_vel_occlusion_simulation',
-                model_name='untrained',
-                split=self.split,
-                drop_idx=False
-            )
-            cv_perf_df = cv_perf_df[cv_perf_df['past_pred_length'] > 0]
-            cv_perf_df = cv_perf_df[cv_perf_df['OAC_t0'] == 0.]
-
-            difficult_instances = cv_perf_df.index.get_level_values('idx').unique().tolist()
-            difficult_instances = [f'{instance:08}' for instance in difficult_instances]
-            difficult_mask = np.in1d(self.instance_names, difficult_instances)
-
-            difficult_instance_names = list(np.array(self.instance_names)[difficult_mask])
-            difficult_instance_nums = list(np.array(self.instance_nums)[difficult_mask])
-            self.instance_names = difficult_instance_names
-            self.instance_nums = difficult_instance_nums
+            difficult_instances = get_difficult_occlusion_indices(
+                split=self.split).get_level_values('idx').unique().tolist()
+            self.indices = torch.tensor(difficult_instances, dtype=torch.int64)
+            assert len(self.indices) == len(difficult_instances)
+            assert torch.all(self.indices[1:] != self.indices[:-1])        # verifying no duplicates
 
         # dataset subsampling
         elif parser.get('custom_dataset_size', None) is not None:
