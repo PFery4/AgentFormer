@@ -12,7 +12,7 @@ from utils.sdd_visualize import visualize
 DEFAULT_ROWS, DEFAULT_COLS = 3, 3
 
 
-def visualize_dataset(args: argparse.Namespace):
+def main(args: argparse.Namespace):
     assert args.dataset_class in ['hdf5', 'torch']
     assert args.save_path is not None or args.show, "You must choose to either --show the image," \
                                                     "or save it by providing a --save_path."
@@ -77,5 +77,5 @@ if __name__ == '__main__':
     parser.add_argument('--with_scene_map', action='store_true', default=False)
     args = parser.parse_args()
 
-    visualize_dataset(args=args)
+    main(args=args)
     print("Goodbye!")
