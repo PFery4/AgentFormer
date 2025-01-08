@@ -6,15 +6,8 @@ from model.model_lib import model_dict
 from utils.config import ModelConfig
 from utils.utils import prepare_seed, get_cuda_device
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', type=str, default=None,
-                        help="Model config file (specified as either name or path)")
-    parser.add_argument('--checkpoint_name', type=str, default=None,
-                        help="None | 'best_val' | 'untrained' | <model_id>")
-    parser.add_argument('--gpu', type=int, default=0)
-    args = parser.parse_args()
 
+def parameter_count(args: argparse.Namespace):
     cfg = ModelConfig(cfg_id=args.cfg, tmp=False, create_dirs=False)
     prepare_seed(cfg.seed)
     torch.set_default_dtype(torch.float32)
@@ -55,3 +48,17 @@ if __name__ == '__main__':
     ):
         print(param_df)
     print(f"\nTOTAL PARAMETER COUNT:\n{param_df['params'].sum()}")
+
+
+if __name__ == '__main__':
+    print("Hello!")
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--cfg', type=str, default=None,
+                        help="Model config file (specified as either name or path)")
+    parser.add_argument('--checkpoint_name', type=str, default=None,
+                        help="None | 'best_val' | 'untrained' | <model_id>")
+    parser.add_argument('--gpu', type=int, default=0)
+    args = parser.parse_args()
+
+    parameter_count(args=args)
+    print("Goodbye!")
