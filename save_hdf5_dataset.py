@@ -120,24 +120,7 @@ def write_instance_to_hdf5_dataset(
                 print(f"Skipped:                 {key}")
 
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', type=str, required=True, default=None,
-                        help="config file (specified as either name or path")
-    parser.add_argument('--split', type=str, default='train')
-    parser.add_argument('--start_idx', type=int, default=0)
-    parser.add_argument('--end_idx', type=int, default=-10)
-    parser.add_argument('--save_path', type=os.path.abspath, default=None)
-    parser.add_argument('--size_setting', type=str, default='generator',
-                        help='\'generator\': use the length of the generator to set the presaved dataset file size.\n'
-                             '\'indices\': use --start_idx and --end_idx to infer the presaved dataset file size.')
-    parser.add_argument('--process_rgb_map', type=bool, default=False,
-                        help="Whether to have the <TorchDataGeneratorSDD> class process the RGB scene map."
-                             "This significantly increases the program's running time and memory usage."
-                             "The saving process does not use the RGB scene map, setting this flag to True will not"
-                             "modify the program's output in any way (so it should be kept as False).")
-    args = parser.parse_args()
-
+def save_hdf5_dataset(args: argparse.Namespace):
     assert args.split in ['train', 'val', 'test']
     assert args.size_setting in ['generator', 'indices']
 
@@ -189,7 +172,6 @@ if __name__ == '__main__':
     with h5py.File(args.save_path, 'a') as hdf5_file:
 
         for i, idx in enumerate(tqdm(indices)):
-
             data_dict = generator.__getitem__(idx)
 
             write_instance_to_hdf5_dataset(
@@ -200,4 +182,25 @@ if __name__ == '__main__':
                 verbose=False
             )
 
-    print("\n\nDone, Goodbye!")
+
+if __name__ == '__main__':
+    print("Hello!")
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--cfg', type=str, required=True, default=None,
+                        help="config file (specified as either name or path")
+    parser.add_argument('--split', type=str, default='train')
+    parser.add_argument('--start_idx', type=int, default=0)
+    parser.add_argument('--end_idx', type=int, default=-10)
+    parser.add_argument('--save_path', type=os.path.abspath, default=None)
+    parser.add_argument('--size_setting', type=str, default='generator',
+                        help='\'generator\': use the length of the generator to set the presaved dataset file size.\n'
+                             '\'indices\': use --start_idx and --end_idx to infer the presaved dataset file size.')
+    parser.add_argument('--process_rgb_map', type=bool, default=False,
+                        help="Whether to have the <TorchDataGeneratorSDD> class process the RGB scene map."
+                             "This significantly increases the program's running time and memory usage."
+                             "The saving process does not use the RGB scene map, setting this flag to True will not"
+                             "modify the program's output in any way (so it should be kept as False).")
+    args = parser.parse_args()
+
+    save_hdf5_dataset(args=args)
+    print("Goodbye!")
