@@ -7,11 +7,14 @@ import torch
 from tqdm import tqdm
 
 from data.sdd_dataloader import TorchDataGeneratorSDD, HDF5PresavedDatasetSDD, PickleDatasetSDD, HDF5DatasetSDD
-from utils.config import Config, REPO_ROOT
+from utils.config import Config
 from utils.utils import prepare_seed
 
 from typing import Dict, List, Optional, Tuple
 Tensor = torch.Tensor
+
+
+DEFAULT_RNG = 42
 
 
 def print_instance_keys(dataset):
@@ -102,7 +105,7 @@ def compare_2_datasets(
 
     comparison_df = pd.DataFrame(index=indices, columns=compare_keys)
 
-    prepare_seed(RNG_SEED)
+    prepare_seed(DEFAULT_RNG)
 
     from time import time
     time_1, time_2 = [], []
@@ -129,53 +132,16 @@ def compare_2_datasets(
     return comparison_df, np.array(time_1), np.array(time_2)
 
 
-if __name__ == '__main__':
-    print("Hello!")
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', type=str, required=True, default=None,
-                        help="Dataset config file (specified as either name or path")
-    parser.add_argument('--output', type=os.path.abspath, default=None)
-    parser.add_argument('--split', type=str, default='train',
-                        help="\'train\' | \'val\' | \'test\'")
-    parser.add_argument('--start_idx', type=int, default=0)
-    parser.add_argument('--end_idx', type=int, default=-10)
-    parser.add_argument('--legacy', action='store_true', default=False)
-    args = parser.parse_args()
+def main(args: argparse.Namespace):
+    if args.save_path is not None:
+        assert os.path.exists(os.path.dirname(os.path.abspath(args.save_path)))
+        assert args.save_path.endswith('.csv')
 
-    # CONFIG_STR, DATASET_CLASS, SPLIT = 'dataset_fully_observed', 'pickle', 'train'          # TODO: TRY TO REMAIN CONSISTENT WITH POSITION / VELOCITIES
-    # CONFIG_STR, DATASET_CLASS, SPLIT = 'dataset_fully_observed', 'torch_preprocess', 'train'
-    # config_str, dataset_class, split = 'dataset_fully_observed', 'pickle', 'train'
-    # CONFIG_STR, DATASET_CLASS, SPLIT = 'dataset_occlusion_simulation', 'torch_preprocess', 'test'
-    # CONFIG_STR, DATASET_CLASS, SPLIT = 'dataset_occlusion_simulation', 'torch_preprocess', 'train'
-    # config_str, dataset_class, split = 'dataset_occlusion_simulation', 'pickle', 'train'
-
-    # CONFIG_STR, _, SPLIT = 'dataset_fully_observed', 'torch_preprocess', 'train'
-    # CONFIG_STR, _, SPLIT = 'dataset_occlusion_simulation', 'torch_preprocess', 'train'
-    # CONFIG_STR, _, SPLIT = 'dataset_occlusion_simulation_imputed', 'torch_preprocess', 'train'
-    # CONFIG_STR, _, SPLIT = 'dataset_fully_observed', 'torch_preprocess', 'val'
-    # CONFIG_STR, _, SPLIT = 'dataset_occlusion_simulation', 'torch_preprocess', 'val'
-    # CONFIG_STR, _, SPLIT = 'dataset_occlusion_simulation_imputed', 'torch_preprocess', 'val'
-    # CONFIG_STR, _, SPLIT = 'dataset_fully_observed_no_rand_rot', 'torch_preprocess', 'test'
-    # CONFIG_STR, _, SPLIT = 'dataset_occlusion_simulation_no_rand_rot', 'torch_preprocess', 'test'
-    # CONFIG_STR, _, SPLIT = 'dataset_occlusion_simulation_imputed_no_rand_rot', 'torch_preprocess', 'test'
-
-    # TODO: CLEAN THIS UP
-    RNG_SEED = 42
-    CONFIG_STR, _, SPLIT = args.cfg, 'torch_preprocess', args.split
-    LEGACY_MODE = args.legacy
-
-    cfg = Config(CONFIG_STR)
+    cfg = Config(cfg_id=args.cfg)
     cfg.__setattr__('with_rgb_map', False)
 
-    if args.output is None:
-        CSV_PATH = os.path.join(REPO_ROOT, 'data', f'{cfg.id}_{SPLIT}_difference.csv')      # TODO: provide a better default
-    else:
-        CSV_PATH = os.path.abspath(args.output)
-    assert CSV_PATH.endswith('csv')
-    print(f"SAVING TO:\n{CSV_PATH}")
-
-    if LEGACY_MODE:
-        if SPLIT == 'test':
+    if args.legacy:
+        if args.split == 'test':
             dset_class_1 = HDF5DatasetSDD
         else:
             dset_class_1 = PickleDatasetSDD
@@ -184,8 +150,8 @@ if __name__ == '__main__':
 
     dset_class_2 = HDF5PresavedDatasetSDD
 
-    torch_dataset_1 = dset_class_1(parser=cfg, split=SPLIT)
-    torch_dataset_2 = dset_class_2(parser=cfg, split=SPLIT, legacy_mode=LEGACY_MODE)
+    torch_dataset_1 = dset_class_1(parser=cfg, split=args.split)
+    torch_dataset_2 = dset_class_2(parser=cfg, split=args.split, legacy_mode=args.legacy)
 
     print(type(torch_dataset_1))
     print(type(torch_dataset_2))
@@ -202,7 +168,7 @@ if __name__ == '__main__':
     indices = range(args.start_idx, args.end_idx, 1)
     print(f"Comparing Dataset instances between the range [{args.start_idx}-{args.end_idx}].")
 
-    prepare_seed(RNG_SEED)
+    prepare_seed(cfg.yml_dict.get('seed', default=DEFAULT_RNG))
 
     print_instance_keys(dataset=torch_dataset_1)
     print_instance_keys(dataset=torch_dataset_2)
@@ -222,7 +188,24 @@ if __name__ == '__main__':
     print(f"{np.mean(time_1), np.mean(time_2)=}")
     print()
 
-    comp_df.to_csv(CSV_PATH)
-    print(f"SAVED DIFFERENCE DATASET TO:\n{CSV_PATH}")
+    if args.save_path is not None:
+        print(f"saving comparison report under:\n{os.path.abspath(args.save_path)}")
+        comp_df.to_csv(os.path.abspath(args.save_path))
 
+
+if __name__ == '__main__':
+    print("Hello!")
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--cfg', type=str, required=True, default=None,
+                        help="Dataset config file (specified as either name or path")
+    parser.add_argument('--split', type=str, default='train',
+                        help="\'train\' | \'val\' | \'test\'")
+    parser.add_argument('--start_idx', type=int, default=0)
+    parser.add_argument('--end_idx', type=int, default=-10)
+    parser.add_argument('--legacy', action='store_true', default=False)
+    parser.add_argument('--save_path', type=os.path.abspath, default=None,
+                        help="path of a \'.csv\' file to save the comparison report")
+    args = parser.parse_args()
+
+    main(args=args)
     print("Goodbye!")
