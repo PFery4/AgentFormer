@@ -10,19 +10,8 @@ from model.model_lib import model_dict
 from utils.config import Config, ModelConfig
 from utils.utils import prepare_seed, print_log, mkdir_if_missing, get_cuda_device
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', type=str, required=True, default=None,
-                        help="Model config file (specified as either name or path")
-    parser.add_argument('--dataset_cfg', type=str, default=None,
-                        help="Dataset config file (specified as either name or path")
-    parser.add_argument('--data_split', type=str, default='test')
-    parser.add_argument('--checkpoint_name', default='best_val')        # can be 'best_val' / 'untrained' / <model_id>
-    parser.add_argument('--tmp', action='store_true', default=False)
-    parser.add_argument('--gpu', type=int, default=None)
-    parser.add_argument('--dataset_class', type=str, default='hdf5', help="'torch' | 'hdf5'")
-    args = parser.parse_args()
 
+def main(args: argparse.Namespace):
     # TODO:
     #   - VERIFICATION THAT THE SCRIPT WORKS (RUN IT)
     #   - CLEANUP
@@ -95,7 +84,7 @@ if __name__ == '__main__':
             # recon_pred, _ = model.inference(mode='recon', sample_num=1)         # [B, P, 2]   # unused
             samples_pred, model_data = model.inference(
                 mode='infer', sample_num=cfg.sample_k, need_weights=False
-            )                                                                   # [B * sample_k, P, 2]
+            )  # [B * sample_k, P, 2]
 
         for key, value in model_data.items():
             if key == 'valid_id' or 'last_obs_' in key or 'pred_' in key or '_dec_' in key:
@@ -104,4 +93,20 @@ if __name__ == '__main__':
         with open(os.path.join(save_dir, filename), 'wb') as f:
             pickle.dump(out_dict, f, protocol=pickle.HIGHEST_PROTOCOL)
 
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--cfg', type=str, required=True, default=None,
+                        help="Model config file (specified as either name or path")
+    parser.add_argument('--dataset_cfg', type=str, default=None,
+                        help="Dataset config file (specified as either name or path")
+    parser.add_argument('--data_split', type=str, default='test')
+    parser.add_argument('--checkpoint_name', default='best_val')        # can be 'best_val' / 'untrained' / <model_id>
+    parser.add_argument('--tmp', action='store_true', default=False)
+    parser.add_argument('--gpu', type=int, default=None)
+    parser.add_argument('--dataset_class', type=str, default='hdf5', help="'torch' | 'hdf5'")
+    args = parser.parse_args()
+    # TODO: ADD --legacy flag
+
+    main(args=args)
     print("\nDone, goodbye!")
