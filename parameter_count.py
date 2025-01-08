@@ -7,7 +7,7 @@ from utils.config import ModelConfig
 from utils.utils import prepare_seed, get_cuda_device
 
 
-def parameter_count(args: argparse.Namespace):
+def main(args: argparse.Namespace):
     cfg = ModelConfig(cfg_id=args.cfg, tmp=False, create_dirs=False)
     prepare_seed(cfg.seed)
     torch.set_default_dtype(torch.float32)
@@ -60,5 +60,5 @@ if __name__ == '__main__':
     parser.add_argument('--gpu', type=int, default=0)
     args = parser.parse_args()
 
-    parameter_count(args=args)
+    main(args=args)
     print("Goodbye!")
