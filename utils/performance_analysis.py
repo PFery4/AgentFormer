@@ -411,7 +411,8 @@ def get_difficult_occlusion_indices(split: str):
         experiment_name='const_vel_occlusion_simulation',
         dataset_used='occlusion_simulation',
         model_name='untrained',
-        split=split
+        split=split,
+        drop_idx=False
     )
 
     cv_perf_df = cv_perf_df[cv_perf_df['past_pred_length'] > 0]
