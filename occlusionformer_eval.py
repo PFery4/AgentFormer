@@ -21,19 +21,7 @@ from model.agentformer_loss import index_mapping_gt_seq_pred_seq
 from model.model_lib import model_dict
 
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', type=str, required=True, default=None,
-                        help="Model config file (specified as either name or path")
-    parser.add_argument('--dataset_cfg', type=str, default=None,
-                        help="Dataset config file (specified as either name or path")
-    parser.add_argument('--data_split', type=str, default='test')
-    parser.add_argument('--checkpoint_name', default='best_val')        # can be 'best_val' / 'untrained' / <model_id>
-    parser.add_argument('--tmp', action='store_true', default=False)
-    parser.add_argument('--gpu', type=int, default=None)
-    parser.add_argument('--dataset_class', type=str, default='hdf5', help="'torch' | 'hdf5'")
-    args = parser.parse_args()
-
+def main(args: argparse.Namespace):
     cfg = ModelConfig(cfg_id=args.cfg, tmp=args.tmp, create_dirs=False)
     prepare_seed(cfg.seed)
     torch.set_default_dtype(torch.float32)
@@ -150,42 +138,44 @@ if __name__ == '__main__':
         with open(os.path.join(saved_preds_dir, filename), 'rb') as f:
             pred_data = pickle.load(f)
 
-        valid_ids = pred_data['valid_id'][0].to(model.device)                        # [N]
-        gt_identities = pred_data['pred_identity_sequence'][0].to(model.device)      # [P]
-        gt_timesteps = pred_data['pred_timestep_sequence'][0].to(model.device)       # [P]
-        gt_positions = pred_data['pred_position_sequence'][0].to(model.device)       # [P, 2]
+        valid_ids = pred_data['valid_id'][0].to(model.device)  # [N]
+        gt_identities = pred_data['pred_identity_sequence'][0].to(model.device)  # [P]
+        gt_timesteps = pred_data['pred_timestep_sequence'][0].to(model.device)  # [P]
+        gt_positions = pred_data['pred_position_sequence'][0].to(model.device)  # [P, 2]
 
-        infer_pred_identities = pred_data['infer_dec_agents'][0].to(model.device)        # [P]
-        infer_pred_timesteps = pred_data['infer_dec_timesteps'].to(model.device)         # [P]
-        infer_pred_positions = pred_data['infer_dec_motion'].to(model.device)            # [K, P, 2]
-        infer_pred_past_mask = pred_data['infer_dec_past_mask'].to(model.device)         # [P]
+        infer_pred_identities = pred_data['infer_dec_agents'][0].to(model.device)  # [P]
+        infer_pred_timesteps = pred_data['infer_dec_timesteps'].to(model.device)  # [P]
+        infer_pred_positions = pred_data['infer_dec_motion'].to(model.device)  # [K, P, 2]
+        infer_pred_past_mask = pred_data['infer_dec_past_mask'].to(model.device)  # [P]
 
         if dataset_cfg.get('impute', False):
-            true_gt_pred_mask = ~in_data['true_observation_mask'][0]         # [N, T_total]
-            impute_mask = in_data['observation_mask'][0]                # [N, T_total]
+            true_gt_pred_mask = ~in_data['true_observation_mask'][0]  # [N, T_total]
+            impute_mask = in_data['observation_mask'][0]  # [N, T_total]
             true_last_obs_indices = in_data['true_observation_mask'][0].shape[1] - torch.argmax(torch.flip(
                 in_data['true_observation_mask'][0], dims=[1]
-            ).to(torch.float32), dim=1) - 1     # [N]
+            ).to(torch.float32), dim=1) - 1  # [N]
             for i_last_obs, true_last_obs_index in enumerate(true_last_obs_indices):
-                impute_mask[i_last_obs, :true_last_obs_index+1] = False
-                true_gt_pred_mask[i_last_obs, :true_last_obs_index+1] = False
+                impute_mask[i_last_obs, :true_last_obs_index + 1] = False
+                true_gt_pred_mask[i_last_obs, :true_last_obs_index + 1] = False
 
             # retrieving ground truth
-            true_gt_positions = in_data['true_trajectories'][0][true_gt_pred_mask].to(gt_positions.device)      # [P, 2]
-            identities_grid = torch.hstack([valid_ids.unsqueeze(1)] * in_data['timesteps'][0].shape[0])      # [N, T_total]
-            true_gt_identities = identities_grid[true_gt_pred_mask].to(gt_identities.device)                  # [P]
-            timesteps_grid = torch.vstack([in_data['timesteps'][0]] * valid_ids.shape[0])                    # [N, T_total]
-            true_gt_timesteps = timesteps_grid[true_gt_pred_mask].to(gt_timesteps.device)                    # [P]
+            true_gt_positions = in_data['true_trajectories'][0][true_gt_pred_mask].to(gt_positions.device)  # [P, 2]
+            identities_grid = torch.hstack([valid_ids.unsqueeze(1)] * in_data['timesteps'][0].shape[0])  # [N, T_total]
+            true_gt_identities = identities_grid[true_gt_pred_mask].to(gt_identities.device)  # [P]
+            timesteps_grid = torch.vstack([in_data['timesteps'][0]] * valid_ids.shape[0])  # [N, T_total]
+            true_gt_timesteps = timesteps_grid[true_gt_pred_mask].to(gt_timesteps.device)  # [P]
 
             # prediction, with the imputed part of the prediction appended to it
             true_infer_pred_identities = identities_grid[impute_mask].to(infer_pred_identities.device)
             true_infer_pred_timesteps = timesteps_grid[impute_mask].to(infer_pred_timesteps.device)
-            true_infer_pred_positions = in_data['trajectories'][0][impute_mask].repeat(cfg.sample_k, 1, 1).to(infer_pred_positions.device)
+            true_infer_pred_positions = in_data['trajectories'][0][impute_mask].repeat(cfg.sample_k, 1, 1).to(
+                infer_pred_positions.device)
 
-            true_infer_pred_identities = torch.cat([true_infer_pred_identities, infer_pred_identities], dim=-1)     # [P]
-            true_infer_pred_timesteps = torch.cat([true_infer_pred_timesteps, infer_pred_timesteps], dim=-1)        # [P]
-            true_infer_pred_positions = torch.cat([true_infer_pred_positions, infer_pred_positions], dim=-2)        # [K, P, 2]
-            true_infer_pred_past_mask = (true_infer_pred_timesteps <= 0).to(infer_pred_past_mask.device)            # [P]
+            true_infer_pred_identities = torch.cat([true_infer_pred_identities, infer_pred_identities], dim=-1)  # [P]
+            true_infer_pred_timesteps = torch.cat([true_infer_pred_timesteps, infer_pred_timesteps], dim=-1)  # [P]
+            true_infer_pred_positions = torch.cat([true_infer_pred_positions, infer_pred_positions],
+                                                  dim=-2)  # [K, P, 2]
+            true_infer_pred_past_mask = (true_infer_pred_timesteps <= 0).to(infer_pred_past_mask.device)  # [P]
 
             gt_identities = true_gt_identities
             gt_timesteps = true_gt_timesteps
@@ -203,21 +193,21 @@ if __name__ == '__main__':
             tsteps_pred=infer_pred_timesteps
         )
 
-        gt_identities = gt_identities[idx_map]      # [P]
-        gt_timesteps = gt_timesteps[idx_map]        # [P]
-        gt_positions = gt_positions[idx_map, :]     # [P, 2]
+        gt_identities = gt_identities[idx_map]  # [P]
+        gt_timesteps = gt_timesteps[idx_map]  # [P]
+        gt_positions = gt_positions[idx_map, :]  # [P, 2]
 
         assert torch.all(infer_pred_identities == gt_identities)
         assert torch.all(infer_pred_timesteps == gt_timesteps)
 
-        identity_mask = valid_ids.unsqueeze(1) == infer_pred_identities.unsqueeze(0)        # [N, P]
+        identity_mask = valid_ids.unsqueeze(1) == infer_pred_identities.unsqueeze(0)  # [N, P]
 
-        future_mask = infer_pred_timesteps > 0                                              # [P]
-        identity_and_future_mask = torch.logical_and(identity_mask, future_mask)            # [N, P]
+        future_mask = infer_pred_timesteps > 0  # [P]
+        identity_and_future_mask = torch.logical_and(identity_mask, future_mask)  # [N, P]
 
         if {'past_pred_length', 'past_ADE', 'past_FDE', 'OAO', 'OAC'}.intersection(metrics_to_compute):
-            past_mask = infer_pred_timesteps <= 0                                               # [P]
-            identity_and_past_mask = torch.logical_and(identity_mask, past_mask)                # [N, P]
+            past_mask = infer_pred_timesteps <= 0  # [P]
+            identity_and_past_mask = torch.logical_and(identity_mask, past_mask)  # [N, P]
 
         if {'OAO', 'OAC', 'OAC_t0', 'occlusion_area'}.intersection(metrics_to_compute):
             occlusion_map = in_data['dist_transformed_occlusion_map'][0].to(model.device)
@@ -255,7 +245,7 @@ if __name__ == '__main__':
                     pred_positions=infer_pred_positions,
                     gt_positions=gt_positions,
                     identity_mask=identity_and_future_mask
-                )       # [N, K]
+                )  # [N, K]
                 if 'ADE_px' in metrics_to_compute:
                     scene, video = in_data['seq'][0].split('_')
                     px_by_m = coord_conv_table.loc[scene, video]['px/m']
@@ -266,7 +256,7 @@ if __name__ == '__main__':
                     pred_positions=infer_pred_positions,
                     gt_positions=gt_positions,
                     identity_mask=identity_and_future_mask
-                )       # [N, K]
+                )  # [N, K]
                 if 'FDE_px' in metrics_to_compute:
                     scene, video = in_data['seq'][0].split('_')
                     px_by_m = coord_conv_table.loc[scene, video]['px/m']
@@ -275,19 +265,19 @@ if __name__ == '__main__':
             if metric_name == 'pred_length':
                 computed_metrics['pred_length'] = compute_pred_lengths(
                     identity_mask=identity_mask
-                )       # [N, 1]
+                )  # [N, 1]
 
             if metric_name == 'past_pred_length':
                 computed_metrics['past_pred_length'] = compute_pred_lengths(
                     identity_mask=identity_and_past_mask
-                )       # [N, 1]
+                )  # [N, 1]
 
             if metric_name == 'past_ADE':
                 computed_metrics['past_ADE'] = compute_samples_ADE(
                     pred_positions=infer_pred_positions,
                     gt_positions=gt_positions,
                     identity_mask=identity_and_past_mask
-                )       # [N, K]
+                )  # [N, K]
                 if 'past_ADE_px' in metrics_to_compute:
                     scene, video = in_data['seq'][0].split('_')
                     px_by_m = coord_conv_table.loc[scene, video]['px/m']
@@ -298,7 +288,7 @@ if __name__ == '__main__':
                     pred_positions=infer_pred_positions,
                     gt_positions=gt_positions,
                     identity_mask=identity_and_past_mask
-                )       # [N, K]
+                )  # [N, K]
                 if 'past_FDE_px' in metrics_to_compute:
                     scene, video = in_data['seq'][0].split('_')
                     px_by_m = coord_conv_table.loc[scene, video]['px/m']
@@ -309,28 +299,28 @@ if __name__ == '__main__':
                     pred_positions=map_infer_pred_positions,
                     occlusion_map=occlusion_map,
                     identity_mask=identity_and_past_mask
-                )        # [N, 1]
+                )  # [N, 1]
 
             if metric_name == 'OAC':
                 computed_metrics['OAC'] = compute_occlusion_area_count(
                     pred_positions=map_infer_pred_positions,
                     occlusion_map=occlusion_map,
                     identity_mask=identity_and_past_mask
-                )        # [N, 1]
+                )  # [N, 1]
 
             if metric_name == 'OAC_t0':
                 computed_metrics['OAC_t0'] = compute_occlusion_area_count(
                     pred_positions=map_infer_pred_positions,
                     occlusion_map=occlusion_map,
                     identity_mask=torch.logical_and(identity_mask, infer_pred_timesteps == 0)
-                )        # [N, 1]
+                )  # [N, 1]
 
             if metric_name == 'all_ADE':
                 computed_metrics['all_ADE'] = compute_samples_ADE(
                     pred_positions=infer_pred_positions,
                     gt_positions=gt_positions,
                     identity_mask=identity_mask
-                )       # [N, K]
+                )  # [N, K]
                 if 'all_ADE_px' in metrics_to_compute:
                     scene, video = in_data['seq'][0].split('_')
                     px_by_m = coord_conv_table.loc[scene, video]['px/m']
@@ -340,8 +330,8 @@ if __name__ == '__main__':
                 occl_map_area = compute_occlusion_map_area(
                     occlusion_map=occlusion_map,
                     homography_matrix=map_homography
-                )   # float
-                computed_metrics['occlusion_area'] = torch.ones([valid_ids.shape[0], 1]) * occl_map_area    # [N, 1]
+                )  # float
+                computed_metrics['occlusion_area'] = torch.ones([valid_ids.shape[0], 1]) * occl_map_area  # [N, 1]
 
         assert all([val is not None for val in computed_metrics.values()])
 
@@ -364,7 +354,7 @@ if __name__ == '__main__':
         'ADE', 'ADE_px', 'FDE', 'FDE_px',
         'past_ADE', 'past_ADE_px', 'past_FDE', 'past_FDE_px',
         'all_ADE', 'all_ADE_px'] if x in metrics_to_compute
-    ]:
+                        ]:
         mode_ades = metric_columns[metric_name]
         score_df[f'min_{metric_name}'] = score_df[mode_ades].min(axis=1)
         score_df[f'mean_{metric_name}'] = score_df[mode_ades].mean(axis=1)
@@ -383,4 +373,22 @@ if __name__ == '__main__':
     print("\n\n")
     print(score_df)
     print()
-    [print(f"{key}{' '.ljust(20-len(key))}| {val}") for key, val in score_dict.items()]
+    [print(f"{key}{' '.ljust(20 - len(key))}| {val}") for key, val in score_dict.items()]
+
+
+if __name__ == '__main__':
+    print("Hello!")
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--cfg', type=str, required=True, default=None,
+                        help="Model config file (specified as either name or path")
+    parser.add_argument('--dataset_cfg', type=str, default=None,
+                        help="Dataset config file (specified as either name or path")
+    parser.add_argument('--data_split', type=str, default='test')
+    parser.add_argument('--checkpoint_name', default='best_val')        # can be 'best_val' / 'untrained' / <model_id>
+    parser.add_argument('--tmp', action='store_true', default=False)
+    parser.add_argument('--gpu', type=int, default=None)
+    parser.add_argument('--dataset_class', type=str, default='hdf5', help="'torch' | 'hdf5'")
+    args = parser.parse_args()
+
+    main(args=args)
+    print("Goodbye!")
