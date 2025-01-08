@@ -19,14 +19,20 @@ def main(args: argparse.Namespace):
     if args.save_path is not None:
         assert os.path.exists(os.path.dirname(os.path.abspath(args.save_path)))
         assert args.save_path.endswith('.png')
+    if args.legacy:
+        assert args.dataset_class == 'hdf5', "Legacy mode is only available with presaved HDF5 datasets" \
+                                             "(use: --dataset_class hdf5)"
 
     dataset_class = dataset_dict[args.dataset_class]
     data_cfg = Config(cfg_id=args.cfg)
     data_cfg.__setattr__('with_rgb_map', args.with_scene_map)
+    dataset_kwargs = dict(parser=data_cfg, split=args.split)
+    if args.legacy:
+        dataset_kwargs.update(legacy_mode=True)
     assert data_cfg.dataset == "sdd"
     if data_cfg.dataset == "sdd":
         print(f"\nUsing dataset of class: {dataset_class}\n")
-        dataset = dataset_class(parser=data_cfg, split=args.split)
+        dataset = dataset_class(**dataset_kwargs)
 
     if args.idx is not None:
         rows = int(np.sqrt(len(args.idx)))
