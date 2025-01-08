@@ -628,6 +628,7 @@ class HDF5PresavedDatasetSDD(BaseDataset, Dataset):
         self.with_occlusion_map_data = True if self.occlusion_process == 'occlusion_simulation' else False
 
         if legacy_mode:
+            print(f"USING LEGACY DATASET")
             self.with_map_transforms = False
             self.with_occlusion_objects = False
 
