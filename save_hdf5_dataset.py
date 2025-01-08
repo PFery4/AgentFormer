@@ -120,7 +120,7 @@ def write_instance_to_hdf5_dataset(
                 print(f"Skipped:                 {key}")
 
 
-def save_hdf5_dataset(args: argparse.Namespace):
+def main(args: argparse.Namespace):
     assert args.split in ['train', 'val', 'test']
     assert args.size_setting in ['generator', 'indices']
 
@@ -202,5 +202,5 @@ if __name__ == '__main__':
                              "modify the program's output in any way (so it should be kept as False).")
     args = parser.parse_args()
 
-    save_hdf5_dataset(args=args)
+    main(args=args)
     print("Goodbye!")
