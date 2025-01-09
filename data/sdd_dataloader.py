@@ -63,7 +63,7 @@ class BaseDataset:
         assert self.occlusion_process in ['fully_observed', 'occlusion_simulation']
         self.impute = bool(parser.impute)
         if self.impute:
-            assert self.occlusion_process != 'fully_observed'
+            assert self.occlusion_process == 'occlusion_simulation'
 
         # timesteps specific parameters
         self.T_obs = int(parser.past_frames)
@@ -489,6 +489,7 @@ class TorchDataGeneratorSDD(BaseDataset, Dataset):
                 process_dict=process_dict,
                 px_by_m=px_by_m
             )
+        clipped_dist_transformed_occlusion_map = torch.clamp(process_dict['dist_transformed_occlusion_map'], min=0.)
 
         # removing agent surplus
         ids = ids[process_dict['keep_agent_mask']]
@@ -553,7 +554,8 @@ class TorchDataGeneratorSDD(BaseDataset, Dataset):
 
             'occlusion_map': process_dict['occlusion_map'],
             'dist_transformed_occlusion_map': process_dict['dist_transformed_occlusion_map'],
-            'scene_map': scene_map_mgr.get_map(),
+            'clipped_dist_transformed_occlusion_map': clipped_dist_transformed_occlusion_map,
+            # 'scene_map': scene_map_mgr.get_map(),
             'map_homography': self.map_homography,
             'theta': theta_rot,
             'center_point': process_dict['center_point'],
@@ -567,9 +569,20 @@ class TorchDataGeneratorSDD(BaseDataset, Dataset):
             'frame': timestep,
             'instance_name': f'{idx:08}',
 
-            'true_trajectories': true_trajs if self.impute else None,
-            'true_observation_mask': true_obs_mask if self.impute else None
+            # 'true_trajectories': true_trajs if self.impute else None,
+            # 'true_observation_mask': true_obs_mask if self.impute else None
         }
+
+        if self.with_rgb_map:
+            data_dict.update(
+                scene_map=scene_map_mgr.get_map()
+            )
+
+        if self.impute:
+            data_dict.update(
+                true_trajectories=true_trajs,
+                true_observation_mask=true_obs_mask
+            )
 
         # TODO: remove
         # if self.compute_probability_maps:
