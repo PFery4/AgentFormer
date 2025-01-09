@@ -153,11 +153,11 @@ def main(args: argparse.Namespace):
     torch_dataset_1 = dset_class_1(parser=cfg, split=args.split)
     torch_dataset_2 = dset_class_2(parser=cfg, split=args.split, legacy_mode=args.legacy)
 
-    print(type(torch_dataset_1))
-    print(type(torch_dataset_2))
+    print(f"Dataset 1 is of type: {type(torch_dataset_1)}")
+    print(f"Dataset 2 is of type: {type(torch_dataset_2)}")
 
     assert len(torch_dataset_1) == len(torch_dataset_2)
-    print(f"COMPARED DATASETS LENGTH: {len(torch_dataset_1)}")
+    print(f"Compared Datasets Length: {len(torch_dataset_1)}")
 
     if args.end_idx < 0:
         print(f"Setting end index to the length of the Dataset: {len(torch_dataset_1)}\n")
@@ -168,7 +168,9 @@ def main(args: argparse.Namespace):
     indices = range(args.start_idx, args.end_idx, 1)
     print(f"Comparing Dataset instances between the range [{args.start_idx}-{args.end_idx}].")
 
-    prepare_seed(cfg.yml_dict.get('seed', default=DEFAULT_RNG))
+    rng_seed = cfg.yml_dict.get('seed', DEFAULT_RNG)
+    prepare_seed(rng_seed)
+    print(f"RNG seed set to: {rng_seed}\n")
 
     print_instance_keys(dataset=torch_dataset_1)
     print_instance_keys(dataset=torch_dataset_2)
