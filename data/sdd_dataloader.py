@@ -159,9 +159,6 @@ class TorchDataGeneratorSDD(BaseDataset, Dataset):
         self.max_train_agent = int(parser.max_train_agent)
         self.distance_threshold_occluded_target = self.map_side / 4     # [m]
 
-        # TODO: remove
-        # self.compute_probability_maps = False       # whether probability maps need to be derived from occlusion map
-
         strategies = {
             'fully_observed': self.handle_fully_observed_cases,
             'occlusion_simulation': self.handle_cases_with_simulated_occlusions
@@ -257,13 +254,6 @@ class TorchDataGeneratorSDD(BaseDataset, Dataset):
         process_dict['dist_transformed_occlusion_map'] = dist_transformed_occlusion_map
         process_dict['scene_map_image'] = scene_map_manager.get_map()
         process_dict['center_point'] = center_point
-
-        # TODO: remove
-        # if self.compute_probability_maps:
-        #     probability_map = torch.zeros([self.map_resolution, self.map_resolution])
-        #     nlog_probability_map = torch.zeros([self.map_resolution, self.map_resolution])
-        #     process_dict['probability_map'] = probability_map
-        #     process_dict['nlog_probability_map'] = nlog_probability_map
 
         return process_dict
 
@@ -375,13 +365,6 @@ class TorchDataGeneratorSDD(BaseDataset, Dataset):
         if self.impute:
             process_dict['true_trajs'] = true_trajs
             process_dict['true_obs_mask'] = true_obs_mask
-
-        # TODO: remove
-        # if self.compute_probability_maps:
-        #     probability_map = compute_probability_map(dt_map=dist_transformed_occlusion_map)
-        #     nlog_probability_map = compute_nlog_probability_map(dt_map=dist_transformed_occlusion_map)
-        #     process_dict['probability_map'] = probability_map
-        #     process_dict['nlog_probability_map'] = nlog_probability_map
 
         return process_dict
 
@@ -573,11 +556,6 @@ class TorchDataGeneratorSDD(BaseDataset, Dataset):
                 true_trajectories=true_trajs,
                 true_observation_mask=true_obs_mask
             )
-
-        # TODO: remove
-        # if self.compute_probability_maps:
-        #     data_dict['probability_occlusion_map'] = process_dict['probability_map']
-        #     data_dict['nlog_probability_occlusion_map'] = process_dict['nlog_probability_map']
 
         return data_dict
 
