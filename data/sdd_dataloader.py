@@ -721,14 +721,11 @@ class HDF5PresavedDatasetSDD(BaseDataset, Dataset):
         ).reshape(self.map_resolution, self.map_resolution)
         data_dict['occlusion_map'] = processed_occl_map
 
-        scaling = self.traj_scale * self.coord_conv_table.loc[data_dict['scene'], data_dict['video']]['m/px']
-        # if torch.any(torch.isnan(data_dict['ego'])):
+        px_by_m = self.coord_conv_table.loc[data_dict['scene'], data_dict['video']]['px/m']
+        m_by_px = self.coord_conv_table.loc[data_dict['scene'], data_dict['video']]['m/px']
+        scaling = self.traj_scale * m_by_px
         if not data_dict['is_occluded']:
             dist_transformed_occlusion_map = torch.zeros([self.map_resolution, self.map_resolution])
-
-            # TODO: remove
-            # probability_map = torch.zeros([self.map_resolution, self.map_resolution])
-            # nlog_probability_map = torch.zeros([self.map_resolution, self.map_resolution])
 
         else:
             dist_transformed_occlusion_map = compute_distance_transformed_map(
@@ -736,15 +733,11 @@ class HDF5PresavedDatasetSDD(BaseDataset, Dataset):
                 scaling=scaling
             )
 
-            # TODO: remove
-            # probability_map = compute_probability_map(dt_map=dist_transformed_occlusion_map)
-            # nlog_probability_map = compute_nlog_probability_map(dt_map=dist_transformed_occlusion_map)
-
+        dist_transformed_occlusion_map *= px_by_m * self.map_side / self.map_resolution
         data_dict['dist_transformed_occlusion_map'] = dist_transformed_occlusion_map
-
-        # TODO: remove
-        # data_dict['probability_occlusion_map'] = probability_map
-        # data_dict['nlog_probability_occlusion_map'] = nlog_probability_map
+        data_dict['clipped_dist_transformed_occlusion_map'] = torch.clamp(
+            dist_transformed_occlusion_map, min=0.
+        )
 
     def add_scene_map_data(self, data_dict: Dict):
         # loading the scene map
@@ -797,34 +790,6 @@ class HDF5PresavedDatasetSDD(BaseDataset, Dataset):
         if self.impute:
             assert 'true_trajectories' in data_dict.keys()
             data_dict['imputation_mask'] = data_dict['true_observation_mask'][data_dict['observation_mask']]
-
-        # Quick Fix
-        if self.quick_fix and self.occlusion_process == 'occlusion_simulation':
-            data_dict = self.apply_quick_fix(data_dict)
-
-        return data_dict
-
-    def apply_quick_fix(self, data_dict: Dict):
-        scene, video = data_dict['seq'].split('_')
-        px_by_m = self.coord_conv_table.loc[scene, video]['px/m']
-
-        data_dict['dist_transformed_occlusion_map'] *= px_by_m * self.map_side / self.map_resolution
-
-        # clipped_map = -torch.clamp(data_dict['dist_transformed_occlusion_map'], min=0.)
-        # data_dict['probability_occlusion_map'] = torch.nn.functional.softmax(
-        #     clipped_map.view(-1), dim=0
-        # ).view(clipped_map.shape)
-        # data_dict['nlog_probability_occlusion_map'] = -torch.nn.functional.log_softmax(
-        #     clipped_map.view(-1), dim=0
-        # ).view(clipped_map.shape)
-
-        data_dict['clipped_dist_transformed_occlusion_map'] = torch.clamp(
-            data_dict['dist_transformed_occlusion_map'], min=0.
-        )
-
-        # TODO: remove
-        # del data_dict['probability_occlusion_map']
-        # del data_dict['nlog_probability_occlusion_map']
 
         return data_dict
 
