@@ -179,6 +179,10 @@ def main(args: argparse.Namespace):
         dataset_1=torch_dataset_1, dataset_2=torch_dataset_2
     )
 
+    print("Instance keys not shared in common between the two datasets:")
+    [print(key) for key in uncommon_keys]
+    print()
+
     comp_df, time_1, time_2 = compare_2_datasets(
         dataset_1=torch_dataset_1, dataset_2=torch_dataset_2,
         compare_keys=common_keys, indices=indices, start_idx=0
