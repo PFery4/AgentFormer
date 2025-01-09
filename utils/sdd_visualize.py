@@ -240,6 +240,7 @@ def visualize_dist_transformed_occlusion_map(data_dict: Dict, draw_ax: matplotli
     cax = divider.append_axes('right', size='5%', pad=0.05)
     img = draw_ax.imshow(dt_occlusion_map, norm=divnorm, cmap=color_map)
     draw_ax.get_figure().colorbar(img, cax=cax, orientation='vertical')
+    draw_ax.contour(dt_occlusion_map, levels=range(-10, 30, 5), colors='k')
 
 
 def visualize_map(tensor_map: Tensor, draw_ax: matplotlib.axes.Axes) -> None:
