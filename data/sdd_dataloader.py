@@ -81,9 +81,6 @@ class BaseDataset:
         self.map_crop_coords = self.get_map_crop_coordinates()
         self.map_homography = self.get_map_homography()
 
-        # TODO: REMOVE QUICK FIX, FIX DIRECTLY PLEASE
-        self.quick_fix = bool(parser.get('quick_fix', False))
-
         # dataset identification
         self.dataset_name = self.get_dataset_name()
 
@@ -430,11 +427,6 @@ class TorchDataGeneratorSDD(BaseDataset, Dataset):
             m_by_px=m_by_px
         )
 
-    def fix_distance_transformed_map_scaling(self, process_dict: Dict, px_by_m: float) -> None:
-        # We performed the wrong px/m coordinate conversion when computing the distance transformed map.
-        # This function applies a fix, ensuring proper rescaling of the distance transformed map.
-        process_dict['dist_transformed_occlusion_map'] *= px_by_m * self.map_side / self.map_resolution
-
     def __getitem__(self, idx: int) -> Dict:
         # look up the row in the occlusion_table
         occlusion_case = self.occlusion_table.iloc[idx]
@@ -484,11 +476,9 @@ class TorchDataGeneratorSDD(BaseDataset, Dataset):
             occlusion_case=occlusion_case
         )
 
-        if self.quick_fix:
-            self.fix_distance_transformed_map_scaling(
-                process_dict=process_dict,
-                px_by_m=px_by_m
-            )
+        # We performed the wrong px/m coordinate conversion when computing the distance transformed map.
+        # we apply a fix here, ensuring proper rescaling of the distance transformed map.
+        process_dict['dist_transformed_occlusion_map'] *= px_by_m * self.map_side / self.map_resolution
         clipped_dist_transformed_occlusion_map = torch.clamp(process_dict['dist_transformed_occlusion_map'], min=0.)
 
         # removing agent surplus
@@ -597,11 +587,6 @@ class HDF5PresavedDatasetSDD(BaseDataset, Dataset):
     dataset_filenames = {False: 'dataset_v2.h5', True: 'legacy_dataset_v2.h5'}
     presaved_datasets_dir = os.path.join(REPO_ROOT, 'datasets', 'SDD', 'pre_saved_datasets')
 
-    # This is a "quick fix".
-    # We performed the wrong px/m coordinate conversion when computing the distance transformed map.
-    # Ideally we should correct this in the TorchDatasetGenerator class.
-    # the real fix is to have the distance transformed map scaled by the proper factor:
-    # TorchDatasetGenerator.map_side / TorchDatasetGenerator.map_resolution
     coord_conv_dir = os.path.join(REPO_ROOT, 'datasets', 'SDD', 'coordinates_conversion.txt')
     coord_conv_table = pd.read_csv(coord_conv_dir, sep=';', index_col=('scene', 'video'))
 
@@ -733,6 +718,8 @@ class HDF5PresavedDatasetSDD(BaseDataset, Dataset):
                 scaling=scaling
             )
 
+        # We performed the wrong px/m coordinate conversion when computing the distance transformed map.
+        # we apply a fix here, ensuring proper rescaling of the distance transformed map.
         dist_transformed_occlusion_map *= px_by_m * self.map_side / self.map_resolution
         data_dict['dist_transformed_occlusion_map'] = dist_transformed_occlusion_map
         data_dict['clipped_dist_transformed_occlusion_map'] = torch.clamp(
