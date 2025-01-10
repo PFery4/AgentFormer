@@ -5,6 +5,7 @@ import time
 
 import torch
 from torch import optim
+from torch.optim.lr_scheduler import LambdaLR, StepLR, ReduceLROnPlateau
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from csv import DictWriter
@@ -15,15 +16,17 @@ from utils.torch_ops import get_scheduler
 from utils.config import Config, ModelConfig
 from utils.utils import prepare_seed, print_log, AverageMeter, convert_secs2time, get_timestring, get_cuda_device
 
-from typing import Optional
-from io import TextIOWrapper
+from typing import Dict, List, Optional, TextIO, Tuple, Union
 
 torch.backends.cudnn.enabled = True
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = True
 
 
-def logging(cfg, epoch, total_epoch, iter, total_iter, ep, seq, frame, losses_str, log: Optional[TextIOWrapper]):
+def logging(
+        cfg: str, epoch: int, total_epoch: int, iter: int, total_iter: int, ep: float, seq: str, frame: int,
+        losses_str: str, log: Optional[TextIO]
+) -> None:
     ep_time_str = convert_secs2time(ep)
     eta_time_str = convert_secs2time(ep / (iter + 1) * (total_iter * (total_epoch - epoch) - (iter + 1)))
     prnt_str = f"{cfg} |Epo: {epoch:02d}/{total_epoch:02d}, " \
@@ -37,7 +40,10 @@ def logging(cfg, epoch, total_epoch, iter, total_iter, ep, seq, frame, losses_st
         print(prnt_str)
 
 
-def report_losses(logfile, loss_meter, epoch_idx, batch_idx, split='train'):
+def report_losses(
+        logfile: str, tb_logger: SummaryWriter, training_loader: DataLoader, loss_meter: Dict[str, AverageMeter],
+        csv_field_names: List[str], epoch_idx: int, batch_idx: int, split: str = 'train'
+) -> None:
     tb_x = epoch_idx * len(training_loader) + batch_idx + 1
     for name, meter in loss_meter.items():
         tb_logger.add_scalar(f'model_{split}_{name}', meter.avg, tb_x)
@@ -50,7 +56,7 @@ def report_losses(logfile, loss_meter, epoch_idx, batch_idx, split='train'):
         f.close()
 
 
-def mark_epoch_end_in_csv(csv_logfile, epoch_idx):
+def mark_epoch_end_in_csv(csv_logfile: str, epoch_idx: int, csv_field_names: List[str]) -> None:
     with open(csv_logfile, 'a') as f:
         dict_writer = DictWriter(f, fieldnames=csv_field_names)
         row_dict = {name: f"END OF EPOCH {epoch_idx}" for name in csv_field_names}
@@ -58,7 +64,9 @@ def mark_epoch_end_in_csv(csv_logfile, epoch_idx):
         f.close()
 
 
-def train_one_batch(model, data, optimizer):
+def train_one_batch(
+        model: torch.nn.Module, data: Dict, optimizer: optim.Optimizer
+) -> Tuple[float, Dict[str, float], Dict[str, float]]:
     # providing the data dictionary to the model
     model.set_data(data=data)
 
@@ -76,13 +84,20 @@ def train_one_batch(model, data, optimizer):
     return total_loss, loss_dict, loss_unweighted_dict
 
 
-def update_loss_meters(loss_meter, total_loss, loss_unweighted_dict):
+def update_loss_meters(
+        loss_meter: Dict[str, AverageMeter], total_loss: float, loss_unweighted_dict: Dict[str, float]
+) -> None:
     loss_meter['total_loss'].update(total_loss.item())
     for key in loss_unweighted_dict.keys():
         loss_meter[key].update(loss_unweighted_dict[key])
 
 
-def save_model(epoch_idx, batch_idx, train_loss_avg, val_loss_avg):
+def save_model(
+        cfg: ModelConfig, model: torch.nn.Module, optimizer: optim.Optimizer,
+        scheduler: Union[LambdaLR, StepLR, ReduceLROnPlateau],
+        epoch_idx: int, batch_idx: int, train_loss_avg: float, val_loss_avg: float,
+        csv_models_field_names: List[str], csv_models: str, log: TextIO
+) -> None:
     save_name = f"epoch_{epoch_idx}_batch_{batch_idx}"
     cp_path = cfg.model_path % save_name
     model_cp = {'model_dict': model.state_dict(), 'opt_dict': optimizer.state_dict(),
@@ -108,7 +123,14 @@ def save_model(epoch_idx, batch_idx, train_loss_avg, val_loss_avg):
         dict_writer.writerow(row_dict)
 
 
-def train(epoch_index: int, batch_idx: int = 0):
+def train(
+        cfg: ModelConfig, model: torch.nn.Module, optimizer: optim.Optimizer,
+        scheduler: Union[LambdaLR, StepLR, ReduceLROnPlateau],
+        training_loader: DataLoader, validation_loader: DataLoader,
+        csv_models_field_names: List[str], csv_field_names: List[str],
+        csv_models: str, csv_train_logfile: str, csv_val_logfile: str, log: TextIO, tb_logger: SummaryWriter,
+        epoch_index: int, batch_idx: int = 0
+) -> None:
     since_train = time.time()
     log_str = f"In train function, Starting at {get_timestring()}"
     print_log(log_str, log=log)
@@ -154,7 +176,10 @@ def train(epoch_index: int, batch_idx: int = 0):
             )
             report_losses(
                 logfile=csv_train_logfile,
+                tb_logger=tb_logger,
+                training_loader=training_loader,
                 loss_meter=train_loss_meter,
+                csv_field_names=csv_field_names,
                 epoch_idx=epoch_index,
                 batch_idx=i,
                 split='train'
@@ -193,7 +218,10 @@ def train(epoch_index: int, batch_idx: int = 0):
             # report the validation losses
             report_losses(
                 logfile=csv_val_logfile,
+                tb_logger=tb_logger,
+                training_loader=training_loader,
                 loss_meter=val_loss_meter,
+                csv_field_names=csv_field_names,
                 epoch_idx=epoch_index,
                 batch_idx=i,
                 split='val'
@@ -206,9 +234,9 @@ def train(epoch_index: int, batch_idx: int = 0):
 
             # save the model
             save_model(
-                epoch_idx=epoch_index, batch_idx=i,
-                train_loss_avg=train_loss_meter['total_loss'].avg,
-                val_loss_avg=val_loss_meter['total_loss'].avg
+                cfg=cfg, model=model, optimizer=optimizer, scheduler=scheduler, epoch_idx=epoch_index, batch_idx=i,
+                train_loss_avg=train_loss_meter['total_loss'].avg, val_loss_avg=val_loss_meter['total_loss'].avg,
+                csv_models_field_names=csv_models_field_names, csv_models=csv_models, log=log
             )
 
             # reset losses monitors
@@ -227,22 +255,11 @@ def train(epoch_index: int, batch_idx: int = 0):
             scheduler.step()
             model.step_annealer()
 
-    mark_epoch_end_in_csv(csv_logfile=csv_train_logfile, epoch_idx=epoch_index)
-    mark_epoch_end_in_csv(csv_logfile=csv_val_logfile, epoch_idx=epoch_index)
+    mark_epoch_end_in_csv(csv_logfile=csv_train_logfile, epoch_idx=epoch_index, csv_field_names=csv_field_names)
+    mark_epoch_end_in_csv(csv_logfile=csv_val_logfile, epoch_idx=epoch_index, csv_field_names=csv_field_names)
 
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', type=str, required=True, default=None,
-                        help="Model config file (specified as either name or path")
-    parser.add_argument('--checkpoint_name', default=None)
-    parser.add_argument('--tmp', action='store_true', default=False)
-    parser.add_argument('--gpu', type=int, default=None)
-    parser.add_argument('--dataset_class', type=str, default='hdf5',
-                        help="\'torch\' | \'hdf5\'")
-    args = parser.parse_args()
-    # TODO: add --legacy flag
-
+def main(args: argparse.Namespace):
     assert args.dataset_class in ['hdf5', 'torch']
 
     """ setup """
@@ -277,7 +294,7 @@ if __name__ == '__main__':
 
     """ data """
     dataset_class = dataset_dict[args.dataset_class]
-    data_cfg = Config(cfg.dataset_cfg)      # TODO: MAKE SURE ALL MODEL CONFIG FILES HAVE A dataset_cfg FIELD
+    data_cfg = Config(cfg.dataset_cfg)  # TODO: MAKE SURE ALL MODEL CONFIG FILES HAVE A dataset_cfg FIELD
     data_cfg.__setattr__('with_rgb_map', False)
     assert data_cfg.dataset == "sdd"
     if data_cfg.dataset == "sdd":
@@ -289,6 +306,8 @@ if __name__ == '__main__':
         data_cfg.__setattr__('custom_dataset_size', int(cfg.validation_set_size))
         sdd_val_set = dataset_class(parser=data_cfg, split='val')
         validation_loader = DataLoader(dataset=sdd_val_set, shuffle=False, num_workers=0)
+    else:
+        raise NotImplementedError
 
     for key in ['future_frames', 'motion_dim', 'forecast_dim', 'global_map_resolution']:
         assert key in data_cfg.yml_dict.keys()
@@ -349,10 +368,31 @@ if __name__ == '__main__':
 
         if epoch_i == start_epoch_idx:
             print(f"beginning epoch {epoch_i} at a specific batch: {start_batch_idx}")
-            train(epoch_index=epoch_i, batch_idx=start_batch_idx)
         else:
             print(f"beginning epoch {epoch_i} from the very start")
-            train(epoch_index=epoch_i, batch_idx=0)
+            start_batch_idx = 0
 
-    log_str = "Done for now, Goodbye!"
-    print_log(log_str, log=log)
+        train(
+            cfg=cfg, model=model, optimizer=optimizer,
+            scheduler=scheduler, training_loader=training_loader, validation_loader=validation_loader,
+            csv_models_field_names=csv_models_field_names, csv_field_names=csv_field_names, csv_models=csv_models,
+            csv_train_logfile=csv_train_logfile, csv_val_logfile=csv_val_logfile, log=log, tb_logger=tb_logger,
+            epoch_index=epoch_i, batch_idx=start_batch_idx
+        )
+
+
+if __name__ == '__main__':
+    print("Hello!")
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--cfg', type=str, required=True, default=None,
+                        help="Model config file (specified as either name or path")
+    parser.add_argument('--checkpoint_name', default=None)
+    parser.add_argument('--tmp', action='store_true', default=False)
+    parser.add_argument('--gpu', type=int, default=None)
+    parser.add_argument('--dataset_class', type=str, default='hdf5',
+                        help="\'torch\' | \'hdf5\'")
+    args = parser.parse_args()
+    # TODO: add --legacy flag
+
+    main(args=args)
+    print("Goodbye!")
