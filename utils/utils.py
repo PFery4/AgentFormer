@@ -13,8 +13,7 @@ import copy
 import glob, glob2
 from torch import nn
 
-from typing import Optional
-from io import TextIOWrapper
+from typing import Optional, TextIO
 
 
 class AverageMeter(object):
@@ -239,7 +238,7 @@ def initialize_weights(modules):
                 nn.init.constant_(m.bias, 0)
 
 
-def print_log(print_str: str, log: TextIOWrapper, display: bool = True):
+def print_log(print_str: str, log: TextIO, display: bool = True):
     """
     print a string to a log file
 
