@@ -9,32 +9,7 @@ from utils.performance_analysis import \
     get_df_filter, \
     get_perf_scores_df
 
-def perform_ttest(array_a: np.array, array_b: np.array, alpha=0.05):
-    # https://en.wikipedia.org/wiki/Welch%27s_t-test
-    # corrected sample stdev
-    def c_std(a): return a.std(ddof=1)
 
-    # standard error
-    def s_x(a): return c_std(a) / np.sqrt(len(a))
-
-    # degrees of freedom
-    def dof(a, b): return (s_x(a) ** 2 + s_x(b) ** 2) ** 2 / \
-                          (s_x(a) ** 4 / (len(a) - 1) + s_x(b) ** 4 / (len(b) - 1))
-
-    # https://www.geeksforgeeks.org/how-to-find-the-t-critical-value-in-python/
-    # two-tailed T-critical value
-    def twotailed_t_critical(alpha, df): return scipy.stats.t.ppf(q=1 - alpha / 2, df=df)
-
-    t_test = scipy.stats.ttest_ind(a=array_a, b=array_b, equal_var=False)
-    df = dof(array_a, array_b)
-    t_crit = twotailed_t_critical(alpha=alpha, df=df)
-
-    is_significant = np.abs(t_test.statistic) > np.abs(t_crit)
-
-    return is_significant, t_test.statistic, t_test.pvalue, df, t_crit
-
-
-# Global Variables set up #########################################################################################
 pd.set_option('display.max_rows', 500)
 pd.set_option('display.max_columns', 500)
 pd.set_option('display.width', 200)
@@ -61,23 +36,42 @@ PAST_MEAN_SCORES = ['mean_past_ADE', 'mean_past_FDE']
 PRED_LENGTHS = ['past_pred_length', 'pred_length']
 OCCLUSION_MAP_SCORES = ['OAO', 'OAC', 'OAC_t0']
 
-if __name__ == '__main__':
 
-    # Script Controls #################################################################################################
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', nargs='+', default=None)
-    parser.add_argument('--filter', nargs='+', default=None)
-    parser.add_argument('--comp_tlast', nargs=2,
-                        help='specify 2 last observed timestep categories to compare', type=int, default=None)
-    parser.add_argument('--unit', type=str, default='m')        # 'm' | 'px'
-    args = parser.parse_args()
+def perform_ttest(array_a: np.array, array_b: np.array, alpha=0.05):
+    # https://en.wikipedia.org/wiki/Welch%27s_t-test
+    # corrected sample stdev
+    def c_std(a): return a.std(ddof=1)
 
-    if args.unit == 'px':
+    # standard error
+    def s_x(a): return c_std(a) / np.sqrt(len(a))
+
+    # degrees of freedom
+    def dof(a, b): return (s_x(a) ** 2 + s_x(b) ** 2) ** 2 / \
+                          (s_x(a) ** 4 / (len(a) - 1) + s_x(b) ** 4 / (len(b) - 1))
+
+    # https://www.geeksforgeeks.org/how-to-find-the-t-critical-value-in-python/
+    # two-tailed T-critical value
+    def twotailed_t_critical(alpha, df): return scipy.stats.t.ppf(q=1 - alpha / 2, df=df)
+
+    t_test = scipy.stats.ttest_ind(a=array_a, b=array_b, equal_var=False)
+    df = dof(array_a, array_b)
+    t_crit = twotailed_t_critical(alpha=alpha, df=df)
+
+    is_significant = np.abs(t_test.statistic) > np.abs(t_crit)
+
+    return is_significant, t_test.statistic, t_test.pvalue, df, t_crit
+
+
+def main(args: argparse.Namespace):
+    if args.unit == 'm':
+        min_scores, mean_scores = MIN_SCORES, MEAN_SCORES
+        past_min_scores, past_mean_scores = PAST_MIN_SCORES, PAST_MEAN_SCORES
+    elif args.unit == 'px':
         px_name = lambda names_list: [f'{score_name}_px' for score_name in names_list]
-        MIN_SCORES = px_name(MIN_SCORES)
-        MEAN_SCORES = px_name(MEAN_SCORES)
-        PAST_MIN_SCORES = px_name(PAST_MIN_SCORES)
-        PAST_MEAN_SCORES = px_name(PAST_MEAN_SCORES)
+        min_scores, mean_scores = px_name(MIN_SCORES), px_name(MEAN_SCORES)
+        past_min_scores, past_mean_scores = px_name(PAST_MIN_SCORES), px_name(PAST_MEAN_SCORES)
+    else:
+        raise NotImplementedError
 
     print("T-TESTS:\n\n")
     assert args.cfg is not None
@@ -88,7 +82,7 @@ if __name__ == '__main__':
     exp_dicts = [exp_dict for exp_dict in exp_dicts if exp_dict['experiment_name'] in experiment_names]
     # exp_dicts = [exp_dict for exp_dict in exp_dicts if exp_dict['dataset_used'] in ['fully_observed']]
 
-    test_scores = MIN_SCORES + MEAN_SCORES
+    test_scores = min_scores + mean_scores
 
     ref_index = get_reference_indices()
     ref_past_pred_lengths = get_perf_scores_df(
@@ -232,3 +226,17 @@ if __name__ == '__main__':
                     out_df.loc[(exp_name, dataset_used), (test_score, comp_name(comp))] = is_significant
 
         print(out_df)
+
+
+if __name__ == '__main__':
+    print("Hello!")
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--cfg', nargs='+', default=None)
+    parser.add_argument('--filter', nargs='+', default=None)
+    parser.add_argument('--comp_tlast', nargs=2,
+                        help='specify 2 last observed timestep categories to compare', type=int, default=None)
+    parser.add_argument('--unit', type=str, default='m')        # 'm' | 'px'
+    args = parser.parse_args()
+
+    main(args=args)
+    print("Goodbye!")

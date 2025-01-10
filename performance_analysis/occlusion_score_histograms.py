@@ -9,13 +9,11 @@ from typing import Any, Optional, Tuple
 from utils.performance_analysis import \
     get_perf_scores_df
 
-# Global Variables set up #############################################################################################
+
 FIG_SIZE = (16, 10)
 PLOT_SCORE = 'OAC_t0'           # 'OAC_t0', 'OAO'
 AS_PERCENTAGE = False
 
-
-# Functions ###########################################################################################################
 
 def oac_histogram(
         draw_ax: matplotlib.axes.Axes,
@@ -88,11 +86,7 @@ def make_oac_histograms_figure(
     fig.suptitle(f"{plot_score} histograms: {experiment_name}")
 
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', nargs='+', default=None)
-    args = parser.parse_args()
-
+def main(args: argparse.Namespace):
     print(f"{PLOT_SCORE} HISTOGRAMS:\n\n")
 
     experiment_names = args.cfg
@@ -107,3 +101,13 @@ if __name__ == '__main__':
 
     # if SAVE:
     #     print("OAC_histograms: no saving implementation (yet)!")
+
+
+if __name__ == '__main__':
+    print("Hello!")
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--cfg', nargs='+', default=None)
+    args = parser.parse_args()
+
+    main(args=args)
+    print("Goodbye!")

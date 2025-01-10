@@ -17,16 +17,7 @@ FIG_DPI = 300
 #   - REMOVE --highlight_past FROM SCRIPT ARGUMENTS, SET AS A DEFAULT VALUE THAT CAN BE CHANGED FROM INSIDE THE SCRIPT
 
 
-if __name__ == '__main__':
-    # Script Controls #################################################################################################
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', nargs='+', default=None)
-    parser.add_argument('--instance_num', type=int, required=True)
-    parser.add_argument('--ids', nargs='+', type=int, default=None)     # List[int]
-    parser.add_argument('--highlight_past', action='store_true', default=False)
-    parser.add_argument('--legend', action='store_true', default=False)
-    args = parser.parse_args()
-
+def main(args: argparse.Namespace):
     print("QUALITATIVE EXAMPLE:\n\n")
 
     experiment_names = args.cfg
@@ -90,3 +81,17 @@ if __name__ == '__main__':
         ax.set_title(exp_dict['experiment_name'])
         fig.subplots_adjust(wspace=0.10, hspace=0.0)
     plt.show()
+
+
+if __name__ == '__main__':
+    print("Hello!")
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--cfg', nargs='+', default=None)
+    parser.add_argument('--instance_num', type=int, required=True)
+    parser.add_argument('--ids', nargs='+', type=int, default=None)     # List[int]
+    parser.add_argument('--highlight_past', action='store_true', default=False)
+    parser.add_argument('--legend', action='store_true', default=False)
+    args = parser.parse_args()
+
+    main(args=args)
+    print("Goodbye!")

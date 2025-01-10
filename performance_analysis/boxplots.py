@@ -15,7 +15,6 @@ from utils.performance_analysis import \
     get_scores_dict_by_categories, \
     remove_k_sample_columns
 
-# Global Variables set up #############################################################################################
 
 FIG_SIZE = (9, 6)
 FIG_DPI = 300
@@ -51,8 +50,6 @@ YLIMS_DICT = {
     'mean_past_FDE_px': (None, None),
 }
 
-
-# Functions ###########################################################################################################
 
 def make_box_plot_occlusion_lengths(
         draw_ax: matplotlib.axes.Axes,
@@ -129,16 +126,7 @@ def make_box_plot_occlusion_lengths(
     draw_ax.set_ylim(*ylim)
 
 
-if __name__ == '__main__':
-    # Script Controls #################################################################################################
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', nargs='+', default=None)
-    parser.add_argument('--filter', nargs='+', default=None)
-    parser.add_argument('--scores', nargs='+', type=str, default=DEFAULT_SCORES)
-    parser.add_argument('--save_dir', type=os.path.abspath, default=None)
-    parser.add_argument('--legend', action='store_true', default=False)
-    args = parser.parse_args()
-
+def main(args: argparse.Namespace):
     print(args.scores)
     assert args.cfg is not None
     for score in args.scores:
@@ -192,3 +180,17 @@ if __name__ == '__main__':
             plt.savefig(filepath, dpi=FIG_DPI, bbox_inches='tight')
 
     plt.show()
+
+
+if __name__ == '__main__':
+    print("Hello!")
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--cfg', nargs='+', default=None)
+    parser.add_argument('--filter', nargs='+', default=None)
+    parser.add_argument('--scores', nargs='+', type=str, default=DEFAULT_SCORES)
+    parser.add_argument('--save_dir', type=os.path.abspath, default=None)
+    parser.add_argument('--legend', action='store_true', default=False)
+    args = parser.parse_args()
+
+    main(args=args)
+    print("Goodbye!")

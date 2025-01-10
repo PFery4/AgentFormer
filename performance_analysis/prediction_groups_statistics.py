@@ -80,13 +80,7 @@ def scores_stats_df_per_occlusion_lengths(
     return out_df
 
 
-if __name__ == '__main__':
-    # Script Controls #################################################################################################
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', nargs='+', default=None)
-    parser.add_argument('--filter', nargs='+', default=None)
-    args = parser.parse_args()
-
+def main(args: argparse.Namespace):
     print("PERFORMANCE STATISTICS BY LAST OBSERVED TIMESTEP GROUPS\n\n")
     assert args.cfg is not None
     experiment_names = args.cfg
@@ -154,3 +148,14 @@ if __name__ == '__main__':
 
         ax.legend()
         plt.show()
+
+
+if __name__ == '__main__':
+    print("Hello!")
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--cfg', nargs='+', default=None)
+    parser.add_argument('--filter', nargs='+', default=None)
+    args = parser.parse_args()
+
+    main(args=args)
+    print("Goodbye!")
