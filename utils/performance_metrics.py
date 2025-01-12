@@ -181,61 +181,6 @@ def compute_occlusion_map_area(
     occlusion_area = count_occlusion_zone / pixel_inverse_area
     return occlusion_area
 
-# dummy_H = 10
-# dummy_W = 10
-# # dummy_occl_map = torch.meshgrid(torch.arange(dummy_H), torch.arange(dummy_W))        # [H, W]
-# # dummy_occl_map = dummy_occl_map[0] + 2 * dummy_occl_map[1] - 15
-#
-# dummy_occl_map = torch.full([dummy_H, dummy_W], -10.)
-# dummy_occl_map[:, 5:] = 8.
-# dummy_occl_map[5:, :] = 8.
-#
-# # dummy_occl_map += torch.randn_like(dummy_occl_map)
-#
-# print(f"{dummy_occl_map=}")
-# print()
-# dummy_identity_mask = torch.tensor([[False, False, False, False, False],
-#                                     [True, True, True, False, False],
-#                                     [False, False, False, True, True]])
-#
-# dummy_pred_pos = torch.tensor([[[3.5, 3.5],
-#                                 [4.5, 3.5],
-#                                 [4.5, 3.5],
-#                                 [2.2, 2.2],
-#                                 [2.2, 2.2]],
-#
-#                                [[2.5, 3.5],
-#                                 [2.5, 3.5],
-#                                 [12000, 9.],
-#                                 [-4, 2.2],
-#                                 [7., 2.2]],
-#
-#                                [[2.5, 2.5],
-#                                 [2.5, 2.5],
-#                                 [2.5, 2.5],
-#                                 [2.2, 2.2],
-#                                 [7., 2.2]]])         # [3, 5, 2]
-#
-# print(f"{dummy_pred_pos=}")
-# print()
-#
-# oac = compute_occlusion_area_count(
-#     pred_positions=dummy_pred_pos,
-#     occlusion_map=dummy_occl_map,
-#     identity_mask=dummy_identity_mask
-# )
-#
-# oao = compute_occlusion_area_occupancy(
-#     pred_positions=dummy_pred_pos,
-#     occlusion_map=dummy_occl_map,
-#     identity_mask=dummy_identity_mask
-# )
-#
-# print(f"{oac=}")
-# print(f"{oao=}")
-#
-# raise NotImplementedError
-
 
 def compute_mean_score(scores_tensor: Tensor) -> Tensor:
     # [N agents, K modes] -> [N agents]
