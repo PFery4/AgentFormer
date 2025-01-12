@@ -10,6 +10,9 @@ from typing import Dict, List, Optional
 from utils.config import REPO_ROOT
 
 
+# TODO: manage const_vel configs according to the new Constant Velocity model cfg
+
+
 STATISTICAL_OPERATIONS = {
     'mean': lambda array: float(np.nanmean(array)),
     'median': lambda array: float(np.nanmedian(array)),
