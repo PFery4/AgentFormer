@@ -12,6 +12,10 @@ from utils.utils import prepare_seed, print_log, mkdir_if_missing, get_cuda_devi
 
 
 def main(args: argparse.Namespace):
+    if args.legacy:
+        assert args.dataset_class == 'hdf5', "Legacy mode is only available with presaved HDF5 datasets" \
+                                             "(use: --dataset_class hdf5)"
+
     # TODO:
     #   - VERIFICATION THAT THE SCRIPT WORKS (RUN IT)
     #   - CLEANUP
@@ -33,13 +37,14 @@ def main(args: argparse.Namespace):
     dataset_class = dataset_dict[args.dataset_class]
     data_cfg_id = args.dataset_cfg if args.dataset_cfg is not None else cfg.dataset_cfg
     dataset_cfg = Config(cfg_id=data_cfg_id)
-    dataset_cfg.__setattr__('with_rgb_map', False)
+    dataset_cfg.__setattr__('with_rgb_map', False)      # TODO: option to display the rgb map
+    dataset_kwargs = dict(parser=dataset_cfg, split=args.data_split)
+    if args.legacy:
+        dataset_kwargs.update(legacy_mode=True)
     assert dataset_cfg.dataset == 'sdd'
     if dataset_cfg.dataset == 'sdd':
-        sdd_test_set = dataset_class(parser=dataset_cfg, split=args.data_split)
+        sdd_test_set = dataset_class(**dataset_kwargs)
         test_loader = DataLoader(dataset=sdd_test_set, shuffle=False, num_workers=0)
-    else:
-        raise NotImplementedError
 
     # model
     model_id = cfg.get('model_id', 'agentformer')
@@ -105,8 +110,8 @@ if __name__ == '__main__':
     parser.add_argument('--tmp', action='store_true', default=False)
     parser.add_argument('--gpu', type=int, default=None)
     parser.add_argument('--dataset_class', type=str, default='hdf5', help="'torch' | 'hdf5'")
+    parser.add_argument('--legacy', action='store_true', default=False)
     args = parser.parse_args()
-    # TODO: ADD --legacy flag
 
     main(args=args)
     print("\nDone, goodbye!")
