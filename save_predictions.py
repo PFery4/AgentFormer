@@ -19,9 +19,6 @@ def main(args: argparse.Namespace):
     # TODO:
     #   - VERIFICATION THAT THE SCRIPT WORKS (RUN IT)
     #   - CLEANUP
-    # dataset_cfg = args.dataset_cfg
-    # split = args.data_split
-    # checkpoint_name = args.checkpoint_name
 
     cfg = ModelConfig(cfg_id=args.cfg, tmp=args.tmp, create_dirs=False)
     prepare_seed(cfg.seed)
@@ -37,7 +34,7 @@ def main(args: argparse.Namespace):
     dataset_class = dataset_dict[args.dataset_class]
     data_cfg_id = args.dataset_cfg if args.dataset_cfg is not None else cfg.dataset_cfg
     dataset_cfg = Config(cfg_id=data_cfg_id)
-    dataset_cfg.__setattr__('with_rgb_map', False)      # TODO: option to display the rgb map
+    dataset_cfg.__setattr__('with_rgb_map', False)
     dataset_kwargs = dict(parser=dataset_cfg, split=args.data_split)
     if args.legacy:
         dataset_kwargs.update(legacy_mode=True)
