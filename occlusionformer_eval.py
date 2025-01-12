@@ -219,24 +219,6 @@ def main(args: argparse.Namespace):
             ).transpose(-1, -2)
             map_infer_pred_positions = (map_homography @ map_infer_pred_positions).transpose(-1, -2)[..., :-1]
 
-            # import matplotlib.pyplot as plt
-            #
-            # fig, ax = plt.subplots()
-            # ax.imshow(occlusion_map)
-            #
-            # map_infer_pred_positions = map_infer_pred_positions.cpu()
-            # past_pos = in_data['obs_position_sequence'].to(model.device)
-            # past_pos = torch.cat([past_pos, torch.ones((*past_pos.shape[:-1], 1), device=model.device)], dim=-1).transpose(-1, -2)
-            # past_pos = (map_homography @ past_pos).transpose(-1, -2)[..., :-1]
-            # past_pos = past_pos.cpu()
-            #
-            # ax.plot(past_pos[..., 0], past_pos[..., 1], c='r')
-            # ax.scatter(past_pos[..., 0], past_pos[..., 1], c='r', marker='x', alpha=0.5)
-            # ax.plot(map_infer_pred_positions[..., 0], map_infer_pred_positions[..., 1], c='b')
-            # ax.scatter(map_infer_pred_positions[..., 0], map_infer_pred_positions[..., 1], c='b', marker='x', alpha=0.5)
-            #
-            # plt.show()
-
         computed_metrics = {metric_name: None for metric_name in metrics_to_compute}
 
         for metric_name in metrics_to_compute:
@@ -335,9 +317,8 @@ def main(args: argparse.Namespace):
 
         assert all([val is not None for val in computed_metrics.values()])
 
-        # APPEND SCORE VALUES TO TABLE
+        # append score values to table
         for i_agent, valid_id in enumerate(valid_ids):
-            # i, agent_id, K{i}
             df_row = [i, filename, int(valid_id)]
 
             for metric_name in metrics_to_compute:
