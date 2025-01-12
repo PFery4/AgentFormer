@@ -21,8 +21,12 @@ STATISTICAL_OPERATIONS = {
 
 
 def get_occlusion_traj_info_df(drop_idx: bool = True):
-    target_path = os.path.join(REPO_ROOT, 'results', 'dataset_occlusion_simulation', 'results', 'trajectories_info.csv')
-    assert os.path.exists(target_path)
+    target_path = os.path.join(
+        REPO_ROOT, 'datasets', 'SDD', 'pre_saved_datasets', 'occlusion_simulation', 'test', 'trajectories_info.csv'
+    )
+    assert os.path.exists(target_path), f"{target_path} does not exist, you must run this command before:\n" \
+                                        f"python save_occlusion_trajectories_information.py " \
+                                        f"--cfg cfg/datasets/occlusion_simulation_no_rand_rot.py --split test --legacy"
 
     df = pd.read_csv(target_path)
 
