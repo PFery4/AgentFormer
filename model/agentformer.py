@@ -846,7 +846,7 @@ class AgentFormer(nn.Module):
             else:
                 raise NotImplementedError
 
-            self.occl_loss_map_key = cfg.get('loss_map', 'nlog_probability_occlusion_map')  # TODO: check correct name
+            self.occl_loss_map_key = cfg.get('loss_map', 'clipped_dist_transformed_occlusion_map')
 
         ctx['input_impute_markers'] = self.input_impute_markers
 
