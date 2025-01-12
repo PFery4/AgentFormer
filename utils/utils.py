@@ -414,7 +414,6 @@ def load_list_from_folder(folder_path, ext_filter=None, depth=1, recursive=False
 
 
 def get_cuda_device(device_index: Optional[int] = None, verbose: bool = False):
-    # DELFTBLUE GPU ##################################################################################################
     assert torch.cuda.is_available(), "Torch CUDA is not available!"
     if verbose:
         print("Torch CUDA is available")
