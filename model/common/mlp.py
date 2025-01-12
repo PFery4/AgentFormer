@@ -2,6 +2,7 @@ import torch.nn as nn
 import torch
 from utils.utils import initialize_weights
 
+
 class MLP(nn.Module):
     
     def __init__(self, input_dim, hidden_dims=(128, 128), activation='tanh'):
