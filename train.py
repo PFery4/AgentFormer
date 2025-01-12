@@ -1,3 +1,4 @@
+import copy
 import os
 import sys
 import argparse
@@ -261,6 +262,9 @@ def train(
 
 def main(args: argparse.Namespace):
     assert args.dataset_class in ['hdf5', 'torch']
+    if args.legacy:
+        assert args.dataset_class == 'hdf5', "Legacy mode is only available with presaved HDF5 datasets" \
+                                             "(use: --dataset_class hdf5)"
 
     """ setup """
     cfg = ModelConfig(args.cfg, args.tmp, create_dirs=False)
@@ -294,24 +298,32 @@ def main(args: argparse.Namespace):
 
     """ data """
     dataset_class = dataset_dict[args.dataset_class]
-    data_cfg = Config(cfg.dataset_cfg)  # TODO: MAKE SURE ALL MODEL CONFIG FILES HAVE A dataset_cfg FIELD
-    data_cfg.__setattr__('with_rgb_map', False)
-    assert data_cfg.dataset == "sdd"
-    if data_cfg.dataset == "sdd":
-        print_log(f"\nUsing dataset of class: {dataset_class}\n", log)
+    print_log(f"\nUsing dataset of class: {dataset_class}\n", log)
+    data_cfg_train = Config(cfg_id=cfg.dataset_cfg)
+    data_cfg_train.__setattr__('with_rgb_map', False)
+    data_cfg_val = copy.deepcopy(data_cfg_train)
+    data_cfg_val.__setattr__('custom_dataset_size', int(cfg.validation_set_size))
 
-        sdd_train_set = dataset_class(parser=data_cfg, split='train')
+    dataset_kwargs_train = dict(parser=data_cfg_train, split='train')
+    dataset_kwargs_val = dict(parser=data_cfg_val, split='val')
+    if args.legacy:
+        dataset_kwargs_train.update(legacy_mode=True)
+        dataset_kwargs_val.update(legacy_mode=True)
+
+    assert data_cfg_train.dataset == "sdd"
+    if data_cfg_train.dataset == "sdd":
+        sdd_train_set = dataset_class(**dataset_kwargs_train)
         training_loader = DataLoader(dataset=sdd_train_set, shuffle=True, num_workers=0)
 
-        data_cfg.__setattr__('custom_dataset_size', int(cfg.validation_set_size))
-        sdd_val_set = dataset_class(parser=data_cfg, split='val')
+    assert data_cfg_val.dataset == "sdd"
+    if data_cfg_val.dataset == "sdd":
+        sdd_val_set = dataset_class(**dataset_kwargs_val)
         validation_loader = DataLoader(dataset=sdd_val_set, shuffle=False, num_workers=0)
-    else:
-        raise NotImplementedError
 
     for key in ['future_frames', 'motion_dim', 'forecast_dim', 'global_map_resolution']:
-        assert key in data_cfg.yml_dict.keys()
-        cfg.yml_dict[key] = data_cfg.__getattribute__(key)
+        assert key in data_cfg_train.yml_dict.keys()
+        assert key in data_cfg_val.yml_dict.keys()
+        cfg.yml_dict[key] = data_cfg_train.__getattribute__(key)
 
     """ model """
     model_id = cfg.get('model_id', 'agentformer')
@@ -391,8 +403,8 @@ if __name__ == '__main__':
     parser.add_argument('--gpu', type=int, default=None)
     parser.add_argument('--dataset_class', type=str, default='hdf5',
                         help="\'torch\' | \'hdf5\'")
+    parser.add_argument('--legacy', action='store_true', default=False)
     args = parser.parse_args()
-    # TODO: add --legacy flag
 
     main(args=args)
     print("Goodbye!")
