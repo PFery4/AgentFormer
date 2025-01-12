@@ -1,11 +1,9 @@
 import torch
 from torch import nn
 from torch.nn import functional as F
-# from utils.torch import *
 from utils.config import ModelConfig
 from model.agentformer_loss import index_mapping_gt_seq_pred_seq
 from model.common.mlp import MLP
-# from model.common.dist import *
 from model.common.dist import Normal
 from model import model_lib
 from model.agentformer_loss import compute_occlusion_map_loss
@@ -209,3 +207,4 @@ class DLow(nn.Module):
 
     def step_annealer(self):
         pass
+    
