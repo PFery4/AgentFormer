@@ -18,8 +18,6 @@ class BasePredictorClass(nn.Module):
 
     def set_data(self, data: Dict):
         # NOTE: in our case, batch size B is always 1
-
-        # memory_report('BEFORE PUPOLATING DATA DICT')
         self.data = defaultdict(lambda: None)
 
         self.data['valid_id'] = data['identities'].detach().clone().to(self.device)     # [B, N]
