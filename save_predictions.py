@@ -16,10 +16,6 @@ def main(args: argparse.Namespace):
         assert args.dataset_class == 'hdf5', "Legacy mode is only available with presaved HDF5 datasets" \
                                              "(use: --dataset_class hdf5)"
 
-    # TODO:
-    #   - VERIFICATION THAT THE SCRIPT WORKS (RUN IT)
-    #   - CLEANUP
-
     cfg = ModelConfig(cfg_id=args.cfg, tmp=args.tmp, create_dirs=False)
     prepare_seed(cfg.seed)
     torch.set_default_dtype(torch.float32)
