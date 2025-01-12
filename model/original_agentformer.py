@@ -13,7 +13,6 @@ from torch import nn
 from collections import defaultdict
 
 from OriginalAgentFormer.model.agentformer import AgentFormer
-# from utils.utils import memory_report
 
 
 class OrigModelWrapper(nn.Module):
