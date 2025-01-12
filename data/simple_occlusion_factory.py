@@ -2,6 +2,8 @@ import torch
 Tensor = torch.Tensor
 
 
+# TODO: remove this file (not used anywhere)
+
 class SimpleOcclusionFactory:
 
     def __init__(self, p: float = 1.0, n_timesteps: int = 8):

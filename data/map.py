@@ -58,6 +58,7 @@ def compute_nlog_probability_map(dt_map: Tensor) -> Tensor:
     return apply_function_over_whole_map(dt_map, lambda x: -log_softmax(compute_clipped_map(x), dim=0))
 
 
+# TODO: remove this class (no longer used)
 class TorchGeometricMap:
 
     def __init__(

@@ -759,6 +759,7 @@ class HDF5PresavedDatasetSDD(BaseDataset, Dataset):
         return data_dict
 
 
+# TODO: remove this class (no longer used)
 class MomentaryTorchDataGeneratorSDD(TorchDataGeneratorSDD):
 
     def __init__(self, parser: Config, split: str = 'train',
@@ -776,6 +777,7 @@ class MomentaryTorchDataGeneratorSDD(TorchDataGeneratorSDD):
         self.lookup_time_window = (np.arange(0, self.T_total) + timestep_shift) * self.frame_skip
 
 
+# TODO: move this class to a DEPRECATED file (no longer used)
 class PresavedDatasetSDD(Dataset):
     presaved_datasets_dir = os.path.join(REPO_ROOT, 'datasets', 'SDD', 'pre_saved_datasets')
 
@@ -874,6 +876,7 @@ class PresavedDatasetSDD(Dataset):
         return data_dict
 
 
+# TODO: move this class to a DEPRECATED file (no longer used)
 class PickleDatasetSDD(PresavedDatasetSDD):
 
     def __init__(self, parser: Config, split: str = 'train'):
@@ -965,6 +968,7 @@ class PickleDatasetSDD(PresavedDatasetSDD):
         return data_dict
 
 
+# TODO: move this class to a DEPRECATED file (no longer used)
 class HDF5DatasetSDD(PresavedDatasetSDD):
 
     def __init__(self, parser: Config, split: str = 'train'):
