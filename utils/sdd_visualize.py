@@ -5,19 +5,12 @@ import matplotlib.pyplot as plt
 import mpl_toolkits.axes_grid1
 import matplotlib.colors as colors
 
+from data.map import apply_homography
 from model.agentformer_loss import index_mapping_gt_seq_pred_seq
 from utils.performance_metrics import compute_samples_ADE, compute_samples_FDE
 
 from typing import Dict, Optional, List
 Tensor = torch.Tensor
-
-
-def apply_homography(points: Tensor, homography: Tensor) -> Tensor:
-    # TODO: this function probably shouldn't live in this file...
-    assert points.shape[-1] == 2
-    assert homography.shape == torch.Size([3, 3])
-    homogeneous_points = torch.cat((points, torch.ones([*points.shape[:-1], 1])), dim=-1).transpose(-1, -2)
-    return (homography @ homogeneous_points).transpose(-1, -2)[..., :-1]
 
 
 def verify_data_dicts_consistency(input_dict: Dict, pred_dict: Dict) -> None:
