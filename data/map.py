@@ -58,6 +58,14 @@ def compute_nlog_probability_map(dt_map: Tensor) -> Tensor:
     return apply_function_over_whole_map(dt_map, lambda x: -log_softmax(compute_clipped_map(x), dim=0))
 
 
+def apply_homography(
+        points: Tensor,         # [*, 2]
+        homography: Tensor      # [3, 3]
+) -> Tensor:                    # [*, 2]
+    homogeneous_points = torch.cat((points, torch.ones([*points.shape[:-1], 1])), dim=-1).transpose(-1, -2)
+    return (homography @ homogeneous_points).transpose(-1, -2)[..., :-1]
+
+
 class HomographyMatrix:
 
     def __init__(
@@ -114,9 +122,7 @@ class HomographyMatrix:
             self,
             points: Tensor  # [*, 2]
     ) -> Tensor:            # [*, 2]
-        homogeneous_points = torch.cat((points, torch.ones([*points.shape[:-1], 1])), dim=-1).transpose(-1, -2)
-        mapped_points = (self._frame @ homogeneous_points).transpose(-1, -2)[..., :-1]
-        return mapped_points
+        return apply_homography(points=points, homography=self._frame)
 
 
 class BaseMap:
