@@ -2,11 +2,10 @@ import os
 import yaml
 import pandas as pd
 import matplotlib.axes
-import matplotlib.pyplot as plt
 import numpy as np
 from functools import reduce
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 from utils.config import REPO_ROOT
 
@@ -297,26 +296,6 @@ def performance_dataframes_comparison(
     return out_df.loc[keep_indices, :]
 
 
-def scatter_perf_gain_vs_perf_base(
-        base_df: pd.DataFrame, comp_df: pd.DataFrame, col_name: str, relative: bool = True
-) -> Tuple[matplotlib.figure.Figure, matplotlib.axes.Axes]:
-    # maybe get rid of this function altogether...
-    assert col_name in base_df.columns
-    assert col_name in comp_df.columns
-
-    keep_indices = base_df.index.intersection(comp_df.index)
-
-    fig, ax = plt.subplots()
-    diff = comp_df.loc[keep_indices, col_name].sub(base_df.loc[keep_indices, col_name])
-
-    if relative:
-        diff = diff.div(base_df.loc[keep_indices, col_name])
-
-    ax.scatter(base_df.loc[keep_indices, col_name], diff, marker='x', alpha=0.5)
-
-    return fig, ax
-
-
 def scatter_performance_scores(
         draw_ax: matplotlib.axes.Axes,
         x_df: pd.DataFrame, x_score_name: str,
@@ -346,7 +325,6 @@ def get_occluded_identities(df: pd.DataFrame, idx: int):
     instance_df = df.loc[idx]
     if (instance_df['past_pred_length'] != 0).sum() != 0:   # if there are agents who we do have to predict over the past
         return instance_df[instance_df['past_pred_length'] != 0].index.get_level_values('agent_id').to_list()
-        # return df[df['past_pred_length'] != 0].loc[idx].index.get_level_values('agent_id').to_list()
     else:
         return []
 
@@ -381,12 +359,6 @@ def get_scores_dict_by_categories(
         mini_df = exp_df[
             (exp_df[categorization] == category) & (pd.notna(exp_df[score]))
             ]
-
-        # print(f"{len(mini_df)=}")
-        # print(f"{mini_df['min_ADE'].mean(), mini_df['min_FDE'].mean()=}")
-        # print(f"{mini_df['mean_ADE'].mean(), mini_df['mean_FDE'].mean()=}")
-        # mini_df = mini_df.sample(495)
-        # print(f"{len(mini_df)=}")
 
         scores = mini_df[score].to_numpy()
         experiment_data_dict[int(category)] = scores
