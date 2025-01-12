@@ -13,14 +13,6 @@ from typing import Dict, Optional, List
 Tensor = torch.Tensor
 
 
-def verify_data_dicts_consistency(input_dict: Dict, pred_dict: Dict) -> None:
-    # TODO: This function probably shouldn't live in this file...
-    if 'identities' in input_dict.keys() and 'valid_id' in pred_dict.keys():
-        assert torch.all(input_dict['identities'].cpu() == pred_dict['valid_id'].squeeze().cpu())
-    if 'map_homography' in input_dict.keys() and 'map_homography' in pred_dict.keys():
-        assert torch.all(input_dict['map_homography'].cpu() == pred_dict['map_homography'].cpu())
-
-
 def visualize_sequences(data_dict: Dict, draw_ax: matplotlib.axes.Axes) -> None:
     assert 'identities' in data_dict.keys()
 
@@ -302,6 +294,13 @@ def visualize(
 
     if draw_ax_nlog_probability_map is not None:
         visualize_nlog_probability_map(data_dict=data_dict, draw_ax=draw_ax_nlog_probability_map)
+
+
+def verify_data_dicts_consistency(input_dict: Dict, pred_dict: Dict) -> None:
+    if 'identities' in input_dict.keys() and 'valid_id' in pred_dict.keys():
+        assert torch.all(input_dict['identities'].cpu() == pred_dict['valid_id'].squeeze().cpu())
+    if 'map_homography' in input_dict.keys() and 'map_homography' in pred_dict.keys():
+        assert torch.all(input_dict['map_homography'].cpu() == pred_dict['map_homography'].cpu())
 
 
 def visualize_input_and_predictions(
