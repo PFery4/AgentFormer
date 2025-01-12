@@ -759,24 +759,6 @@ class HDF5PresavedDatasetSDD(BaseDataset, Dataset):
         return data_dict
 
 
-# TODO: remove this class (no longer used)
-class MomentaryTorchDataGeneratorSDD(TorchDataGeneratorSDD):
-
-    def __init__(self, parser: Config, split: str = 'train',
-                 momentary_t_obs: int = 2):
-        super().__init__(parser=parser, split=split)
-
-        assert 1 < momentary_t_obs < self.T_obs
-        assert self.occlusion_process == 'fully_observed'
-        assert not self.impute
-
-        timestep_shift = self.T_obs - momentary_t_obs
-        self.T_obs = momentary_t_obs
-        self.T_total = self.T_obs + self.T_pred
-        self.timesteps = torch.arange(-self.T_obs, self.T_pred) + 1
-        self.lookup_time_window = (np.arange(0, self.T_total) + timestep_shift) * self.frame_skip
-
-
 # TODO: move this class to a DEPRECATED file (no longer used)
 class PresavedDatasetSDD(Dataset):
     presaved_datasets_dir = os.path.join(REPO_ROOT, 'datasets', 'SDD', 'pre_saved_datasets')
