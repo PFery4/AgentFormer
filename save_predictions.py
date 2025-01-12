@@ -53,18 +53,18 @@ def main(args: argparse.Namespace):
     model.set_device(device)
     model.eval()
     if model_id in ['const_velocity', 'oracle']:
-        checkpoint_name = 'untrained'
+        args.checkpoint_name = 'untrained'
     else:
         if args.checkpoint_name == 'best_val':
-            checkpoint_name = cfg.get_best_val_checkpoint_name()
-            print(f"Best validation checkpoint name is: {checkpoint_name}")
-        cp_path = cfg.model_path % checkpoint_name
+            args.checkpoint_name = cfg.get_best_val_checkpoint_name()
+            print(f"Best validation checkpoint name is: {args.checkpoint_name}")
+        cp_path = cfg.model_path % args.checkpoint_name
         print_log(f'loading model from checkpoint: {cp_path}', log, display=True)
         model_cp = torch.load(cp_path, map_location='cpu')
         model.load_state_dict(model_cp['model_dict'])
 
     # saving model predictions
-    save_dir = os.path.join(cfg.result_dir, sdd_test_set.dataset_name, checkpoint_name, args.data_split)
+    save_dir = os.path.join(cfg.result_dir, sdd_test_set.dataset_name, args.checkpoint_name, args.data_split)
     log_str = f'saving predictions under the following directory:\n{save_dir}\n\n'
     print_log(log_str, log=log)
     mkdir_if_missing(save_dir)
@@ -96,7 +96,8 @@ if __name__ == '__main__':
     parser.add_argument('--dataset_cfg', type=str, default=None,
                         help="Dataset config file (specified as either name or path")
     parser.add_argument('--data_split', type=str, default='test')
-    parser.add_argument('--checkpoint_name', default='best_val')        # can be 'best_val' / 'untrained' / <model_id>
+    parser.add_argument('--checkpoint_name', type=str, default='best_val',
+                        help="'best_val' | 'untrained' | <model_id>")
     parser.add_argument('--tmp', action='store_true', default=False)
     parser.add_argument('--gpu', type=int, default=None)
     parser.add_argument('--dataset_class', type=str, default='hdf5', help="'torch' | 'hdf5'")
