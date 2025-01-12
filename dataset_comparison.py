@@ -6,7 +6,8 @@ import pandas as pd
 import torch
 from tqdm import tqdm
 
-from data.sdd_dataloader import TorchDataGeneratorSDD, HDF5PresavedDatasetSDD, PickleDatasetSDD, HDF5DatasetSDD
+from data.sdd_dataloader import TorchDataGeneratorSDD, HDF5PresavedDatasetSDD
+from data.sdd_dataloader_deprecated import PickleDatasetSDD, HDF5DatasetSDD
 from utils.config import Config
 from utils.utils import prepare_seed
 
