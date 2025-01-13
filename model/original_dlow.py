@@ -11,7 +11,7 @@ consumption and production follows the same structure/format as that of our impl
 import torch
 from torch import nn
 
-from utils.config import Config
+from utils.config import ModelConfig
 from model.original_agentformer import OrigModelWrapper
 from OriginalAgentFormer.model.dlow import loss_func
 from OriginalAgentFormer.model.common.mlp import MLP
@@ -33,7 +33,11 @@ class OrigDLowWrapper(nn.Module):
         self.loss_cfg = self.cfg.loss_cfg
         self.loss_names = list(self.loss_cfg.keys())
 
-        pred_cfg = Config(cfg.pred_cfg, tmp=False, create_dirs=False)
+        pred_cfg = ModelConfig(cfg.pred_cfg, tmp=False, create_dirs=False)
+        for key in ['past_frames', 'future_frames', 'motion_dim', 'forecast_dim', 'traj_scale', 'global_map_resolution']:
+            assert key in cfg.yml_dict.keys(), key
+            pred_cfg.yml_dict[key] = cfg.__getattribute__(key)
+
         pred_model = OrigModelWrapper(pred_cfg)
         self.pred_model_dim = pred_cfg.tf_model_dim
         assert cfg.pred_checkpoint_name is not None
