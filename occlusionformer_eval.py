@@ -364,11 +364,13 @@ if __name__ == '__main__':
                         help="Model config file (specified as either name or path")
     parser.add_argument('--dataset_cfg', type=str, default=None,
                         help="Dataset config file (specified as either name or path")
-    parser.add_argument('--data_split', type=str, default='test')
-    parser.add_argument('--checkpoint_name', default='best_val')        # can be 'best_val' / 'untrained' / <model_id>
+    parser.add_argument('--data_split', type=str, default='test',
+                        help="\'train\' | \'val\' | \'test\'")
+    parser.add_argument('--checkpoint_name', default='best_val',
+                        help="\'best_val\' | \'untrained\' | <model_id>")
     parser.add_argument('--tmp', action='store_true', default=False)
     parser.add_argument('--gpu', type=int, default=None)
-    parser.add_argument('--dataset_class', type=str, default='hdf5', help="'torch' | 'hdf5'")
+    parser.add_argument('--dataset_class', type=str, default='hdf5', help="\'torch\' | \'hdf5\'")
     args = parser.parse_args()
 
     main(args=args)
