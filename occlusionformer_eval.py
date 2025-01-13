@@ -22,6 +22,10 @@ from model.model_lib import model_dict
 
 
 def main(args: argparse.Namespace):
+    if args.legacy:
+        assert args.dataset_class == 'hdf5', "Legacy mode is only available with presaved HDF5 datasets" \
+                                             "(use: --dataset_class hdf5)"
+
     cfg = ModelConfig(cfg_id=args.cfg, tmp=args.tmp, create_dirs=False)
     prepare_seed(cfg.seed)
     torch.set_default_dtype(torch.float32)
@@ -34,20 +38,19 @@ def main(args: argparse.Namespace):
 
     # dataloader
     dataset_class = dataset_dict[args.dataset_class]
-    if args.dataset_cfg is None:
-        args.dataset_cfg = cfg.dataset_cfg
     dataset_cfg = Config(cfg_id=args.dataset_cfg)
     dataset_cfg.__setattr__('with_rgb_map', False)
+    dataset_kwargs = dict(parser=dataset_cfg, split=args.data_split)
+    if args.legacy:
+        dataset_kwargs.update(legacy_mode=True)
     assert dataset_cfg.dataset == 'sdd'
     if dataset_cfg.dataset == 'sdd':
-        sdd_test_set = dataset_class(parser=dataset_cfg, split=args.data_split)
+        sdd_test_set = dataset_class(**dataset_kwargs)
         test_loader = DataLoader(dataset=sdd_test_set, shuffle=False, num_workers=0)
-    else:
-        raise NotImplementedError
 
     # model
     model_id = cfg.get('model_id', 'agentformer')
-    for key in ['future_frames', 'motion_dim', 'forecast_dim', 'global_map_resolution']:
+    for key in ['past_frames', 'future_frames', 'motion_dim', 'forecast_dim', 'traj_scale', 'global_map_resolution']:
         assert key in dataset_cfg.yml_dict.keys()
         cfg.yml_dict[key] = dataset_cfg.__getattribute__(key)
 
@@ -362,7 +365,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--cfg', type=str, required=True, default=None,
                         help="Model config file (specified as either name or path")
-    parser.add_argument('--dataset_cfg', type=str, default=None,
+    parser.add_argument('--dataset_cfg', type=str, required=True, default=None,
                         help="Dataset config file (specified as either name or path")
     parser.add_argument('--data_split', type=str, default='test',
                         help="\'train\' | \'val\' | \'test\'")
@@ -371,6 +374,7 @@ if __name__ == '__main__':
     parser.add_argument('--tmp', action='store_true', default=False)
     parser.add_argument('--gpu', type=int, default=None)
     parser.add_argument('--dataset_class', type=str, default='hdf5', help="\'torch\' | \'hdf5\'")
+    parser.add_argument('--legacy', action='store_true', default=False)
     args = parser.parse_args()
 
     main(args=args)
