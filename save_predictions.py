@@ -41,7 +41,7 @@ def main(args: argparse.Namespace):
 
     # model
     model_id = cfg.get('model_id', 'agentformer')
-    for key in ['future_frames', 'motion_dim', 'forecast_dim', 'global_map_resolution']:
+    for key in ['past_frames', 'future_frames', 'motion_dim', 'forecast_dim', 'traj_scale', 'global_map_resolution']:
         assert key in dataset_cfg.yml_dict.keys()
         cfg.yml_dict[key] = dataset_cfg.__getattribute__(key)
 
