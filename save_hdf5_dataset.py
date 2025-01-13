@@ -188,10 +188,14 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--cfg', type=str, required=True, default=None,
                         help="config file (specified as either name or path")
-    parser.add_argument('--split', type=str, default='train')
-    parser.add_argument('--start_idx', type=int, default=0)
-    parser.add_argument('--end_idx', type=int, default=-10)
-    parser.add_argument('--save_path', type=os.path.abspath, default=None)
+    parser.add_argument('--split', type=str, default='train',
+                        help="\'train\'|\'val\'|\'test\'")
+    parser.add_argument('--start_idx', type=int, default=0,
+                        help="the instance index from which to begin the saving process.")
+    parser.add_argument('--end_idx', type=int, default=-10,
+                        help="the instance index at which to stop the saving process.")
+    parser.add_argument('--save_path', type=os.path.abspath, default=None,
+                        help="the location of the file to be saved (make sure the path ends with \'.h5\').")
     parser.add_argument('--size_setting', type=str, default='generator',
                         help='\'generator\': use the length of the generator to set the presaved dataset file size.\n'
                              '\'indices\': use --start_idx and --end_idx to infer the presaved dataset file size.')
