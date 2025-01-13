@@ -1,176 +1,89 @@
 # OcclusionFormer
-A fork from AgentFormer, that aims to explore the ability of Transformer models to predict occluded (i.e., partially missing) trajectories.
 
-[//]: # (This repo contains the official implementation of our paper:)
-[//]: # (  )
-[//]: # (AgentFormer: Agent-Aware Transformers for Socio-Temporal Multi-Agent Forecasting  )
-[//]: # (Ye Yuan, Xinshuo Weng, Yanglan Ou, Kris Kitani  )
-[//]: # (**ICCV 2021**  )
-[//]: # ([[website]&#40;https://www.ye-yuan.com/agentformer&#41;] [[paper]&#40;https://arxiv.org/abs/2103.14023&#41;])
+This repository is an expansion upon the [AgentFormer](https://github.com/Khrylx/AgentFormer) model, introduced by [Yuan et al](https://arxiv.org/abs/2103.14023).
+The focus of this work is to explore the ability of Transformer based prediction models to perform their predictions on agents whose past trajectories are occluded (and therefore, partly missing).
 
-[//]: # (# Overview)
+## Installation / Setup
 
-[//]: # (![Loading AgentFormer Overview]&#40;https://github.com/Khrylx/khrylx.github.io/blob/main/agentformer/data/overview.png "AgentFormer Overview"&#41;)
+### Environment
 
-[//]: # ()
-[//]: # (# Important Note)
+*We manage our environment through Anaconda, and we recommend that you do so too: the project relies on the [scikit-geometry](https://github.com/scikit-geometry/scikit-geometry) library, which is only directly accessible from the conda-forge channel (otherwise, it can be built from source, with [CGAL 5.0](https://www.cgal.org/) installed).
+Though installation through other methods might be possible, only the following instructions have been verified to work properly.*
 
-[//]: # (We have recently noticed a [normalization bug]&#40;https://github.com/Khrylx/AgentFormer/issues/5&#41; in the code and after fixing it, the performance of our method is worse than the original numbers reported in the ICCV paper. For comparision, please use the correct numbers in the updated [arXiv version]&#40;https://arxiv.org/abs/2103.14023&#41;.)
+1. Create the environment:
+   ```
+   conda create -n <environment-name> python=3.8 pip
+   ```
+   Replace `<environment-name>` with your desired name for the environment.
+2. Activate the environment:
+   ```
+   conda activate <environment-name>
+   ```
+3. Install [PyTorch 1.8.0](https://pytorch.org/get-started/previous-versions/#v180) with the appropriate CUDA version.
+4. Install scikit-geometry:
+   ```
+   conda install -c conda-forge scikit-geometry
+   ```
+5. Install the remaining dependencies:
+   ```
+   pip install -r requirements.txt
+   ```
 
-[//]: # ()
-[//]: # (# Installation )
+### Occlusion Simulator
 
-[//]: # ()
-[//]: # (### Environment)
+In order to study occlusions and their effect on trajectory prediction, we apply a simulator of occlusions on top of the Stanford Drone Dataset.
 
-[//]: # (* **Tested OS:** MacOS, Linux)
+1. Download our [Occlusion Simulator](https://github.com/PFery4/occlusion-simulation) repository, and follow its setup instructions (use the same environment as the one you just set up when going through the previous Environment section).
 
-[//]: # (* Python >= 3.7)
+### Environment Variables
 
-[//]: # (* PyTorch == 1.8.0)
+1. Add the root directory of this repository to the `PYTHONPATH` environment variable:
+   ```
+   export PYTHONPATH=$PWD
+   ```
+2. Add the root directory of the Occlusion Simulator repository to the `PYTHONPATH` environment variable:
+   ```
+   export PYTHONPATH="$PYTHONPATH:<path/to/occlusion-simulation>"
+   ```
+   where `<path/to/occlusion-simulation>` is the path to the Occlusion Simulator repository.
 
-[//]: # (### Dependencies:)
+## Stanford Drone Occlusion Dataset
 
-[//]: # (1. Install [PyTorch 1.8.0]&#40;https://pytorch.org/get-started/previous-versions/&#41; with the correct CUDA version.)
+We propose two separate implementations of dataset classes that can be used by the model: one where preprocessing is done on the fly, and one that extracts preprocessed instances from a [HDF5 dataset](https://www.hdfgroup.org/solutions/hdf5/).
+Presaving the dataset into a HDF5 file guarantees that random rotation of instances during training remains the same across epochs.
+The implementation of our dataset classes can be found under `data/sdd_dataloader.py`. Datasets are configured through config `.yml` files that can be found under `cfg/datasets/`.
 
-[//]: # (2. Install the dependencies:)
+### Saving HDF5 dataset files
+If you wish to make use of HDF5 based datasets, you must first obtain a copy of a HDF5 dataset file for the particular configuration (and split) of your interest. You can save such a file using `save_hdf5_dataset.py`. A simple call of this script can be done so:
+```
+save_hdf5_dataset.py --cfg cfg/datasets/<your-desired-config-file.yml> --split <split>
+```
+Additional flags can be passed to further modify the script's behaviour (those are documented directly inside the script).
+The output of this script is a HDF5 file called `dataset_v2.h5`, which is stored by default under `datasets/SDD/pre_saved_datasets/<dataset_id>/<split>/`, where `<dataset_id>` is an identifier for the dataset, which is derived from the configuration file, and `<split>` is the dataset split ('train', 'val' or 'test').
 
-[//]: # (    ```)
+[//]: # (dataset_comparison.py)
+[//]: # (visualize_dataset.py)
 
-[//]: # (    pip install -r requirements.txt)
+## Training
 
-[//]: # (    ```)
+[//]: # (train.py)
 
-[//]: # ()
-[//]: # (### Datasets)
+## Evaluation
 
-[//]: # (* For the ETH/UCY dataset, we already included a converted version compatible with our dataloader under [datasets/eth_ucy]&#40;datasets/eth_ucy&#41;.)
+[//]: # (save_predictions.py)
+[//]: # (save_occlusion_trajectories_information.py)
+[//]: # (occlusionformer_eval.py)
 
-[//]: # (* For the nuScenes dataset, the following steps are required:)
+[//]: # (performance_analysis/ttest.py)
+[//]: # (performance_analysis/performance_summary.py)
+[//]: # (performance_analysis/qualitative_example.py)
+[//]: # (performance_analysis/occlusion_score_histograms.py)
+[//]: # (performance_analysis/boxplots.py)
+[//]: # (performance_analysis/prediction_groups_statistics.py)
 
-[//]: # (  1. Download the orignal [nuScenes]&#40;https://www.nuscenes.org/nuscenes&#41; dataset. Checkout the instructions [here]&#40;https://github.com/nutonomy/nuscenes-devkit&#41;.)
+## Miscellaneous
 
-[//]: # (  2. Follow the [instructions]&#40;https://github.com/nutonomy/nuscenes-devkit#prediction-challenge&#41; of nuScenes prediction challenge. Download and install the [map expansion]&#40;https://github.com/nutonomy/nuscenes-devkit#map-expansion&#41;.)
+[//]: # (parameter_count.py)
+[//]: # (plot_loss_graph.py)
+[//]: # (CHECKSUMS)
 
-[//]: # (  3. Run our [script]&#40;data/process_nuscenes.py&#41; to obtain a processed version of the nuScenes dataset under [datasets/nuscenes_pred]&#40;datasets/nuscenes_pred&#41;:)
-
-[//]: # (      ```)
-
-[//]: # (      python data/process_nuscenes.py --data_root <PATH_TO_NUSCENES>)
-
-[//]: # (      ``` )
-
-[//]: # (### Pretrained Models)
-
-[//]: # (* You can download pretrained models from [Google Drive]&#40;https://drive.google.com/file/d/1-pJrGPCcbaiCpENss5jYzRF_ZFJncFJB/view?usp=sharing&#41; or [BaiduYun]&#40;https://pan.baidu.com/s/1b6Ms_aY4U0fhCe5C8cznVQ&#41; &#40;password: 9rvb&#41; to reproduce the numbers in the paper.)
-
-[//]: # (* Once the `agentformer_models.zip` file is downloaded, place it under the root folder of this repo and unzip it:)
-
-[//]: # (  ```)
-
-[//]: # (  unzip agentformer_models.zip)
-
-[//]: # (  ```)
-
-[//]: # (  This will place the models under the `results` folder. Note that the pretrained models directly correspond to the config files in [cfg]&#40;cfg&#41;.)
-
-[//]: # ()
-[//]: # ()
-[//]: # (# Evaluation)
-
-[//]: # (### ETH/UCY)
-
-[//]: # (Run the following command to test pretrained models for the ETH dataset:)
-
-[//]: # (```)
-
-[//]: # (python test.py --cfg eth_agentformer --gpu 0)
-
-[//]: # (```)
-
-[//]: # (You can replace `eth` with {`hotel`, `univ`, `zara1`, `zara2`} to test other datasets in ETH/UCY. You should be able to get the numbers reported in the paper as shown in this table:)
-
-[//]: # (| Ours  | ADE  | FDE  |)
-
-[//]: # (|-------|------|------|)
-
-[//]: # (| ETH   | 0.45 | 0.75 |)
-
-[//]: # (| Hotel | 0.14 | 0.22 |)
-
-[//]: # (| Univ  | 0.25 | 0.45 |)
-
-[//]: # (| Zara1 | 0.18 | 0.30 |)
-
-[//]: # (| Zara2 | 0.14 | 0.24 |)
-
-[//]: # (|  Avg  | 0.23 | 0.39 |)
-
-[//]: # ()
-[//]: # (### nuScenes)
-
-[//]: # (Run the following command to test pretrained models for the nuScenes dataset:)
-
-[//]: # (```)
-
-[//]: # (python test.py --cfg nuscenes_5sample_agentformer --gpu 0)
-
-[//]: # (```)
-
-[//]: # (You can replace `5sample` with `10sample` to compute all the metrics &#40;ADE_5, FDE_5, ADE_10, FDE_10&#41;. You should be able to get the numbers reported in the paper as shown in this table:)
-
-[//]: # (|       | ADE_5 | FDE_5 | ADE_10 | FDE_10 |)
-
-[//]: # (|-------|-------|-------|--------|--------|)
-
-[//]: # (| Ours  | 1.856 | 3.889 |  1.452 |  2.856 |)
-
-[//]: # ()
-[//]: # (# Training)
-
-[//]: # (You can train your own models with your customized configs. Here we take the ETH dataset as an example, but you can train models for other datasets with their corresponding [configs]&#40;cfg&#41;. AgentFormer requires **two-stage** training:)
-
-[//]: # (1. Train the AgentFormer VAE model &#40;everything but the trajectory sampler&#41;:)
-
-[//]: # (    ```)
-
-[//]: # (    python train.py --cfg user_eth_agentformer_pre --gpu 0)
-
-[//]: # (    ```)
-
-[//]: # (2. Once the VAE model is trained, train the AgentFormer DLow model &#40;trajectory sampler&#41;:)
-
-[//]: # (    ```)
-
-[//]: # (    python train.py --cfg user_eth_agentformer --gpu 0)
-
-[//]: # (    ```)
-
-[//]: # (    Note that you need to change the `pred_cfg` field in `user_eth_agentformer` to the config you used in step 1 &#40;`user_eth_agentformer_pre`&#41; and change the `pred_epoch` to the VAE model epoch you want to use.)
-
-[//]: # ()
-[//]: # ()
-[//]: # (# Citation)
-
-[//]: # (If you find our work useful in your research, please cite our paper [AgentFormer]&#40;https://www.ye-yuan.com/agentformer/&#41;:)
-
-[//]: # (```bibtex)
-
-[//]: # (@inproceedings{yuan2021agent,)
-
-[//]: # (    title={AgentFormer: Agent-Aware Transformers for Socio-Temporal Multi-Agent Forecasting},)
-
-[//]: # (    author={Yuan, Ye and Weng, Xinshuo and Ou, Yanglan and Kitani, Kris},)
-
-[//]: # (    booktitle={Proceedings of the IEEE/CVF International Conference on Computer Vision &#40;ICCV&#41;},)
-
-[//]: # (    year={2021})
-
-[//]: # (})
-
-[//]: # (```)
-
-[//]: # ()
-[//]: # (# License)
-
-[//]: # (Please see the [license]&#40;LICENSE&#41; for further details.)
