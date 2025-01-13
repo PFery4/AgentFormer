@@ -28,8 +28,7 @@ def main(args: argparse.Namespace):
 
     # dataloader
     dataset_class = dataset_dict[args.dataset_class]
-    data_cfg_id = args.dataset_cfg if args.dataset_cfg is not None else cfg.dataset_cfg
-    dataset_cfg = Config(cfg_id=data_cfg_id)
+    dataset_cfg = Config(cfg_id=args.dataset_cfg)
     dataset_cfg.__setattr__('with_rgb_map', False)
     dataset_kwargs = dict(parser=dataset_cfg, split=args.data_split)
     if args.legacy:
@@ -89,7 +88,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--cfg', type=str, required=True, default=None,
                         help="Model config file (specified as either name or path")
-    parser.add_argument('--dataset_cfg', type=str, default=None,
+    parser.add_argument('--dataset_cfg', type=str, required=True, default=None,
                         help="Dataset config file (specified as either name or path")
     parser.add_argument('--data_split', type=str, default='test')
     parser.add_argument('--checkpoint_name', type=str, default='best_val',
