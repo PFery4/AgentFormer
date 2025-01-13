@@ -11,9 +11,10 @@ opencv-python
 glob2
 pyyaml
 easydict
-pandas
+pandas<2.0.0
 tqdm
 matplotlib
 psutil
 h5py
+numpy
 scipy
