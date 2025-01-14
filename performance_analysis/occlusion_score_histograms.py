@@ -9,8 +9,6 @@ from typing import Any, Optional, Tuple
 
 from utils.performance_analysis import \
     SCORES_CSV_FILENAME, \
-    get_all_pred_scores_csv_files, \
-    process_analysis_subjects_txt, \
     get_experiment_dict, \
     get_df_from_csv
 
