@@ -125,6 +125,10 @@ class BaseDataset:
         )
         scene_map_manager.set_homography(matrix=self.map_homography)
 
+    @staticmethod
+    def get_instance_idx(instance_num: int) -> int:
+        return instance_num
+
 
 class TorchDataGeneratorSDD(BaseDataset, Dataset):
     def __init__(self, parser: Config, split: str = 'train'):
@@ -704,6 +708,9 @@ class HDF5PresavedDatasetSDD(BaseDataset, Dataset):
         self.crop_scene_map(scene_map_manager=scene_map_mgr)
 
         data_dict['scene_map'] = scene_map_mgr.get_map()
+
+    def get_instance_idx(self, instance_num: int) -> int:
+        return int((self.indices == instance_num).nonzero(as_tuple=True)[0])
 
     def __len__(self):
         return self.indices.shape[0]
