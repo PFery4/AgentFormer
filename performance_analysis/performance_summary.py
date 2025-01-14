@@ -3,34 +3,20 @@ import os.path
 import pandas as pd
 
 from utils.performance_analysis import \
+    SCORES_CSV_FILENAME, \
+    get_all_pred_scores_csv_files, \
     get_reference_indices, \
-    get_all_results_directories, \
     get_df_filter, \
     generate_performance_summary_df, \
-    get_perf_scores_df
+    process_analysis_subjects_txt, \
+    get_df_from_csv, \
+    get_experiment_dict
 
-# Global Variables set up #########################################################################################
+
 pd.set_option('display.max_rows', 500)
 pd.set_option('display.max_columns', 500)
 pd.set_option('display.width', 200)
 pd.set_option('display.max_colwidth', 75)
-
-DEFAULT_CFG = [
-    'original_100',
-    'original_101',
-    'original_102',
-    'original_103',
-    'original_104',
-    'occlusionformer_basis_bias_1',
-    'occlusionformer_basis_bias_2',
-    'occlusionformer_basis_bias_3',
-    'occlusionformer_basis_bias_4',
-    'occlusionformer_basis_bias_5',
-    'v2_occluded',
-    'v2_difficult_occlusions',
-    'v2_diff_wmap_balanced',
-    'v2_diff_wmap_balanced_half'
-]
 
 MIN_SCORES = ['min_ADE', 'min_FDE']
 MEAN_SCORES = ['mean_ADE', 'mean_FDE']
@@ -40,9 +26,12 @@ PAST_MEAN_SCORES = ['mean_past_ADE', 'mean_past_FDE']
 PRED_LENGTHS = ['past_pred_length', 'pred_length']
 OCCLUSION_MAP_SCORES = ['OAO', 'OAC', 'OAC_t0']
 
+OPERATION = 'mean'  # 'mean' | 'median' | 'IQR'
+
 
 def main(args: argparse.Namespace):
     assert args.unit in ['m', 'px']
+    print("PERFORMANCE SUMMARY:\n\n")
 
     if args.unit == 'm':
         min_scores, mean_scores = MIN_SCORES, MEAN_SCORES
@@ -54,49 +43,44 @@ def main(args: argparse.Namespace):
     else:
         raise NotImplementedError
 
-    print("PERFORMANCE SUMMARY:\n\n")
-
-    experiment_names = args.cfg if args.cfg is not None else DEFAULT_CFG
-    operation = 'mean'  # 'mean' | 'median' | 'IQR'
-
     metric_names = (min_scores + mean_scores +
                     past_min_scores + past_mean_scores +
                     PRED_LENGTHS + OCCLUSION_MAP_SCORES)
 
-    ref_index = get_reference_indices()
+    if args.score_files is None:
+        # search for every single prediction_scores.csv file and return them all
+        subjects = get_all_pred_scores_csv_files()
+    elif len(args.score_files) == 1 and args.score_files[0].endswith('.txt'):
+        subjects = process_analysis_subjects_txt(txt_file=args.score_files[0])
+    else:
+        subjects = [file for file in args.score_files if (not file.startswith('#') and file.endswith(SCORES_CSV_FILENAME))]
 
-    exp_dicts = get_all_results_directories()
-    exp_dicts = [exp_dict for exp_dict in exp_dicts if exp_dict['split'] in 'test']
-    exp_dicts = [exp_dict for exp_dict in exp_dicts if
-                 exp_dict['dataset_used'] not in ['occlusion_simulation_difficult']]
-    exp_dicts = [exp_dict for exp_dict in exp_dicts if exp_dict['experiment_name'] in experiment_names]
+    for file in subjects:
+        assert os.path.exists(file), f"Error, file does not exist:\n{file}"
+
+    ref_index = get_reference_indices()
 
     df_filter = get_df_filter(ref_index=ref_index, filters=args.filter)
 
     all_perf_df = generate_performance_summary_df(
-        experiments=exp_dicts, metric_names=metric_names, operation=operation, df_filter=df_filter
+        experiments=subjects, metric_names=metric_names, operation=OPERATION, df_filter=df_filter
     )
     all_perf_df.sort_values(by=args.sort_by, inplace=True)
 
-    if args.print_dataset_stats:  # specify some dataset characteristics
-        exp_dict = exp_dicts[0]
-        example_df = get_perf_scores_df(
-            experiment_name=exp_dict['experiment_name'],
-            dataset_used=exp_dict['dataset_used'],
-            model_name=exp_dict['model_name'],
-            split=exp_dict['split']
-        )
+    if args.print_dataset_stats:
+        example_exp_dict = get_experiment_dict(file_path=subjects[0])
+        example_df = get_df_from_csv(file_path=subjects[0])
         example_df = df_filter(example_df)
 
         print(f"Dataset Statistics:")
         print(f"# instances\t\t: {len(example_df.index.unique(level='filename'))}")
         print(f"# trajectories\t\t: {len(example_df)}")
-        print(f"# occlusion cases\t: {(example_df['past_pred_length'] != 0).sum()}")
+        if 'occlusion_simulation' in example_exp_dict['dataset_used']:
+            print(f"# occlusion cases\t: {(example_df['past_pred_length'] != 0).sum()}")
         print("\n")
 
-    print(f"Experiments Performance Summary ({operation}):")
+    print(f"Experiments Performance Summary ({OPERATION}):")
     print(all_perf_df)
-    # print(all_perf_df[all_perf_df['dataset_used'] == 'occlusion_simulation'])
 
     if args.save_file:
         assert os.path.exists(os.path.dirname(args.save_file))
@@ -109,12 +93,24 @@ def main(args: argparse.Namespace):
 if __name__ == '__main__':
     print("Hello!")
     parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', nargs='+', default=None)
-    parser.add_argument('--unit', type=str, default='m')        # 'm' | 'px'
-    parser.add_argument('--sort_by', type=str, default='experiment')
-    parser.add_argument('--filter', nargs='+', default=None)
-    parser.add_argument('--save_file', type=os.path.abspath, default=None)
-    parser.add_argument('--print_dataset_stats', action='store_true', default=False)
+    parser.add_argument('--score_files', nargs='+', type=os.path.abspath, default=None,
+                        help="provide either multiple paths to 'prediction_scores.csv' files inside the 'results' "
+                             "directory, or a path to a single .txt file, containing paths to those files "
+                             "(relative to the repository's root directory). If nothing is passed, the script will "
+                             "search for every single 'prediction_scores.csv' file inside the 'results' directory.")
+    parser.add_argument('--unit', type=str, default='m',
+                        help="\'m\' | \'px\'")
+    parser.add_argument('--sort_by', nargs='+', type=str, default='experiment_name',
+                        help="sort the performance table by column names.")
+    parser.add_argument('--filter', nargs='+', type=str, default=None,
+                        help="select any number of options from:\n"
+                             "\'occluded_ids\', \'fully_observed_ids\', \'difficult_dataset\', "
+                             "\'difficult_occluded_ids\', \'moving\', \'idle\'")
+    parser.add_argument('--save_file', type=os.path.abspath, default=None,
+                        help="path of a \'.csv\' file to save the performance table.")
+    parser.add_argument('--print_dataset_stats', action='store_true', default=False,
+                        help="passing this argument will make the script specify some dataset characteristics "
+                             "by printing them to the screen.")
     args = parser.parse_args()
 
     main(args=args)
