@@ -2,21 +2,24 @@ import argparse
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import os.path
 import scipy.stats
 
 import pandas.core.series
-from typing import Dict, List
+from typing import List
 
 from utils.performance_analysis import \
-    get_all_results_directories, \
+    SCORES_CSV_FILENAME, \
+    get_all_pred_scores_csv_files, \
+    process_analysis_subjects_txt, \
     get_df_filter, \
     get_perf_scores_df, \
     get_reference_indices, \
     get_scores_dict_by_categories, \
     remove_k_sample_columns, \
+    get_experiment_dict, \
+    get_df_from_csv, \
     STATISTICAL_OPERATIONS
-
-# Global Variables set up #############################################################################################
 
 DEFAULT_SCORES = [
     'min_ADE', 'min_FDE',
@@ -31,10 +34,8 @@ OPERATIONS = [
 ]
 
 
-# Functions ###########################################################################################################
-
 def scores_stats_df_per_occlusion_lengths(
-        exp_dict: Dict,
+        exp_csv_path: str,
         scores: List[str],
         operations: List[str],
         categorization: pandas.core.series.Series,
@@ -45,12 +46,7 @@ def scores_stats_df_per_occlusion_lengths(
     print(f"categorization counts (total: {len(categorization)}):\n{categorization.value_counts()}")
     category_name, category_values = categorization.name, sorted(categorization.unique())
 
-    experiment_df = get_perf_scores_df(
-        experiment_name=exp_dict['experiment_name'],
-        dataset_used=exp_dict['dataset_used'],
-        model_name=exp_dict['model_name'],
-        split=exp_dict['split']
-    )
+    experiment_df = get_df_from_csv(file_path=exp_csv_path)
     if df_filter is not None:
         experiment_df = df_filter(experiment_df)
 
@@ -82,12 +78,17 @@ def scores_stats_df_per_occlusion_lengths(
 
 def main(args: argparse.Namespace):
     print("PERFORMANCE STATISTICS BY LAST OBSERVED TIMESTEP GROUPS\n\n")
-    assert args.cfg is not None
-    experiment_names = args.cfg
 
-    exp_dicts = get_all_results_directories()
-    exp_dicts = [exp_dict for exp_dict in exp_dicts if exp_dict['split'] in ['test']]
-    exp_dicts = [exp_dict for exp_dict in exp_dicts if exp_dict['experiment_name'] in experiment_names]
+    if args.score_files is None:
+        # search for every single prediction_scores.csv file and return them all
+        subjects = get_all_pred_scores_csv_files()
+    elif len(args.score_files) == 1 and args.score_files[0].endswith('.txt'):
+        subjects = process_analysis_subjects_txt(txt_file=args.score_files[0])
+    else:
+        subjects = [file for file in args.score_files if (not file.startswith('#') and file.endswith(SCORES_CSV_FILENAME))]
+
+    for file in subjects:
+        assert os.path.exists(file), f"Error, file does not exist:\n{file}"
 
     ref_index = get_reference_indices()
     ref_past_pred_lengths = get_perf_scores_df(
@@ -102,12 +103,13 @@ def main(args: argparse.Namespace):
     df_filter = get_df_filter(ref_index=ref_index, filters=args.filter)
     ref_past_pred_lengths = df_filter(ref_past_pred_lengths)
 
-    for exp_dict in exp_dicts:
+    for exp_csv_path in subjects:
 
+        exp_dict = get_experiment_dict(file_path=exp_csv_path)
         print(f"{exp_dict['experiment_name']}:\n")
 
         summary_df = scores_stats_df_per_occlusion_lengths(
-            exp_dict=exp_dict,
+            exp_csv_path=exp_csv_path,
             scores=DEFAULT_SCORES,
             operations=OPERATIONS,
             categorization=ref_past_pred_lengths,
@@ -153,8 +155,15 @@ def main(args: argparse.Namespace):
 if __name__ == '__main__':
     print("Hello!")
     parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', nargs='+', default=None)
-    parser.add_argument('--filter', nargs='+', default=None)
+    parser.add_argument('--score_files', nargs='+', type=os.path.abspath, default=None,
+                        help="provide either multiple paths to 'prediction_scores.csv' files inside the 'results' "
+                             "directory, or a path to a single .txt file, containing paths to those files "
+                             "(relative to the repository's root directory). If nothing is passed, the script will "
+                             "search for every single 'prediction_scores.csv' file inside the 'results' directory.")
+    parser.add_argument('--filter', nargs='+', type=str, default=None,
+                        help="select any number of options from:\n"
+                             "\'occluded_ids\', \'fully_observed_ids\', \'difficult_dataset\', "
+                             "\'difficult_occluded_ids\', \'moving\', \'idle\'")
     args = parser.parse_args()
 
     main(args=args)
