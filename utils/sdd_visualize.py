@@ -178,7 +178,6 @@ def visualize_predictions(
             # agent_mask = (agent_sequence == ag_id)
             agent_traj = pred_traj[agent_mask]
 
-            # TODO: better way to apply style
             c = 'black' if display_modes_mask[i, k] else color[i].reshape(1, -1)
             alpha = alpha_displayed_modes if display_modes_mask[i, k] else alpha_non_displayed_modes
 
