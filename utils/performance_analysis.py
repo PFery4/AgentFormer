@@ -1,4 +1,5 @@
 import os
+import glob
 import yaml
 import pandas as pd
 import matplotlib.axes
@@ -9,15 +10,48 @@ from typing import Dict, List, Optional
 
 from utils.config import REPO_ROOT
 
-
-# TODO: manage const_vel configs according to the new Constant Velocity model cfg
-
-
+SCORES_CSV_FILENAME = 'prediction_scores.csv'
 STATISTICAL_OPERATIONS = {
     'mean': lambda array: float(np.nanmean(array)),
     'median': lambda array: float(np.nanmedian(array)),
     'IQR': lambda array: float(np.nanquantile(array, 0.75) - np.nanquantile(array, 0.25))
 }
+
+
+def get_all_pred_scores_csv_files():
+    return glob.glob(os.path.join(REPO_ROOT, f'results/**/{SCORES_CSV_FILENAME}'), recursive=True)
+
+
+def process_analysis_subjects_txt(txt_file: str):
+    """
+    This function processes a .txt file containing multiple paths to files named <SCORES_CSV_FILENAME>
+    file paths provided in this file must be relative to the repository's root directory.
+    """
+    with open(txt_file, 'r') as f:
+        lines = f.read().splitlines()
+    return [
+        os.path.join(REPO_ROOT, line) for line in lines if
+        (not line.startswith('#') and line.endswith(SCORES_CSV_FILENAME))
+    ]
+
+
+def get_experiment_dict(file_path: str):
+    # file_path is a path to a file named <SCORES_CSV_FILENAME>, which is inside the 'results' directory.
+    split_path = file_path.split(os.path.sep)
+    return dict(
+        experiment_name=split_path[-6], dataset_used=split_path[-4], model_name=split_path[-3], split=split_path[-2]
+    )
+
+
+def get_df_from_csv(file_path: str, drop_idx: bool = True):
+    df = pd.read_csv(file_path)
+
+    df_indices = ['idx', 'filename', 'agent_id']
+    df.set_index(keys=df_indices, inplace=True)
+
+    if drop_idx:
+        df = df.droplevel('idx')
+    return df
 
 
 def get_occlusion_traj_info_df(drop_idx: bool = True):
@@ -28,13 +62,7 @@ def get_occlusion_traj_info_df(drop_idx: bool = True):
                                         f"python save_occlusion_trajectories_information.py " \
                                         f"--cfg cfg/datasets/occlusion_simulation_no_rand_rot.py --split test --legacy"
 
-    df = pd.read_csv(target_path)
-
-    df_indices = ['idx', 'filename', 'agent_id']
-    df.set_index(keys=df_indices, inplace=True)
-
-    if drop_idx:
-        df = df.droplevel('idx')
+    df = get_df_from_csv(file_path=target_path, drop_idx=drop_idx)
 
     df['idle'] = df['travelled_distance_Tobs_t0'] < 0.5
     df['occlusion_pattern'] = df['occlusion_pattern'].astype(str).str.rjust(8, '0')
@@ -118,18 +146,10 @@ def get_perf_scores_df(
         model_name=model_name,
         split=split
     )
-    target_path = os.path.join(target_path, 'prediction_scores.csv')
+    target_path = os.path.join(target_path, SCORES_CSV_FILENAME)
     assert os.path.exists(target_path)
 
-    df = pd.read_csv(target_path)
-
-    df_indices = ['idx', 'filename', 'agent_id']
-    df.set_index(keys=df_indices, inplace=True)
-
-    if drop_idx:
-        df = df.droplevel('idx')
-
-    return df
+    return get_df_from_csv(file_path=target_path, drop_idx=drop_idx)
 
 
 def get_perf_scores_dict(
@@ -155,7 +175,12 @@ def get_perf_scores_dict(
 
 
 def print_occlusion_length_counts():
-    dataframe = get_perf_scores_df('const_vel_occlusion_simulation', 'occlusion_simulation', 'untrained', 'test')
+    dataframe = get_perf_scores_df(
+        experiment_name='CV_predictor',
+        dataset_used='occlusion_simulation',
+        model_name='untrained',
+        split='test'
+    )
     print("last observed timestep\t| case count")
     for i in range(0, 7):
         mini_df = dataframe[dataframe['past_pred_length'] == i]
@@ -164,24 +189,21 @@ def print_occlusion_length_counts():
 
 
 def generate_performance_summary_df(
-        experiments: List[Dict],
+        experiments: List[str],
         metric_names: List,
         df_filter=None,
         operation: str = 'mean'
 ) -> pd.DataFrame:
+    for exp_csv_path in experiments:
+        assert exp_csv_path.endswith(SCORES_CSV_FILENAME), f"Error, incorrect file:\n{exp_csv_path}"
     assert operation in STATISTICAL_OPERATIONS.keys()
 
-    df_columns = ['experiment', 'dataset_used', 'n_measurements', 'model_name'] + metric_names
+    df_columns = ['experiment_name', 'dataset_used', 'n_measurements', 'model_name'] + metric_names
     performance_df = pd.DataFrame(columns=df_columns)
 
-    for exp_dict in experiments:
+    for exp_csv_path in experiments:
 
-        scores_df = get_perf_scores_df(
-            experiment_name=exp_dict['experiment_name'],
-            dataset_used=exp_dict['dataset_used'],
-            model_name=exp_dict['model_name'],
-            split=exp_dict['split']
-        )
+        scores_df = get_df_from_csv(file_path=exp_csv_path)
 
         if df_filter is not None:
             scores_df = df_filter(scores_df)
@@ -191,10 +213,8 @@ def generate_performance_summary_df(
             if name in scores_df.columns else pd.NA for name in metric_names
         }
 
-        scores_dict['experiment'] = exp_dict['experiment_name']
-        scores_dict['dataset_used'] = exp_dict['dataset_used']
-        scores_dict['n_measurements'] = len(scores_df)
-        scores_dict['model_name'] = exp_dict['model_name']
+        scores_dict.update(get_experiment_dict(file_path=exp_csv_path))
+        scores_dict.update(n_measurements=len(scores_df))
 
         performance_df.loc[len(performance_df)] = scores_dict
 
@@ -375,7 +395,7 @@ def get_scores_dict_by_categories(
 
 def get_occlusion_indices(split: str):
     cv_perf_df = get_perf_scores_df(
-        experiment_name='const_vel_occlusion_simulation',
+        experiment_name='CV_predictor',
         dataset_used='occlusion_simulation',
         model_name='untrained',
         split=split
@@ -387,7 +407,7 @@ def get_occlusion_indices(split: str):
 
 def get_difficult_occlusion_indices(split: str):
     cv_perf_df = get_perf_scores_df(
-        experiment_name='const_vel_occlusion_simulation',
+        experiment_name='CV_predictor',
         dataset_used='occlusion_simulation',
         model_name='untrained',
         split=split,
@@ -402,12 +422,9 @@ def get_difficult_occlusion_indices(split: str):
 def get_reference_indices():
     reference_dfs = [
         # <experiment_name>, <dataset_used>
-        {'experiment_name': 'const_vel_fully_observed', 'dataset_used': 'fully_observed',
-         'model_name': 'untrained'},
-        {'experiment_name': 'const_vel_occlusion_simulation', 'dataset_used': 'occlusion_simulation',
-         'model_name': 'untrained'},
-        {'experiment_name': 'const_vel_occlusion_simulation_imputed', 'dataset_used': 'occlusion_simulation_imputed',
-         'model_name': 'untrained'},
+        dict(experiment_name='CV_predictor', dataset_used='fully_observed', model_name='untrained'),
+        dict(experiment_name='CV_predictor', dataset_used='occlusion_simulation', model_name='untrained'),
+        dict(experiment_name='CV_predictor', dataset_used='occlusion_simulation_imputed', model_name='untrained'),
     ]  # the performance dataframes will be filtered by the intersection of the indices of the reference_dfs
     ref_indices = [
         get_perf_scores_df(**exp_dict, split='test').index for exp_dict in reference_dfs
@@ -427,13 +444,13 @@ def get_df_filter(ref_index: pd.Index, filters: Optional[List[str]] = None):
     if filters is not None:
         traj_info_df = get_occlusion_traj_info_df()
         ref_df_1 = get_perf_scores_df(
-            experiment_name='const_vel_occlusion_simulation',
+            experiment_name='CV_predictor',
             dataset_used='occlusion_simulation',
             model_name='untrained',
             split='test'
         )
         ref_df_2 = get_perf_scores_df(
-            experiment_name='const_vel_occlusion_simulation_imputed',
+            experiment_name='CV_predictor',
             dataset_used='occlusion_simulation_imputed',
             model_name='untrained',
             split='test'
