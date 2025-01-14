@@ -70,8 +70,9 @@ def visualize_sequences(data_dict: Dict, draw_ax: matplotlib.axes.Axes) -> None:
         old_pos = pos - vel
         draw_ax.plot([old_pos[0], pos[0]], [old_pos[1], pos[1]], color=c, linestyle='--', alpha=0.8)
 
-    homogeneous_pred_trajs = torch.cat((pred_trajs, torch.ones([*pred_trajs.shape[:-1], 1])), dim=-1).transpose(-1,
-                                                                                                                -2)
+    homogeneous_pred_trajs = torch.cat(
+        (pred_trajs, torch.ones([*pred_trajs.shape[:-1], 1])), dim=-1
+    ).transpose(-1, -2)
     plot_pred_trajs = (homography @ homogeneous_pred_trajs).transpose(-1, -2)[..., :-1]
 
     homogeneous_pred_vel = torch.cat((pred_vel, torch.ones([*pred_vel.shape[:-1], 1])), dim=-1).transpose(-1, -2)
@@ -104,7 +105,9 @@ def visualize_trajectories(data_dict: Dict, draw_ax: matplotlib.axes.Axes) -> No
     if 'true_trajectories' in data_dict.keys() and data_dict['true_trajectories'] is not None:
         assert 'true_observation_mask' in data_dict.keys() and data_dict['true_observation_mask'] is not None
         true_trajs = data_dict['true_trajectories']
-        homogeneous_true_trajs = torch.cat((true_trajs, torch.ones([*true_trajs.shape[:-1], 1])), dim=-1).transpose(-1, -2)
+        homogeneous_true_trajs = torch.cat(
+            (true_trajs, torch.ones([*true_trajs.shape[:-1], 1])), dim=-1
+        ).transpose(-1, -2)
         plot_true_trajs = (homography @ homogeneous_true_trajs).transpose(-1, -2)[..., :-1]
 
         color_iter = iter(plt.cm.rainbow(np.linspace(0, 1, ids.shape[0])))
@@ -365,13 +368,19 @@ def visualize_input_and_predictions(
         color = colors[identities_index].reshape(1, -1)
 
         # plotting last observed position
-        draw_ax.scatter(last_obs_pos[identities_index, 0], last_obs_pos[identities_index, 1], s=40, facecolors='none', edgecolors=color, alpha=0.4)
+        draw_ax.scatter(
+            last_obs_pos[identities_index, 0], last_obs_pos[identities_index, 1],
+            s=40, facecolors='none', edgecolors=color, alpha=0.4
+        )
 
         # plotting the past trajectory
         agent_sequence = (obs_id_sequence == agent_id)
         agent_pos_sequence = obs_pos_sequence[agent_sequence, :]
 
-        draw_ax.plot(agent_pos_sequence[:, 0], agent_pos_sequence[:, 1], c=color, marker='x', linestyle='-', alpha=0.4, label=agent_id)
+        draw_ax.plot(
+            agent_pos_sequence[:, 0], agent_pos_sequence[:, 1],
+            c=color, marker='x', linestyle='-', alpha=0.4, label=agent_id
+        )
 
     # plotting ground truth future trajectories
     for agent_id in show_gt_agent_ids:
@@ -382,11 +391,22 @@ def visualize_input_and_predictions(
         # plotting the ground truth future trajectory
         agent_sequence = (gt_id_sequence == agent_id)
         agent_pos_sequence = gt_pos_sequence[agent_sequence, :]     # [p, 2]
-        agent_pos_sequence = np.concatenate((last_obs_pos[identities_index, :].unsqueeze(0), agent_pos_sequence), axis=0)
+        agent_pos_sequence = np.concatenate(
+            (last_obs_pos[identities_index, :].unsqueeze(0), agent_pos_sequence), axis=0
+        )
 
-        draw_ax.plot(agent_pos_sequence[:, 0], agent_pos_sequence[:, 1], c='black', linestyle='-', alpha=0.5)
-        draw_ax.scatter(agent_pos_sequence[1:-1, 0], agent_pos_sequence[1:-1, 1], facecolors='none', edgecolors='black', marker='X', alpha=0.5)
-        draw_ax.scatter(agent_pos_sequence[-1, 0], agent_pos_sequence[-1, 1], facecolors='none', edgecolors=color, marker='X', alpha=0.5)
+        draw_ax.plot(
+            agent_pos_sequence[:, 0], agent_pos_sequence[:, 1],
+            c='black', linestyle='-', alpha=0.5
+        )
+        draw_ax.scatter(
+            agent_pos_sequence[1:-1, 0], agent_pos_sequence[1:-1, 1],
+            facecolors='none', edgecolors='black', marker='X', alpha=0.5
+        )
+        draw_ax.scatter(
+            agent_pos_sequence[-1, 0], agent_pos_sequence[-1, 1],
+            facecolors='none', edgecolors=color, marker='X', alpha=0.5
+        )
 
     # plotting predictions
     for agent_id in show_pred_agent_ids:
