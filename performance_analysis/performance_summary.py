@@ -4,6 +4,7 @@ import pandas as pd
 
 from utils.performance_analysis import \
     SCORES_CSV_FILENAME, \
+    MIN_SCORES, MEAN_SCORES, PAST_MIN_SCORES, PAST_MEAN_SCORES, \
     get_all_pred_scores_csv_files, \
     get_reference_indices, \
     get_df_filter, \
@@ -17,11 +18,6 @@ pd.set_option('display.max_rows', 500)
 pd.set_option('display.max_columns', 500)
 pd.set_option('display.width', 200)
 pd.set_option('display.max_colwidth', 75)
-
-MIN_SCORES = ['min_ADE', 'min_FDE']
-MEAN_SCORES = ['mean_ADE', 'mean_FDE']
-PAST_MIN_SCORES = ['min_past_ADE', 'min_past_FDE']
-PAST_MEAN_SCORES = ['mean_past_ADE', 'mean_past_FDE']
 
 PRED_LENGTHS = ['past_pred_length', 'pred_length']
 OCCLUSION_MAP_SCORES = ['OAO', 'OAC', 'OAC_t0']
