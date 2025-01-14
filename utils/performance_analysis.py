@@ -192,39 +192,6 @@ def print_occlusion_length_counts():
     print(f"total\t\t\t| {len(dataframe)}")
 
 
-def generate_performance_summary_df(
-        experiments: List[str],
-        metric_names: List,
-        df_filter=None,
-        operation: str = 'mean'
-) -> pd.DataFrame:
-    for exp_csv_path in experiments:
-        assert exp_csv_path.endswith(SCORES_CSV_FILENAME), f"Error, incorrect file:\n{exp_csv_path}"
-    assert operation in STATISTICAL_OPERATIONS.keys()
-
-    df_columns = ['experiment_name', 'dataset_used', 'n_measurements', 'model_name'] + metric_names
-    performance_df = pd.DataFrame(columns=df_columns)
-
-    for exp_csv_path in experiments:
-
-        scores_df = get_df_from_csv(file_path=exp_csv_path)
-
-        if df_filter is not None:
-            scores_df = df_filter(scores_df)
-
-        scores_dict = {
-            name: STATISTICAL_OPERATIONS[operation](scores_df[name])
-            if name in scores_df.columns else pd.NA for name in metric_names
-        }
-
-        scores_dict.update(get_experiment_dict(file_path=exp_csv_path))
-        scores_dict.update(n_measurements=len(scores_df))
-
-        performance_df.loc[len(performance_df)] = scores_dict
-
-    return performance_df
-
-
 def remove_k_sample_columns(df: pd.DataFrame) -> pd.DataFrame:
     keep_columns = [name for name in df.columns.tolist() if not name.startswith('K')]
     return df[keep_columns]

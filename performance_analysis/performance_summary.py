@@ -3,15 +3,17 @@ import os.path
 import pandas as pd
 
 from utils.performance_analysis import \
+    STATISTICAL_OPERATIONS, \
     SCORES_CSV_FILENAME, \
     MIN_SCORES, MEAN_SCORES, PAST_MIN_SCORES, PAST_MEAN_SCORES, \
     get_all_pred_scores_csv_files, \
     get_reference_indices, \
     get_df_filter, \
-    generate_performance_summary_df, \
     process_analysis_subjects_txt, \
     get_df_from_csv, \
     get_experiment_dict
+
+from typing import List
 
 
 pd.set_option('display.max_rows', 500)
@@ -23,6 +25,39 @@ PRED_LENGTHS = ['past_pred_length', 'pred_length']
 OCCLUSION_MAP_SCORES = ['OAO', 'OAC', 'OAC_t0']
 
 OPERATION = 'mean'  # 'mean' | 'median' | 'IQR'
+
+
+def generate_performance_summary_df(
+        experiments: List[str],
+        metric_names: List,
+        df_filter=None,
+        operation: str = 'mean'
+) -> pd.DataFrame:
+    for exp_csv_path in experiments:
+        assert exp_csv_path.endswith(SCORES_CSV_FILENAME), f"Error, incorrect file:\n{exp_csv_path}"
+    assert operation in STATISTICAL_OPERATIONS.keys()
+
+    df_columns = ['experiment_name', 'dataset_used', 'n_measurements', 'model_name'] + metric_names
+    performance_df = pd.DataFrame(columns=df_columns)
+
+    for exp_csv_path in experiments:
+
+        scores_df = get_df_from_csv(file_path=exp_csv_path)
+
+        if df_filter is not None:
+            scores_df = df_filter(scores_df)
+
+        scores_dict = {
+            name: STATISTICAL_OPERATIONS[operation](scores_df[name])
+            if name in scores_df.columns else pd.NA for name in metric_names
+        }
+
+        scores_dict.update(get_experiment_dict(file_path=exp_csv_path))
+        scores_dict.update(n_measurements=len(scores_df))
+
+        performance_df.loc[len(performance_df)] = scores_dict
+
+    return performance_df
 
 
 def main(args: argparse.Namespace):
