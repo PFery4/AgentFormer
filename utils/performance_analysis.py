@@ -16,6 +16,10 @@ STATISTICAL_OPERATIONS = {
     'median': lambda array: float(np.nanmedian(array)),
     'IQR': lambda array: float(np.nanquantile(array, 0.75) - np.nanquantile(array, 0.25))
 }
+MIN_SCORES = ['min_ADE', 'min_FDE']
+MEAN_SCORES = ['mean_ADE', 'mean_FDE']
+PAST_MIN_SCORES = ['min_past_ADE', 'min_past_FDE']
+PAST_MEAN_SCORES = ['mean_past_ADE', 'mean_past_FDE']
 
 
 def get_all_pred_scores_csv_files():
