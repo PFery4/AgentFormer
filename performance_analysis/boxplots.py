@@ -5,30 +5,24 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas.core.series
 
-from typing import Dict, List
+from typing import List
 
 from utils.performance_analysis import \
+    SCORES_CSV_FILENAME, \
+    MIN_SCORES, MEAN_SCORES, \
+    get_experiment_dict, \
     get_reference_indices, \
-    get_all_results_directories, \
     get_df_filter, \
     get_perf_scores_df, \
     get_scores_dict_by_categories, \
-    remove_k_sample_columns
+    remove_k_sample_columns, \
+    get_all_pred_scores_csv_files, \
+    process_analysis_subjects_txt, \
+    get_df_from_csv
 
 
 FIG_SIZE = (9, 6)
 FIG_DPI = 300
-
-DEFAULT_SCORES = [
-    'min_ADE', 'min_FDE',
-    'mean_ADE', 'mean_FDE',
-    # 'min_past_ADE', 'min_past_FDE',
-    # 'mean_past_ADE', 'mean_past_FDE',
-    # 'min_ADE_px', 'min_FDE_px',
-    # 'mean_ADE_px', 'mean_FDE_px',
-    # 'min_past_ADE_px', 'min_past_FDE_px',
-    # 'mean_past_ADE_px', 'mean_past_FDE_px',
-]
 
 YLIMS_DICT = {
     # key: value --> score_name : (min ylim, max ylim)
@@ -53,28 +47,28 @@ YLIMS_DICT = {
 
 def make_box_plot_occlusion_lengths(
         draw_ax: matplotlib.axes.Axes,
-        experiments: List[Dict],
+        experiments: List[str],
         plot_score: str,
         categorization: pandas.core.series.Series,
         df_filter=None,
         ylim=(None, None),
         legend=True
 ) -> None:
-    print(f"categorization counts (total: {len(categorization)}):\n{categorization.value_counts()}")
+    for exp_csv_path in experiments:
+        assert exp_csv_path.endswith(SCORES_CSV_FILENAME), f"Error, incorrect file:\n{exp_csv_path}"
+
+    print(f"categorization counts (total: {len(categorization)}):\n{categorization.value_counts()}\n\n")
     category_name, category_values = categorization.name, sorted(categorization.unique())
     colors = [plt.cm.Pastel1(i) for i in range(len(experiments))]
 
-    boxplot_dict_key = lambda exp_dict: f"{exp_dict['experiment_name']}_{exp_dict['dataset_used']}"
+    def get_boxplot_dict_key(exp_csv_path: str) -> str:
+        exp_dict = get_experiment_dict(file_path=exp_csv_path)
+        return f"{exp_dict['experiment_name']}_{exp_dict['dataset_used']}"
 
-    box_plot_dict = {boxplot_dict_key(exp_dict): None for exp_dict in experiments}
-    for i, exp_dict in enumerate(experiments):
+    box_plot_dict = {get_boxplot_dict_key(exp_csv_path): None for exp_csv_path in experiments}
+    for i, exp_csv_path in enumerate(experiments):
 
-        experiment_df = get_perf_scores_df(
-            experiment_name=exp_dict['experiment_name'],
-            dataset_used=exp_dict['dataset_used'],
-            model_name=exp_dict['model_name'],
-            split=exp_dict['split']
-        )
+        experiment_df = get_df_from_csv(file_path=exp_csv_path)
         if df_filter is not None:
             experiment_df = df_filter(experiment_df)
 
@@ -88,7 +82,7 @@ def make_box_plot_occlusion_lengths(
         assert plot_score in experiment_df.columns
         assert category_name in experiment_df.columns
 
-        box_plot_dict[boxplot_dict_key(exp_dict)] = get_scores_dict_by_categories(
+        box_plot_dict[get_boxplot_dict_key(exp_csv_path)] = get_scores_dict_by_categories(
             exp_df=experiment_df,
             score=plot_score,
             categorization=category_name
@@ -98,9 +92,9 @@ def make_box_plot_occlusion_lengths(
     box_plot_ys = []
     box_plot_colors = []
     for length in category_values:
-        for i, exp_dict in enumerate(experiments):
-            box_plot_xs.append(f"{length} - {boxplot_dict_key(exp_dict)}")
-            box_plot_ys.append(box_plot_dict[boxplot_dict_key(exp_dict)][length])
+        for i, exp_csv_path in enumerate(experiments):
+            box_plot_xs.append(f"{length} - {get_boxplot_dict_key(exp_csv_path)}")
+            box_plot_ys.append(box_plot_dict[get_boxplot_dict_key(exp_csv_path)][length])
             box_plot_colors.append(colors[i])
 
     bplot = draw_ax.boxplot(box_plot_ys, positions=range(len(box_plot_ys)), patch_artist=True)
@@ -118,7 +112,7 @@ def make_box_plot_occlusion_lengths(
     if legend:
         draw_ax.legend(
             [bplot["boxes"][i] for i in range(len(experiments))],
-            [boxplot_dict_key(exp_dict) for exp_dict in experiments], loc='upper left'
+            [get_boxplot_dict_key(exp_csv_path) for exp_csv_path in experiments], loc='upper left'
         )
     draw_ax.set_ylabel(f'{plot_score}', loc='bottom')
     draw_ax.set_xlabel('last observation timestep', loc='left')
@@ -127,28 +121,30 @@ def make_box_plot_occlusion_lengths(
 
 
 def main(args: argparse.Namespace):
-    print(args.scores)
-    assert args.cfg is not None
-    for score in args.scores:
-        assert score in YLIMS_DICT.keys(), f"incorrect score: {score}"
-    if args.save_dir is not None:
-        print(args.save_dir)
-        assert not os.path.exists(args.save_dir)
-        os.makedirs(args.save_dir)
-
     print("BOXPLOTS:\n\n")
 
-    experiment_names = args.cfg
+    score_names = []
+    if args.unit == 'm':
+        [score_names.append(score) for score in args.scores]
+    elif args.unit == 'px':
+        [score_names.append(f"{score}_px") for score in args.scores]
+    else:
+        raise NotImplementedError
 
-    exp_dicts = get_all_results_directories()
-    exp_dicts = [exp_dict for exp_dict in exp_dicts if exp_dict['split'] in ['test']]
-    exp_dicts = [exp_dict for exp_dict in exp_dicts if exp_dict['experiment_name'] in experiment_names]
-    # exp_dicts = [exp_dict for exp_dict in exp_dicts if exp_dict['dataset_used'] not in ['fully_observed']]
-    exp_dicts = [exp_dict for exp_dict in exp_dicts if exp_dict['dataset_used'] in ['fully_observed']]
+    if args.score_files is None:
+        # search for every single prediction_scores.csv file and return them all
+        subjects = get_all_pred_scores_csv_files()
+    elif len(args.score_files) == 1 and args.score_files[0].endswith('.txt'):
+        subjects = process_analysis_subjects_txt(txt_file=args.score_files[0])
+    else:
+        subjects = [file for file in args.score_files if (not file.startswith('#') and file.endswith(SCORES_CSV_FILENAME))]
+
+    for file in subjects:
+        assert os.path.exists(file), f"Error, file does not exist:\n{file}"
 
     ref_index = get_reference_indices()
     ref_past_pred_lengths = get_perf_scores_df(
-        experiment_name='const_vel_occlusion_simulation',
+        experiment_name='CV_predictor',
         dataset_used='occlusion_simulation',
         model_name='untrained',
         split='test'
@@ -159,11 +155,12 @@ def main(args: argparse.Namespace):
     df_filter = get_df_filter(ref_index=ref_index, filters=args.filter)
     ref_past_pred_lengths = df_filter(ref_past_pred_lengths)
 
-    for plot_score in args.scores:
+    for plot_score in score_names:
+        print(f"Creating boxplot figure for {plot_score}")
         fig, ax = plt.subplots(figsize=FIG_SIZE)
         make_box_plot_occlusion_lengths(
             draw_ax=ax,
-            experiments=exp_dicts,
+            experiments=subjects,
             plot_score=plot_score,
             categorization=ref_past_pred_lengths,
             df_filter=df_filter,
@@ -172,23 +169,24 @@ def main(args: argparse.Namespace):
         )
         ax.set_title(f"{plot_score} vs. Last Observed timestep")
 
-        if args.save_dir is not None:
-            filename = f"{plot_score}.png"
-            filepath = os.path.join(args.save_dir, filename)
-
-            print(f"Saving Boxplot figure to:\n{filepath}\n")
-            plt.savefig(filepath, dpi=FIG_DPI, bbox_inches='tight')
-
     plt.show()
 
 
 if __name__ == '__main__':
     print("Hello!")
     parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', nargs='+', default=None)
-    parser.add_argument('--filter', nargs='+', default=None)
-    parser.add_argument('--scores', nargs='+', type=str, default=DEFAULT_SCORES)
-    parser.add_argument('--save_dir', type=os.path.abspath, default=None)
+    parser.add_argument('--score_files', nargs='+', type=os.path.abspath, default=None,
+                        help="provide either multiple paths to 'prediction_scores.csv' files inside the 'results' "
+                             "directory, or a path to a single .txt file, containing paths to those files "
+                             "(relative to the repository's root directory). If nothing is passed, the script will "
+                             "search for every single 'prediction_scores.csv' file inside the 'results' directory.")
+    parser.add_argument('--unit', type=str, default='m',
+                        help="\'m\' | \'px\'")
+    parser.add_argument('--filter', nargs='+', default=None,
+                        help="select any number of options from:\n"
+                             "\'occluded_ids\', \'fully_observed_ids\', \'difficult_dataset\', "
+                             "\'difficult_occluded_ids\', \'moving\', \'idle\'")
+    parser.add_argument('--scores', nargs='+', type=str, default=MIN_SCORES+MEAN_SCORES)
     parser.add_argument('--legend', action='store_true', default=False)
     args = parser.parse_args()
 
