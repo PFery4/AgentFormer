@@ -33,7 +33,7 @@ Though installation through other methods might be possible, only the following 
 
 In order to study occlusions and their effect on trajectory prediction, we apply a simulator of occlusions on top of the Stanford Drone Dataset.
 
-1. Download our [Occlusion Simulator](https://github.com/PFery4/occlusion-simulation) repository, and follow its setup instructions (use the same environment as the one you just set up when going through the previous Environment section).
+1. Download our [Occlusion Simulator](https://github.com/PFery4/occlusion-simulation) repository, and follow its setup instructions (use the same environment as the one you set up when going through the previous Environment section).
 
 ### Environment Variables
 
@@ -47,43 +47,119 @@ In order to study occlusions and their effect on trajectory prediction, we apply
    ```
    where `<path/to/occlusion-simulation>` is the path to the Occlusion Simulator repository.
 
-## Stanford Drone Occlusion Dataset
+## Scripts
 
-We propose two separate implementations of dataset classes that can be used by the model: one where preprocessing is done on the fly, and one that extracts preprocessed instances from a [HDF5 dataset](https://www.hdfgroup.org/solutions/hdf5/).
+This repository contains many scripts that each fulfil a specific role.
+Scripts are located in two places: the most important ones are in the repository's root directory, and scripts related to the analysis of model performance can be found inside the `performance_analysis` directory.
+The following sections will briefly describe individual scripts' functionality, and how to use them in the most basic way.
+
+*It is important to note that some optional script flags will not be discussed in this README, and we invite you to read the source code directly, in order to learn in what ways you can modify script's behaviour to your preference.*
+
+### Stanford Drone Occlusion Dataset
+
+We propose two separate dataset class implementations that can be used alongside our model (they can be found under `data/sdd_dataloader.py`):
+   - `TorchDataGeneratorSDD`: preprocessing is done on the fly
+   - `HDF5PresavedDatasetSDD`: preprocessed instances are extracted from an [HDF5 dataset](https://www.hdfgroup.org/solutions/hdf5/)
+
 Presaving the dataset into a HDF5 file guarantees that random rotation of instances during training remains the same across epochs.
-The implementation of our dataset classes can be found under `data/sdd_dataloader.py`. Datasets are configured through config `.yml` files that can be found under `cfg/datasets/`.
+Datasets are configured through `.yml` files that can be found under `cfg/datasets/`.
 
-### Saving HDF5 dataset files
-If you wish to make use of HDF5 based datasets, you must first obtain a copy of a HDF5 dataset file for the particular configuration (and split) of your interest. You can save such a file using `save_hdf5_dataset.py`. A simple call of this script can be done so:
+### Obtaining HDF5 dataset files
+If you wish to make use of `HDF5PresavedDatasetSDD`, you must first obtain a copy of a HDF5 dataset file for the particular configuration (and split) of your interest. You can save such a file using `save_hdf5_dataset.py`. This script can be run in the following way:
 ```
-save_hdf5_dataset.py --cfg cfg/datasets/<your-desired-config-file.yml> --split <split>
+python save_hdf5_dataset.py --cfg cfg/datasets/DATASET_CONFIG_FILE.yml [--split SPLIT]
 ```
-Additional flags can be passed to further modify the script's behaviour (those are documented directly inside the script).
-The output of this script is a HDF5 file called `dataset_v2.h5`, which is stored by default under `datasets/SDD/pre_saved_datasets/<dataset_id>/<split>/`, where `<dataset_id>` is an identifier for the dataset, which is derived from the configuration file, and `<split>` is the dataset split ('train', 'val' or 'test').
+The script will generate a HDF5 file, which can be found at: `datasets/SDD/pre_saved_datasets/DATASET_ID/SPLIT/dataset_v2.h5`.
+Here, `DATASET_ID` is an identifier derived from the provided configuration file `DATASET_CONFIG_FILE.yml`, and `SPLIT` is the dataset split.
 
-[//]: # (dataset_comparison.py)
-[//]: # (visualize_dataset.py)
+[//]: # (TODO: explain legacy datasets, how they can be retrieved, and how they can be used)
 
-## Training
+### Verifying Dataset equivalence
+The script `dataset_comparison.py` can be used to verify that both our dataset implementations produce identical data.
+It can be run in the following way:
+```
+python dataset_comparison.py --cfg cfg/datasets/DATASET_CONFIG_FILE.yml [--split SPLIT] [--save_path REPORT_FILE.csv]
+```
+The script will run through two dataset instances (one `TorchDataGeneratorSDD` and one `HDF5PresavedDatasetSDD`), compare their produced data, and report the comparisons into a `.csv` file.
 
-[//]: # (train.py)
+### Visualizing Dataset instances
+Individual dataset instances can be visualized by means of the `visualize_dataset.py` script:
+```
+python visualize_dataset.py --cfg cfg/datasets/DATASET_CONFIG_FILE.yml [--split SPLIT] [--idx IDX_A IDX_B ...] --show
+```
+The script will generate image representations of agent's trajectories for the specified dataset instances `IDX_A`, `IDX_B`, etc.
 
-## Evaluation
+### Prediction Models
+The `model` directory contains code that is relevant to the implementation of our prediction models.
+Models are configured through `.yml` files located under `cfg/models`.
+Our work follows that of Yuan et al. who conduct their training process in two separate phases.
+Models being trained in phase ***I*** and ***II*** are very different from one another architecture-wise.
+Those differences can be directly seen in the model configuration files.
 
-[//]: # (save_predictions.py)
-[//]: # (save_occlusion_trajectories_information.py)
-[//]: # (occlusionformer_eval.py)
+Notably, it is important to remark that phase ***II*** models are always related to a corresponding phase ***I*** model.
+This is specified in phase ***II*** config files by two fields:
+   - `pred_cfg` indicates the name of the phase ***I*** model being used
+   - `pred_checkpoint_name` indicates the name of the checkpoint file containing the weights to initialize that phase ***I*** model
 
-[//]: # (performance_analysis/ttest.py)
-[//]: # (performance_analysis/performance_summary.py)
-[//]: # (performance_analysis/qualitative_example.py)
-[//]: # (performance_analysis/occlusion_score_histograms.py)
-[//]: # (performance_analysis/boxplots.py)
-[//]: # (performance_analysis/prediction_groups_statistics.py)
+*When training / evaluating any model, always make sure that it is correctly configured*.
 
-## Miscellaneous
+### Training
+
+Training a model can be done by using the `train.py` script:
+
+```
+python train.py --cfg cfg/models/PATH-TO-MODEL_CONFIG_FILE.yml [--checkpoint_name CHECKPOINT_NAME]
+```
+All the parameters relevant to the models' training regime are found inside its config file.
+Here, the option `CHECKPOINT_NAME` can be used to continue a previously interrupted training session from a specific point.
+`CHECKPOINT_NAME` corresponds to the name of a model checkpoint file inside the model's directory, inside `results/MODEL_CONFIG_FILE/models/`.
+
+### Evaluation
+
+Evaluating models' performance is done in multiple steps.
+First, the model is being run on a dataset split, and its predictions are saved:
+```
+python save_predictions.py --cfg cfg/models/PATH-TO-MODEL_CONFIG_FILE.yml --dataset_cfg cfg/datasets/DATASET_CONFIG_FILE.yml [--data_split SPLIT] [--checkpoint_name CHECKPOINT_NAME]
+```
+The script will store individual predictions as pickle files under `results/MODEL_CONFIG_FILE/results/DATASET_ID/CHECKPOINT_NAME/SPLIT/`.
+
+Once those predictions have been saved, they can be used to evaluate the model's performance against different metrics by running:
+```
+python model_eval.py --cfg cfg/models/PATH-TO-MODEL_CONFIG_FILE.yml --dataset_cfg cfg/datasets/DATASET_CONFIG_FILE.yml [--data_split SPLIT] [--checkpoint_name CHECKPOINT_NAME]
+```
+Two files will be created under `results/MODEL_CONFIG_FILE/results/DATASET_ID/CHECKPOINT_NAME/SPLIT/`: 
+- `prediction_scores.csv` contains an exhaustive performance report of every prediction made.
+- `prediction_scores.yml` contains a performance summary of metrics aggregated over the entire test set.
+
+Performance analysis scripts can be used to inspect the performance of our models in more detail.
+Some of those scripts require some information about trajectories, which must first be generated in the following way:
+```
+python save_occlusion_trajectories_information.py --cfg cfg/datasets/occlusion_simulation_no_rand_rot.py --split test
+```
+This will save some information about trajectories (e.g. distance travelled by agents, occlusion pattern...) into the following file: `datasets/SDD/pre_saved_datasets/occlusion_simulation/test/trajectories_info.csv`
+Additionally, some scripts require information about the performance of a regular Constant Velocity predictor as well. It is therefore important to save and evaluate the CV predictor:
+```
+python save_predictions.py --cfg cfg/models/untrained/CV_predictor.yml --dataset_cfg cfg/datasets/fully_observed_no_rand_rot.yml ;
+python save_predictions.py --cfg cfg/models/untrained/CV_predictor.yml --dataset_cfg cfg/datasets/occlusion_simulation_no_rand_rot.yml ;
+python save_predictions.py --cfg cfg/models/untrained/CV_predictor.yml --dataset_cfg cfg/datasets/occlusion_simulation_imputed_no_rand_rot.yml ;
+python model_eval.py --cfg cfg/models/untrained/CV_predictor.yml --dataset_cfg cfg/datasets/fully_observed_no_rand_rot.yml ;
+python model_eval.py --cfg cfg/models/untrained/CV_predictor.yml --dataset_cfg cfg/datasets/occlusion_simulation_no_rand_rot.yml ;
+python model_eval.py --cfg cfg/models/untrained/CV_predictor.yml --dataset_cfg cfg/datasets/occlusion_simulation_imputed_no_rand_rot.yml ;
+```
+
+Once those prerequisite steps have been taken, the scripts inside the `performance_analysis/` directory can be run.
+The three most important ones are the following:
+- `performance_summary.py` produces a performance summary table using multiple models' `prediction_scores.csv` files.
+- `boxplots.py` displays boxplots of performance metrics by grouping trajectories by their last observed timestep.
+- `qualitative_example.py` visualizes model predictions qualitatively.
+
+### Miscellaneous
 
 [//]: # (parameter_count.py)
 [//]: # (plot_loss_graph.py)
 [//]: # (CHECKSUMS)
+[//]: # (EXAMPLES)
+[//]: # (OBTAINING OUR RESULTS)
 
+[//]: # (# TODO: describe downloading from TU Delft repository)
+[//]: # (TODO: INDICATE SOMEWHERE THAT WE DO NO RAND ROT IN TEST SPLITS ONLY)
