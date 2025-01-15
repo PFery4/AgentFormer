@@ -1,0 +1,22 @@
+# ------------------- General Options -------------------------
+
+description                  : Fully Observed SDD Dataset
+results_root_dir             : results
+seed                         : 42
+dataset                      : sdd
+sdd_config_file_name         : config/dataset_config.yaml
+
+# ------------------- Feature Extractor -------------------------
+
+past_frames                   : 8
+future_frames                 : 12
+
+traj_scale                    : 1
+motion_dim                    : 2
+forecast_dim                  : 2
+scene_side_length             : 80.0     # [m]
+global_map_resolution         : 800      # [px]
+rand_rot_scene                : true
+max_train_agent               : 32
+occlusion_process             : 'fully_observed'      # 'fully_observed' | 'occlusion_simulation'
+impute                        : false
