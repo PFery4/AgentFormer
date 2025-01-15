@@ -64,7 +64,8 @@ def get_occlusion_traj_info_df(drop_idx: bool = True):
     )
     assert os.path.exists(target_path), f"{target_path} does not exist, you must run this command before:\n" \
                                         f"python save_occlusion_trajectories_information.py " \
-                                        f"--cfg cfg/datasets/occlusion_simulation_no_rand_rot.py --split test --legacy"
+                                        f"--cfg cfg/datasets/occlusion_simulation_no_rand_rot.py " \
+                                        f"--split test [--legacy]"
 
     df = get_df_from_csv(file_path=target_path, drop_idx=drop_idx)
 
