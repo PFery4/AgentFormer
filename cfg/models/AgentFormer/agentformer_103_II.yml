@@ -1,0 +1,46 @@
+# ------------------- General Options -------------------------
+
+description                  : AgentFormer Model
+results_root_dir             : results
+seed                         : 103
+
+# ------------------- Feature Extractor -------------------------
+
+dataset_cfg                   : 'fully_observed'
+
+# ------------------- Model -------------------------
+
+model_id: orig_dlow
+pred_cfg: agentformer_103_I
+pred_checkpoint_name: epoch_1_batch_69999
+qnet_mlp: [512, 256]
+share_eps: true
+train_w_mean: true
+
+# ------------------- VAE-------------------------
+
+nz                           : 32
+sample_k                     : 20
+
+# ------------------- Training Parameters -------------------------
+
+lr                           : 1.e-4
+loss_cfg:
+  kld:
+    weight: 0.1
+    min_clip: 10
+  diverse:
+    weight: 20
+    d_scale: 10
+  recon:
+    weight: 5.0
+
+num_epochs                    : 1
+lr_fix_epochs                 : 10
+lr_scheduler                  : 'step'
+lr_step_freq                  : 2500        # number of batches passed through the model between each scheduler step
+decay_step                    : 5
+decay_gamma                   : 0.5
+print_freq                    : 500
+validation_freq               : 2500        # number of batches to pass through between each validation (+ saving)
+validation_set_size           : 625

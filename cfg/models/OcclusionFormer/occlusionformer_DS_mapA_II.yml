@@ -1,0 +1,50 @@
+# ------------------- General Options -------------------------
+
+description                  : OcclusionFormer Model, with Occlusion Map A
+results_root_dir             : results
+seed                         : 1
+
+# ------------------- Feature Extractor -------------------------
+
+dataset_cfg                   : 'difficult_subset'
+
+# ------------------- Model -------------------------
+
+model_id: dlow
+pred_cfg: occlusionformer_DS_mapA_I
+pred_checkpoint_name: epoch_14_batch_2925
+qnet_mlp: [512, 256]
+share_eps: true
+train_w_mean: true
+loss_map: 'clipped_dist_transformed_occlusion_map'
+
+# ------------------- VAE-------------------------
+
+nz                           : 32
+sample_k                     : 20
+
+# ------------------- Training Parameters -------------------------
+
+lr                           : 1.e-4
+loss_cfg:
+  kld:
+    weight: 0.1
+    min_clip: 10
+  diverse:
+    weight: 20
+    d_scale: 10
+  recon:
+    weight: 60.0
+  infer_occl_map:
+    weight: 60.0
+    kernel: 'squared'
+
+num_epochs                    : 30
+#lr_fix_epochs                 : 10
+lr_scheduler                  : 'step'
+lr_step_freq                  : 3000        # number of batches passed through the model between each scheduler step
+decay_step                    : 8
+decay_gamma                   : 0.5
+print_freq                    : 500
+validation_freq               : 3000        # number of batches to pass through between each validation (+ saving)
+#validation_set_size           : 625

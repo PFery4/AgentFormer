@@ -1,0 +1,13 @@
+# ------------------- General Options -------------------------
+
+description                  : Oracle Predictor
+results_root_dir             : results
+seed                         : 42
+
+# ------------------- Model -------------------------
+
+model_id: oracle
+
+# ------------------- VAE-------------------------
+
+sample_k                     : 1

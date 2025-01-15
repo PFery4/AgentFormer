@@ -1,0 +1,13 @@
+# ------------------- General Options -------------------------
+
+description                  : Constant Velocity Model
+results_root_dir             : results
+seed                         : 42
+
+# ------------------- Model -------------------------
+
+model_id: const_velocity
+
+# ------------------- VAE-------------------------
+
+sample_k                     : 1

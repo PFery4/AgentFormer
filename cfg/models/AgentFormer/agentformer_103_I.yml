@@ -1,0 +1,62 @@
+# ------------------- General Options -------------------------
+
+description                  : AgentFormer Model (before Dlow)
+results_root_dir             : results
+seed                         : 103
+
+# ------------------- Feature Extractor -------------------------
+
+dataset_cfg                   : 'fully_observed'
+
+# ------------------- Model -------------------------
+
+model_id: orig_agentformer
+tf_model_dim: 256
+tf_ff_dim: 512
+tf_nhead: 8
+tf_dropout: 0.1
+input_type: ['scene_norm', 'vel']
+pred_type: 'scene_norm'
+sn_out_type: 'norm'
+pos_concat: true
+scene_orig_all_past: true
+
+context_encoder:
+  nlayer: 2
+
+future_decoder:
+  nlayer: 2
+  out_mlp_dim: [512, 256]
+
+future_encoder:
+  nlayer: 2
+  out_mlp_dim: [512, 256]
+
+# ------------------- VAE-------------------------
+
+nz                           : 32
+sample_k                     : 20
+learn_prior                  : true
+
+# ------------------- Training Parameters -------------------------
+
+lr                           : 1.e-4
+loss_cfg:
+  mse:
+    weight: 1.0
+  kld:
+    weight: 1.0
+    min_clip: 2.0
+  sample:
+    weight: 1.0
+    k: 20
+
+num_epochs                    : 3
+lr_fix_epochs                 : 10
+lr_scheduler                  : 'step'
+lr_step_freq                  : 5000        # number of batches passed through the model between each scheduler step
+decay_step                    : 10
+decay_gamma                   : 0.5
+print_freq                    : 500
+validation_freq               : 5000        # number of batches to pass through between each validation (+ saving)
+validation_set_size           : 1250
