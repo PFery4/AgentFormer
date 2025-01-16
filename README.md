@@ -136,8 +136,8 @@ This section covers the steps necessary for reproducing the results we obtained 
    <summary><b><u>Evaluating our Models</u></b></summary>
 
    The following steps can be taken to evaluate our models (if you wish to know more about the scripts being run throughout these steps, feel free to consult the **Scripts** section of this README, which discusses their functionalities in more detail):
-   <details>
-      <summary>1. Save the models' predictions against their relevant dataset types:</summary>
+1. <details>
+      <summary>Save the models' predictions against their relevant dataset types:</summary>
    
    ```
    python save_predictions.py --cfg cfg/models/AgentFormer/agentformer_100_II.yml --dataset_cfg cfg/datasets/fully_observed_no_rand_rot.yml --legacy
@@ -172,8 +172,8 @@ This section covers the steps necessary for reproducing the results we obtained 
    ```
    </details>
 
-   <details>
-      <summary>2. Evaluate saved predictions against performance metrics:</summary>
+2. <details>
+      <summary>Evaluate saved predictions against performance metrics:</summary>
 
    ```
    python model_eval.py --cfg cfg/models/AgentFormer/agentformer_100_II.yml --dataset_cfg cfg/datasets/fully_observed_no_rand_rot.yml --legacy
@@ -208,8 +208,8 @@ This section covers the steps necessary for reproducing the results we obtained 
    ```
    </details>
 
-   <details>
-      <summary>3. Save prerequisite trajectory information before delving into further analysis:</summary>
+3. <details>
+      <summary>Save prerequisite trajectory information before delving into further analysis:</summary>
 
    ```
    python save_occlusion_trajectories_information.py --cfg cfg/datasets/occlusion_simulation_no_rand_rot.py --split test --legacy
@@ -222,8 +222,8 @@ This section covers the steps necessary for reproducing the results we obtained 
    ```
    </details>
 
-   <details>
-      <summary>4. Produce performance summary tables and boxplot figures:</summary>
+4. <details>
+      <summary>Produce performance summary tables and boxplot figures:</summary>
 
    To produce the performance tables:
    ```
