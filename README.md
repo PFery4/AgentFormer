@@ -10,36 +10,45 @@ The following sections describe the steps that must be taken in order before you
 <details>
    <summary><b><u>Environment</u></b></summary>
 
-*We manage our environment through Anaconda, and we recommend that you do so too: the project relies on the [scikit-geometry](https://github.com/scikit-geometry/scikit-geometry) library, which is only directly accessible from the conda-forge channel (otherwise, it can be built from source, with [CGAL 5.0](https://www.cgal.org/) installed). Though installation through other methods might be possible, only the following instructions have been verified to work properly.*
+The following instructions are only valid for the Linux operating system.
 
-1. Create the environment:
+1. Create a conda environment from the [conda-environment.txt](conda-environment.txt) file:
    ```
-   conda create -n <environment-name> python=3.8 pip
+   conda create --name <environment-name> --file occlusionformer-environment.txt
    ```
    Replace `<environment-name>` with your desired name for the environment.
 2. Activate the environment:
    ```
    conda activate <environment-name>
    ```
-3. Install [PyTorch 1.8.0](https://pytorch.org/get-started/previous-versions/#v180) with the appropriate CUDA version.
-4. Install scikit-geometry:
-   ```
-   conda install -c conda-forge scikit-geometry
-   ```
-5. Install the remaining dependencies:
+3. Install the remaining dependencies, which are listed in the [requirements.txt](requirements.txt) file:
    ```
    pip install -r requirements.txt
    ```
+- <details>
+      <summary><i>For platforms other than Linux:</i></summary>
+  
+   Setting up from the [conda-environment.yml](conda-environment.yml) file should result in an environment that is equivalent to the Linux installation process.
+   *Important Note*: though the specifications inside this file are equivalent to our previous installation instructions, we did *not* perform the following installation procedure on a non-Linux machine:
+   ```
+   conda env create -f conda-environment.yml
+   ```
 
+  </details>
 
 </details>
 
 <details>
-   <summary><b><u>Dependency: Occlusion Simulator</u></b></summary>
+   <summary><b><u>Occlusion Simulator</u></b></summary>
 
-In order to study occlusions and their effect on trajectory prediction, we apply a simulator of occlusions on top of the Stanford Drone Dataset.
+This project makes use of our simulator of occlusions, whose implementation can be found [here](https://github.com/PFery4/occlusion-simulation).
 
-1. Download our [Occlusion Simulator](https://github.com/PFery4/occlusion-simulation) repository, and follow its setup instructions (use the same environment as the one you set up when going through the previous Environment section).
+1. Download the [Occlusion Simulator repository](https://github.com/PFery4/occlusion-simulation) on your machine (going through that repository's setup instructions is *not* necessary if you successfully set up the environment by following the instructions in the previous section).
+2. From the Occlusion Simulator repository's root directory, run the `src/data/save_coord_conv_file.py` script:
+   ```commandline
+   python src/data/save_coord_conv_file.py
+   ```
+
 </details>
 
 <details>

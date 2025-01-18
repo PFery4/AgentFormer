@@ -1,9 +1,7 @@
-# Note: install pytorch first (preferably with CUDA)
-# Note: install scikit-geometry (either through the conda-forge channel):
-# 	$: conda install -c conda-forge scikit-geometry
-# (or by building from source, with CGAL 5.0 installed preemptively)
-# 	$: python -m pip install -e . -v
-# then, the requirements can be installed:
+# Note: create the conda environment and install the conda packages first:
+#   $: conda create --name <environment-name> --file occlusionformer-environment.txt
+#   $: conda activate <environment-name>
+# then, the remaining requirements can be installed with pip:
 # 	$: pip install -r requirements.txt
 
 tensorboard
@@ -14,7 +12,3 @@ easydict
 pandas<2.0.0
 tqdm
 matplotlib
-psutil
-h5py
-numpy
-scipy
