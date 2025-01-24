@@ -73,7 +73,7 @@ This section covers the steps necessary for reproducing the results we obtained 
 <details>
    <summary><b><u>Downloading Models & Legacy Datasets</u></b></summary>
 
-   Our models and datasets are available in [TU Delft's archive](TODO:LINK).
+   Our models and datasets are available in [TU Delft's archive](https://doi.org/10.4121/3dc88884-d8f4-42db-b643-e799fe7fb432).
 -  <details>
       <summary><b>(A) Legacy HDF5 dataset files</b></summary>
 
